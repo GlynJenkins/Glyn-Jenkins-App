@@ -17,6 +17,7 @@ export default async function VariationPage({
   const supabase = createServiceClient()
 
   // ── Verify site assignment ──────────────────────────
+  const { data: assignment } = await supabase
     .from('foreman_site_assignments')
     .select('site_id')
     .eq('foreman_id', foreman.id)
