@@ -87,7 +87,8 @@ export default function ClaimBuilder({
   const toggleGang = (id: string) =>
     setGangSelected((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
 
@@ -220,6 +221,7 @@ export default function ClaimBuilder({
     period.isLocked, poolTotal, allocatedTotal, overAllocated,
     selectedLifts, variationGroups, selectedGroups, workers,
     allocations, apprenticeDays, site.id, foreman.id,
+    collegeDayRate, holidayDayRate, remaining,
   ])
 
   // ── Success screen ────────────────────────────────────────────────────
@@ -358,7 +360,8 @@ export default function ClaimBuilder({
                       <button
                         onClick={() => {
                           const next = new Set(selectedGroups)
-                          on ? next.delete(g.groupKey) : next.add(g.groupKey)
+                          if (on) next.delete(g.groupKey)
+                          else next.add(g.groupKey)
                           setSelectedGroups(next)
                         }}
                         className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
@@ -383,7 +386,8 @@ export default function ClaimBuilder({
                       <button
                         onClick={() => {
                           const next = new Set(expandedGroups)
-                          expanded ? next.delete(g.groupKey) : next.add(g.groupKey)
+                          if (expanded) next.delete(g.groupKey)
+                          else next.add(g.groupKey)
                           setExpandedGroups(next)
                         }}
                         className="p-1 text-slate-400 hover:text-slate-600"

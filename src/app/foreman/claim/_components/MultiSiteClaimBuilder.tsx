@@ -89,7 +89,12 @@ export default function MultiSiteClaimBuilder({
     return matchRole && matchSearch
   })
   const toggleGang = (id: string) =>
-    setGangSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+    setGangSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   const gangWorkers        = workers.filter((w) => gangSelected.has(w.id))
   const apprenticeWorkers  = gangWorkers.filter((w) => w.role === 'apprentice')
@@ -338,7 +343,8 @@ export default function MultiSiteClaimBuilder({
                       checked={selectedGroups.has(g.groupKey)}
                       onChange={() => setSelectedGroups((prev) => {
                         const next = new Set(prev)
-                        next.has(g.groupKey) ? next.delete(g.groupKey) : next.add(g.groupKey)
+                        if (next.has(g.groupKey)) next.delete(g.groupKey)
+                        else next.add(g.groupKey)
                         return next
                       })}
                       className="accent-orange-500 w-4 h-4 shrink-0"
@@ -353,7 +359,8 @@ export default function MultiSiteClaimBuilder({
                       type="button"
                       onClick={() => setExpandedGroups((prev) => {
                         const next = new Set(prev)
-                        next.has(g.groupKey) ? next.delete(g.groupKey) : next.add(g.groupKey)
+                        if (next.has(g.groupKey)) next.delete(g.groupKey)
+                        else next.add(g.groupKey)
                         return next
                       })}
                       className="text-slate-400 p-1"

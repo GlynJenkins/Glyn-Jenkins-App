@@ -724,16 +724,16 @@ export default function InductionPage() {
           <div className="h-64 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-slate-700 leading-relaxed space-y-3">
             <p className="font-bold text-sm text-slate-900">SUBCONTRACT AGREEMENT — GLYN JENKINS LTD</p>
 
-            <p>This agreement is entered into between <strong>Glyn Jenkins LTD</strong> (the "Company") and the operative named in this registration form (the "Subcontractor").</p>
+            <p>This agreement is entered into between <strong>Glyn Jenkins LTD</strong> (the &ldquo;Company&rdquo;) and the operative named in this registration form (the &ldquo;Subcontractor&rdquo;).</p>
 
             <p><strong>1. STATUS</strong><br />
             The Subcontractor agrees to provide services to the Company as a self-employed subcontractor and not as an employee. The Subcontractor is responsible for their own tax affairs and National Insurance contributions, subject to the Construction Industry Scheme (CIS) where applicable.</p>
 
             <p><strong>2. PAYMENT</strong><br />
-            Payment will be made on a fortnightly basis, subject to work being completed to the satisfaction of the Company's Foreman and approved by the Company's administration. Gross amounts are agreed per lift or stage as set out in the price schedule for each site. Deductions including CIS tax (where applicable), admin fees, and insurance fees will be applied before net payment is made.</p>
+            Payment will be made on a fortnightly basis, subject to work being completed to the satisfaction of the Company&apos;s Foreman and approved by the Company&apos;s administration. Gross amounts are agreed per lift or stage as set out in the price schedule for each site. Deductions including CIS tax (where applicable), admin fees, and insurance fees will be applied before net payment is made.</p>
 
             <p><strong>3. CONSTRUCTION INDUSTRY SCHEME (CIS)</strong><br />
-            Where the Subcontractor is registered under CIS at the standard 20% deduction rate, the Company will deduct 20% from the taxable element of each payment and submit this to HMRC on the Subcontractor's behalf. Gross-status subcontractors will receive payment without CIS deduction, subject to valid HMRC gross-status verification.</p>
+            Where the Subcontractor is registered under CIS at the standard 20% deduction rate, the Company will deduct 20% from the taxable element of each payment and submit this to HMRC on the Subcontractor&apos;s behalf. Gross-status subcontractors will receive payment without CIS deduction, subject to valid HMRC gross-status verification.</p>
 
             <p><strong>4. ADMIN FEE</strong><br />
             A fortnightly administration fee as set by the Company will be deducted from each payment to cover payroll processing and administrative costs.</p>

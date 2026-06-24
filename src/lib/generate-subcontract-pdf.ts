@@ -40,7 +40,6 @@ function createWriter(
 ): PdfWriter {
   let page: PDFPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   let y = PAGE_HEIGHT - MARGIN
-  const maxWidth = PAGE_WIDTH - 2 * MARGIN
 
   const ensureSpace = (height: number) => {
     if (y - height < MARGIN) {
