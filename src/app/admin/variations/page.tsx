@@ -5,6 +5,31 @@ import VariationList from './_components/VariationList'
 
 export const dynamic = 'force-dynamic'
 
+function siteFromRelation(
+  sites: { id: string; name: string } | { id: string; name: string }[] | null,
+): { id: string; name: string } | null {
+  if (!sites) return null
+  return Array.isArray(sites) ? (sites[0] ?? null) : sites
+}
+
+function relationOne<T>(value: T | T[] | null): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
+
+function normalizeVariation<T extends {
+  sites:   { id: string; name: string } | { id: string; name: string }[] | null
+  workers: { id: string; first_name: string; surname: string; role: string } | { id: string; first_name: string; surname: string; role: string }[] | null
+  foremen: { id: string; first_name: string; surname: string } | { id: string; first_name: string; surname: string }[] | null
+}>(v: T) {
+  return {
+    ...v,
+    sites:   siteFromRelation(v.sites),
+    workers: relationOne(v.workers),
+    foremen: relationOne(v.foremen),
+  }
+}
+
 export default async function AdminVariationsPage() {
   await requireAdminAccess()
 
@@ -36,14 +61,14 @@ export default async function AdminVariationsPage() {
     })
   )
 
-  const pending  = variationsWithUrls.filter((v) => v.status === 'pending')
-  const approved = variationsWithUrls.filter((v) => v.status === 'approved')
-  const rejected = variationsWithUrls.filter((v) => v.status === 'rejected')
+  const pending  = variationsWithUrls.filter((v) => v.status === 'pending').map(normalizeVariation)
+  const approved = variationsWithUrls.filter((v) => v.status === 'approved').map(normalizeVariation)
+  const rejected = variationsWithUrls.filter((v) => v.status === 'rejected').map(normalizeVariation)
 
   // Running spend per site (approved only)
   const siteSpend = new Map<string, { name: string; total: number }>()
   for (const v of approved) {
-    const site = v.sites as { id: string; name: string } | null
+    const site = v.sites
     if (!site) continue
     const existing = siteSpend.get(site.id) ?? { name: site.name, total: 0 }
     siteSpend.set(site.id, { ...existing, total: existing.total + (v.total_amount ?? 0) })
