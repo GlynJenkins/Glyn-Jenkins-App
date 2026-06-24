@@ -1,0 +1,188 @@
+import { createServiceClient }   from '@/lib/supabase/server'
+import { requireForemanAccess }  from '@/lib/auth/portal-access'
+import { notFound }    from 'next/navigation'
+import { getCurrentFortnight }   from '@/lib/fortnight'
+import ClaimBuilder              from './_components/ClaimBuilder'
+
+export const dynamic = 'force-dynamic'
+
+export default async function ClaimPage({
+  params,
+  searchParams,
+}: {
+  params:       Promise<{ siteId: string }>
+  searchParams: Promise<{ cells?: string; gang?: string; days?: string }>
+}) {
+  const { siteId }    = await params
+  const { cells: cellsParam, gang: gangParam, days: daysParam } = await searchParams
+
+  const { worker: foreman } = await requireForemanAccess()
+
+  const supabase = createServiceClient()
+
+  // ── Verify site assignment ────────────────────────────────────────────
+  const { data: assignment } = await supabase
+    .from('foreman_site_assignments')
+    .select('site_id')
+    .eq('foreman_id', foreman.id)
+    .eq('site_id', siteId)
+    .maybeSingle()
+  if (!assignment) notFound()
+
+  const { data: site } = await supabase
+    .from('sites')
+    .select('id, name')
+    .eq('id', siteId)
+    .maybeSingle()
+  if (!site) notFound()
+
+  // ── Resolve pre-selected cells from URL (format: "cellId:penceAmount,…") ──
+  // penceAmount is the claim amount in pence (integer) to avoid float issues
+  const amountMap = new Map<string, number>()  // cellId → £ claim amount
+  if (cellsParam) {
+    for (const part of cellsParam.split(',')) {
+      const [id, penceStr] = part.trim().split(':')
+      if (id && penceStr) amountMap.set(id, parseInt(penceStr) / 100)
+    }
+  }
+  const selectedCellIds = Array.from(amountMap.keys())
+
+  type SelectedLift = {
+    id:            string
+    plotNumber:    string
+    stageName:     string
+    contractValue: number   // the partial claim amount (pence-converted)
+    fullValue:     number   // original full contract value
+    pct:           number   // approximate % for display
+  }
+
+  let selectedLifts: SelectedLift[] = []
+  if (selectedCellIds.length > 0) {
+    const { data: rawCells } = await supabase
+      .from('price_grid')
+      .select('id, plot_number, stage_id, contract_value, site_stages(stage_name)')
+      .in('id', selectedCellIds)
+
+    selectedLifts = (rawCells ?? []).map((c) => {
+      const stage       = c.site_stages as { stage_name: string } | null
+      const fullValue   = c.contract_value ?? 0
+      const claimAmount = amountMap.get(c.id) ?? fullValue
+      const pct         = fullValue > 0 ? Math.round(claimAmount / fullValue * 100) : 100
+      return {
+        id:            c.id,
+        plotNumber:    c.plot_number,
+        stageName:     stage?.stage_name ?? '—',
+        contractValue: claimAmount,
+        fullValue,
+        pct,
+      }
+    })
+  }
+
+  // ── Approved variations not yet in a claim — grouped by submission ────
+  const { data: rawVariations } = await supabase
+    .from('variation_claims')
+    .select(`
+      id, description, total_amount, photo_urls,
+      workers!variation_claims_worker_id_fkey(first_name, surname, role)
+    `)
+    .eq('site_id', siteId)
+    .eq('status', 'approved')
+    .is('claimed_in_period_id', null)
+    .order('created_at', { ascending: true })
+
+  // Group by shared photo path (unique fingerprint per daywork submission)
+  type VariationLine = { id: string; workerName: string; amount: number }
+  type VariationGroup = {
+    groupKey:    string
+    description: string
+    lines:       VariationLine[]
+    total:       number
+  }
+
+  const groupMap = new Map<string, VariationGroup>()
+  for (const v of rawVariations ?? []) {
+    const key = (v.photo_urls ?? [])[0] ?? v.id
+    const w   = v.workers as { first_name: string; surname: string; role: string } | null
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        groupKey:    key,
+        description: v.description ?? 'Variation',
+        lines:       [],
+        total:       0,
+      })
+    }
+    const g = groupMap.get(key)!
+    g.lines.push({
+      id:         v.id,
+      workerName: w ? `${w.first_name} ${w.surname}` : 'Worker',
+      amount:     v.total_amount ?? 0,
+    })
+    g.total += v.total_amount ?? 0
+  }
+
+  const variationGroups = Array.from(groupMap.values())
+
+  // ── Day rates from admin settings ────────────────────────────────────
+  const { data: adminSettings } = await supabase
+    .from('admin_settings')
+    .select('holiday_day_rate, college_day_rate')
+    .limit(1)
+    .maybeSingle()
+
+  const holidayDayRate = adminSettings?.holiday_day_rate ?? 50
+  const collegeDayRate = adminSettings?.college_day_rate ?? 50
+
+  // ── Active workers ────────────────────────────────────────────────────
+  const { data: workers } = await supabase
+    .from('workers')
+    .select('id, first_name, surname, role')
+    .in('role', ['foreman', 'bricklayer', 'labourer', 'apprentice'])
+    .eq('status', 'active')
+    .order('surname')
+
+  // ── Apprentice holiday balances ───────────────────────────────────────
+  const apprentices = (workers ?? []).filter((w) => w.role === 'apprentice')
+  const holidayRemaining: Record<string, number> = {}
+  for (const a of apprentices) {
+    const { data: ledger } = await supabase
+      .from('apprentice_holiday_ledger')
+      .select('days')
+      .eq('worker_id', a.id)
+      .eq('day_type', 'holiday')
+    const used = (ledger ?? []).reduce((sum, r) => sum + (r.days ?? 0), 0)
+    holidayRemaining[a.id] = Math.max(0, 28 - used)
+  }
+
+  const period = await getCurrentFortnight(supabase)
+
+  // Parse initial gang from URL ("workerId,workerId,…")
+  const initialGang = gangParam
+    ? gangParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : []
+
+  return (
+    <ClaimBuilder
+      site={site}
+      foreman={{ id: foreman.id, name: `${foreman.first_name} ${foreman.surname}` }}
+      selectedLifts={selectedLifts}
+      variationGroups={variationGroups}
+      workers={workers ?? []}
+      holidayRemaining={holidayRemaining}
+      holidayDayRate={holidayDayRate}
+      collegeDayRate={collegeDayRate}
+      period={{
+        label:    period.label,
+        payLabel:  period.payLabel,
+        isLocked: period.isLocked,
+        isGracePeriod: period.isGracePeriod,
+        lockTime: period.lockTime.toISOString(),
+        start:    period.start.toISOString(),
+        end:      period.end.toISOString(),
+      }}
+      siteId={siteId}
+      initialGang={initialGang}
+      initialDays={daysParam ?? ''}
+    />
+  )
+}
