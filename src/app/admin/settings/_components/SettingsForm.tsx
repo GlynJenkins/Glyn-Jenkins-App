@@ -82,7 +82,7 @@ export default function SettingsForm({
           </div>
           <div>
             <h2 className="font-semibold text-slate-800">Global Operative Admin Fee</h2>
-            <p className="text-xs text-slate-500">Deducted from every worker's gross pay each period</p>
+            <p className="text-xs text-slate-500">Deducted from every worker&apos;s gross pay each period</p>
           </div>
         </div>
         <div>
