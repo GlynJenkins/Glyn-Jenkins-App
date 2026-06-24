@@ -3,6 +3,7 @@ import { requireForemanAccess }  from '@/lib/auth/portal-access'
 import { notFound }    from 'next/navigation'
 import { getCurrentFortnight }   from '@/lib/fortnight'
 import ClaimBuilder              from './_components/ClaimBuilder'
+import { relationOne }           from '@/lib/supabase/normalize-relations'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,7 +65,7 @@ export default async function ClaimPage({
       .in('id', selectedCellIds)
 
     selectedLifts = (rawCells ?? []).map((c) => {
-      const stage       = c.site_stages as { stage_name: string } | null
+      const stage       = relationOne(c.site_stages as { stage_name: string } | { stage_name: string }[] | null)
       const fullValue   = c.contract_value ?? 0
       const claimAmount = amountMap.get(c.id) ?? fullValue
       const pct         = fullValue > 0 ? Math.round(claimAmount / fullValue * 100) : 100
@@ -103,7 +104,7 @@ export default async function ClaimPage({
   const groupMap = new Map<string, VariationGroup>()
   for (const v of rawVariations ?? []) {
     const key = (v.photo_urls ?? [])[0] ?? v.id
-    const w   = v.workers as { first_name: string; surname: string; role: string } | null
+    const w   = relationOne(v.workers as { first_name: string; surname: string; role: string } | { first_name: string; surname: string; role: string }[] | null)
     if (!groupMap.has(key)) {
       groupMap.set(key, {
         groupKey:    key,

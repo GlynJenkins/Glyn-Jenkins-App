@@ -2,6 +2,7 @@ import { createServiceClient }  from '@/lib/supabase/server'
 import { requireForemanAccess } from '@/lib/auth/portal-access'
 import { getCurrentFortnight }   from '@/lib/fortnight'
 import MultiSiteClaimBuilder     from './_components/MultiSiteClaimBuilder'
+import { relationOne }           from '@/lib/supabase/normalize-relations'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,7 +64,7 @@ export default async function MultiSiteClaimPage({
       .in('id', selectedCellIds)
 
     allSelectedLifts = (rawCells ?? []).map((c) => {
-      const stage       = c.site_stages as { stage_name: string } | null
+      const stage       = relationOne(c.site_stages as { stage_name: string } | { stage_name: string }[] | null)
       const fullValue   = c.contract_value ?? 0
       const claimAmount = amountMap.get(c.id) ?? fullValue
       const pct         = fullValue > 0 ? Math.round(claimAmount / fullValue * 100) : 100
@@ -106,7 +107,7 @@ export default async function MultiSiteClaimPage({
     const groupMap = new Map<string, VariationGroup>()
     for (const v of rawVariations ?? []) {
       const key = (v.photo_urls ?? [])[0] ?? v.id
-      const w   = v.workers as { first_name: string; surname: string } | null
+      const w   = relationOne(v.workers as { first_name: string; surname: string } | { first_name: string; surname: string }[] | null)
       if (!groupMap.has(key)) {
         groupMap.set(key, { groupKey: key, description: v.description ?? 'Variation', lines: [], total: 0 })
       }

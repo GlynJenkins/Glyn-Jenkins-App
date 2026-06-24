@@ -3,6 +3,8 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import { notFound }            from 'next/navigation'
 import Link                    from 'next/link'
 import WorkerProfile           from './_components/WorkerProfile'
+import { relationOne }         from '@/lib/supabase/normalize-relations'
+import type { LedgerEntry }    from './_components/WorkerProfile'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +31,7 @@ export default async function WorkerProfilePage({
 
   if (!worker) notFound()
 
-  const { data: ledger } = await supabase
+  const { data: ledgerRaw } = await supabase
     .from('worker_cis_ledger')
     .select(`
       id, date_of_pay, gross_pay, cis_tax_deducted,
@@ -39,6 +41,20 @@ export default async function WorkerProfilePage({
     `)
     .eq('worker_id', workerId)
     .order('date_of_pay', { ascending: false })
+
+  const ledger: LedgerEntry[] = (ledgerRaw ?? []).map((entry) => {
+    const claimPeriod = relationOne(entry.claim_periods)
+    return {
+      ...entry,
+      claim_periods: claimPeriod
+        ? {
+            period_start: claimPeriod.period_start,
+            period_end:   claimPeriod.period_end,
+            sites:        relationOne(claimPeriod.sites),
+          }
+        : null,
+    }
+  })
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -63,7 +79,7 @@ export default async function WorkerProfilePage({
       </header>
 
       <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
-        <WorkerProfile worker={worker} ledger={ledger ?? []} />
+        <WorkerProfile worker={worker} ledger={ledger} />
       </div>
     </div>
   )

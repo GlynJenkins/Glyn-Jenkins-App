@@ -2,20 +2,9 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import VariationList from './_components/VariationList'
+import { relationOne } from '@/lib/supabase/normalize-relations'
 
 export const dynamic = 'force-dynamic'
-
-function siteFromRelation(
-  sites: { id: string; name: string } | { id: string; name: string }[] | null,
-): { id: string; name: string } | null {
-  if (!sites) return null
-  return Array.isArray(sites) ? (sites[0] ?? null) : sites
-}
-
-function relationOne<T>(value: T | T[] | null): T | null {
-  if (!value) return null
-  return Array.isArray(value) ? (value[0] ?? null) : value
-}
 
 function normalizeVariation<T extends {
   sites:   { id: string; name: string } | { id: string; name: string }[] | null
@@ -24,7 +13,7 @@ function normalizeVariation<T extends {
 }>(v: T) {
   return {
     ...v,
-    sites:   siteFromRelation(v.sites),
+    sites:   relationOne(v.sites),
     workers: relationOne(v.workers),
     foremen: relationOne(v.foremen),
   }

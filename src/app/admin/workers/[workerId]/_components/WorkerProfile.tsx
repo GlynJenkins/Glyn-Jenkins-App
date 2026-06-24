@@ -10,7 +10,7 @@ import { needsPortalLogin } from '@/lib/worker-access'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type LedgerEntry = {
+export type LedgerEntry = {
   id:                    string
   date_of_pay:           string
   gross_pay:             number
