@@ -14,7 +14,7 @@ type SelectedLift   = { id: string; plotNumber: string; stageName: string; contr
 type VariationLine  = { id: string; workerName: string; amount: number }
 type VariationGroup = { groupKey: string; description: string; lines: VariationLine[]; total: number }
 type Worker         = { id: string; first_name: string; surname: string; role: string }
-type Period         = { label: string; payLabel: string; isLocked: boolean; lockTime: string; start: string; end: string }
+type Period         = { label: string; payLabel: string; isLocked: boolean; isGracePeriod?: boolean; lockTime: string; start: string; end: string }
 
 interface Props {
   foreman:          { id: string; name: string }
