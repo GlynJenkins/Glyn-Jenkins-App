@@ -138,7 +138,7 @@ function PctPicker({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ForemanGrid({ siteId: _siteId, initialCells, otherSitesCells, initialGang, initialDays, stages, plotNumbers, cells }: Props) {
+export default function ForemanGrid({ initialCells, otherSitesCells, initialGang, initialDays, stages, plotNumbers, cells }: Props) {
   const router = useRouter()
 
   const parseInitial = (): Map<string, Selection> => {

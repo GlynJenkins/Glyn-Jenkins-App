@@ -162,7 +162,6 @@ function printStatement(worker: Worker, entries: LedgerEntry[]) {
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {
   const [open, setOpen] = useState(false)
-  const totalFees = (entry.admin_fee ?? 0) + (entry.insurance_fee ?? 0) + (entry.custom_deduction ?? 0)
 
   return (
     <>

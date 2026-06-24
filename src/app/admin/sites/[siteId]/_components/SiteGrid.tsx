@@ -28,7 +28,7 @@ function isTotalStage(name: string): boolean {
 }
 
 // Colour driven by claim status (same system as foreman view)
-function cellBg(cell: Cell, claimMode: boolean): string {
+function cellBg(cell: Cell): string {
   if (cell.total_claimed_pct >= 100) return 'bg-green-500 text-white'
   if (cell.total_claimed_pct > 0)    return 'bg-orange-300 text-slate-800'
   const map: Record<string, string> = {
@@ -278,7 +278,7 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
                     )
                   }
 
-                  const bgCls = cellBg(cell, claimMode)
+                  const bgCls = cellBg(cell)
 
                   return (
                     <td

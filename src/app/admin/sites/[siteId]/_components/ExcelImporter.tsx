@@ -17,9 +17,6 @@ type SheetPreview = {
   sample?:      { plot: string; values: string[] }[]
 }
 
-const fmt = (n: number | null) =>
-  n == null ? '—' : '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-
 export default function ExcelImporter({ siteId }: { siteId: string }) {
   const inputRef   = useRef<HTMLInputElement>(null)
   const router     = useRouter()

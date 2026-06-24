@@ -12,11 +12,10 @@ type Site = {
 
 interface Props {
   site: Site
-  foremanId: string
   inactive?: boolean
 }
 
-export default function ForemanSiteCard({ site, foremanId, inactive = false }: Props) {
+export default function ForemanSiteCard({ site, inactive = false }: Props) {
   return (
     <div className={`bg-white rounded-2xl p-5 shadow-sm border space-y-4 ${
       inactive ? 'border-gray-100 opacity-60' : 'border-gray-100'

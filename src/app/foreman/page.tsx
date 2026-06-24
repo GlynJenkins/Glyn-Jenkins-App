@@ -75,7 +75,6 @@ export default async function ForemanPage() {
 
       <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
         <ForemanDashboard
-          foremanId={worker.id}
           sites={sites}
           currentClaim={currentClaim}
           variationCountMap={variationCountMap}

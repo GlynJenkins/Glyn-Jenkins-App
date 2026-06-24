@@ -29,7 +29,6 @@ type Period = {
 }
 
 interface Props {
-  foremanId:         string
   sites:             Site[]
   currentClaim:      { status: string; claimId: string } | null
   variationCountMap: Record<string, number>
@@ -171,7 +170,7 @@ function SiteCard({ site, variationCount }: { site: Site; variationCount: number
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function ForemanDashboard({
-  foremanId, sites, currentClaim, variationCountMap, period,
+  sites, currentClaim, variationCountMap, period,
 }: Props) {
   const router        = useRouter()
   const [withdrawing, setWithdrawing] = useState(false)

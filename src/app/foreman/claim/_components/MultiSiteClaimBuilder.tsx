@@ -220,7 +220,7 @@ export default function MultiSiteClaimBuilder({
   }, [
     period.isLocked, poolTotal, allocatedTotal, overAllocated, remaining,
     allLifts, variationGroups, selectedGroups, workers, apprenticeDays,
-    gangWorkers, allocations, foreman.id, collegeDayRate, holidayDayRate,
+    gangWorkers, allocations, foreman.id, collegeDayRate, holidayDayRate, sites,
   ])
 
   // ── Success screen ────────────────────────────────────────────────────
