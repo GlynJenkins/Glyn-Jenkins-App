@@ -30,6 +30,8 @@ Copy `.env.example` as a template.
 
 **Common runtime error:** `500 MIDDLEWARE_INVOCATION_FAILED` on login — usually missing Supabase env vars on Vercel, or an older middleware build using the service-role key on the Edge runtime. Ensure all three Supabase variables are set and redeploy after any middleware fix.
 
+**Login says “Could not reach the server”:** open the live site’s login page source (or redeploy logs) and confirm the Supabase URL is exactly `https://YOUR-PROJECT.supabase.co` — a typo like `ttps://…` (missing `h`) or a missing `https://` prefix will break browser login. Fix the variable in Vercel and **redeploy** (`NEXT_PUBLIC_*` values are baked in at build time).
+
 ## 3. Supabase configuration
 
 ### Authentication → URL Configuration

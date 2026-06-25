@@ -17,7 +17,7 @@ export default async function DashboardPage() {
   const worker = await getWorkerForUser(user.id)
 
   if (!worker) {
-    if (!allowLegacyAdmin()) redirect('/login')
+    if (!allowLegacyAdmin()) redirect('/access-denied')
     // Legacy Supabase-only admin account (no workers row)
     redirect('/admin')
   }
@@ -27,5 +27,5 @@ export default async function DashboardPage() {
   if (worker.role === 'foreman') redirect('/foreman')
   if (canAccessAdmin(worker.role)) redirect('/admin')
 
-  redirect('/login')
+  redirect('/access-denied')
 }

@@ -33,7 +33,7 @@ export default async function PendingApprovalPage() {
     .maybeSingle()
 
   if (worker?.status === 'active') redirect('/dashboard')
-  if (!worker) redirect('/login')
+  if (!worker) redirect('/access-denied')
 
   return (
     <div className="min-h-screen bg-slate-900 safe-screen flex flex-col items-center justify-center p-6 text-center">

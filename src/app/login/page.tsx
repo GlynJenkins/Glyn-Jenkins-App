@@ -41,8 +41,13 @@ export default function LoginPage() {
       // Full page navigation ensures the session cookie is sent to the server
       // before middleware checks auth (router.push alone can race and bounce back to login)
       window.location.assign('/dashboard')
-    } catch {
-      setError('Could not reach the server. Check your connection and try again.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+      if (message.includes('Supabase')) {
+        setError('Portal login is misconfigured on the server. Contact your administrator.')
+      } else {
+        setError('Could not reach the server. Check your connection and try again.')
+      }
       setLoading(false)
     }
   }

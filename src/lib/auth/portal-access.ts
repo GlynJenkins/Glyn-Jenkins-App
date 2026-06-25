@@ -56,12 +56,12 @@ export async function requireAdminAccess(): Promise<{ user: User; worker: Portal
 
   const worker = await getWorkerForUser(user.id)
   if (!worker) {
-    if (!allowLegacyAdmin()) redirect('/login')
+    if (!allowLegacyAdmin()) redirect('/access-denied')
     return { user, worker: null }
   }
 
   if (worker.status !== 'active') redirect('/pending-approval')
-  if (!canAccessAdmin(worker.role)) redirect('/login')
+  if (!canAccessAdmin(worker.role)) redirect('/access-denied')
 
   return { user, worker }
 }
@@ -72,7 +72,7 @@ export async function requireForemanAccess(): Promise<{ user: User; worker: Port
   if (!user) redirect('/login')
 
   const worker = await getWorkerForUser(user.id)
-  if (!worker || worker.role !== 'foreman') redirect('/login')
+  if (!worker || worker.role !== 'foreman') redirect('/access-denied')
   if (worker.status !== 'active') redirect('/pending-approval')
 
   return { user, worker }
