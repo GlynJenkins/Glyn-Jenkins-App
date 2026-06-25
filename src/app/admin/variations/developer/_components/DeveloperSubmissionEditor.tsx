@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ChevronDown, ChevronUp, Loader2, Send, CheckCircle, XCircle, ExternalLink, Lock, Trash2, Plus,
+  ChevronDown, ChevronUp, Loader2, Send, CheckCircle, XCircle, ExternalLink, Lock, Trash2, Plus, Download,
 } from 'lucide-react'
 import { computeDeveloperTotals, lineTotal } from '@/lib/variations/developer'
 import {
@@ -163,6 +163,12 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
     material_uplift_enabled: materialUpliftEnabled,
   })
 
+  const pdfUrl = `/api/admin/variations/developer/${submission.id}/pdf`
+
+  const downloadPdf = () => {
+    window.open(pdfUrl, '_blank', 'noopener,noreferrer')
+  }
+
   const savePayload = async () => {
     const res = await fetch(`/api/admin/variations/developer/${submission.id}`, {
       method:  'PATCH',
@@ -199,7 +205,8 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error ?? 'Submit failed.')
-        setMessage('Submitted to developer record.')
+        setMessage('Marked as sent — download the PDF below to email or share with the developer.')
+        downloadPdf()
         router.refresh()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Submit failed.')
@@ -479,6 +486,18 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
       {message && (
         <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-3">{message}</p>
       )}
+
+      <button
+        type="button"
+        onClick={downloadPdf}
+        className="w-full flex items-center justify-center gap-2 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-sm font-semibold rounded-xl"
+      >
+        <Download className="w-4 h-4" />
+        {isDraft ? 'Download PDF preview' : 'Download PDF for developer'}
+      </button>
+      <p className="text-xs text-slate-500 text-center -mt-2">
+        Send to developer saves your records here — use the PDF to actually share with the developer (email, WhatsApp, etc.).
+      </p>
 
       {isDraft && (
         <div className="space-y-2">
