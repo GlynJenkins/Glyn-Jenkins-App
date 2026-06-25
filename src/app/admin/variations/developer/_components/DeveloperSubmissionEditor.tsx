@@ -53,7 +53,7 @@ function fmt(n: number) {
 
 function lineRoleLabel(line: Line) {
   const role = line.worker_role ?? line.workers?.role ?? ''
-  return ROLE_LABELS[role] ?? role || 'Worker'
+  return (ROLE_LABELS[role] ?? role) || 'Worker'
 }
 
 function LineEditor({
