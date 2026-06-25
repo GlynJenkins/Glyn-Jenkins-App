@@ -25,6 +25,15 @@ export default async function AdminPage() {
     .select('id', { count: 'exact', head: true })
     .eq('status', 'pending')
 
+  const { data: pendingVariationRows } = await supabase
+    .from('variation_claims')
+    .select('id, photo_urls')
+    .eq('status', 'pending')
+
+  const pendingVariationCount = new Set(
+    (pendingVariationRows ?? []).map((v) => (v.photo_urls ?? [])[0] ?? v.id)
+  ).size
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -50,10 +59,15 @@ export default async function AdminPage() {
           </Link>
           <Link
             href="/admin/variations"
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
+            className="relative flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
           >
             <FileUp className="w-4 h-4 text-orange-400" />
             Variations
+            {pendingVariationCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {pendingVariationCount}
+              </span>
+            )}
           </Link>
           <Link
             href="/admin/claims"
