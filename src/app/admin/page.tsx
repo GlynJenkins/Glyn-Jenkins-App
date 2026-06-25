@@ -20,6 +20,11 @@ export default async function AdminPage() {
     console.error('[Admin] Failed to fetch workers:', error.message)
   }
 
+  const { count: pendingClaimCount } = await supabase
+    .from('claim_periods')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -52,10 +57,15 @@ export default async function AdminPage() {
           </Link>
           <Link
             href="/admin/claims"
-            className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-xl transition-colors"
+            className="relative flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-xl transition-colors"
           >
             <ClipboardCheck className="w-4 h-4" />
             Claims
+            {(pendingClaimCount ?? 0) > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {pendingClaimCount}
+              </span>
+            )}
           </Link>
           <Link
             href="/admin/settings"

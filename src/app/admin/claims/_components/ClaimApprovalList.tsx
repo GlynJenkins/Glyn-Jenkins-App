@@ -127,13 +127,15 @@ function NotificationStatus({ n }: { n: RejectionNotifications }) {
 // ── Claim card ────────────────────────────────────────────────────────────────
 
 function ClaimCard({
-  claim, adminFee, insuranceFee, onAction,
+  claim, adminFee, insuranceFee, onAction, defaultExpanded = false,
 }: {
-  claim:        Claim
-  adminFee:     number
-  insuranceFee: number
-  onAction?:    (claimId: string, action: 'approve' | 'reject', extra?: object) => void
+  claim:           Claim
+  adminFee:        number
+  insuranceFee:    number
+  onAction?:       (claimId: string, action: 'approve' | 'reject', extra?: object) => void
+  defaultExpanded?: boolean
 }) {
+  const [expanded,      setExpanded]      = useState(defaultExpanded)
   const [poolOpen,      setPoolOpen]      = useState(false)
   const [rejectMode,    setRejectMode]    = useState(false)
   const [reason,        setReason]        = useState('')
@@ -154,6 +156,20 @@ function ClaimCard({
   const period   = `${new Date(claim.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${new Date(claim.period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
   const foreman  = claim.workers
   const allocations = claim.claim_allocations ?? []
+  const foremanName = foreman
+    ? `${foreman.first_name} ${foreman.surname}`
+    : 'Unknown foreman'
+  const siteLabel = claim.sites?.name
+    ?? (() => {
+      const sites = [...new Set(
+        (claim.pool_items ?? [])
+          .map((p) => p.siteName)
+          .filter(Boolean)
+      )]
+      if (sites.length === 0) return 'Multi-site claim'
+      if (sites.length === 1) return sites[0]!
+      return `${sites.length} sites`
+    })()
 
   const grandNet = allocations.reduce((sum, a) => {
     const ded = parseFloat(deductions[a.worker_id]?.amount ?? '0') || 0
@@ -182,25 +198,38 @@ function ClaimCard({
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
-      {/* Header */}
-      <div className="p-5 space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="font-semibold text-slate-900">{claim.sites?.name}</p>
-            <p className="text-xs text-slate-500">
-              {foreman?.first_name} {foreman?.surname} · {period}
-            </p>
+      {/* Compact summary — always visible */}
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-slate-900 truncate">{foremanName}</p>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 capitalize ${statusBadge[claim.status] ?? ''}`}>
+              {claim.status}
+            </span>
           </div>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 capitalize ${statusBadge[claim.status] ?? ''}`}>
-            {claim.status}
-          </span>
+          <p className="text-xs text-slate-500 mt-0.5 truncate">
+            {siteLabel} · {period}
+            {allocations.length > 0 && ` · ${allocations.length} worker${allocations.length === 1 ? '' : 's'}`}
+          </p>
         </div>
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-xs text-slate-500">Claim pool</span>
-          <span className="font-bold text-orange-600 text-lg">{fmt(claim.pool_total ?? 0)}</span>
+        <div className="text-right shrink-0">
+          <p className="text-xs text-slate-500">Pool total</p>
+          <p className="font-bold text-orange-600 text-lg leading-tight">{fmt(claim.pool_total ?? 0)}</p>
+          {expanded && (
+            <p className="text-xs text-slate-400 mt-0.5">Net {fmt(grandNet)}</p>
+          )}
         </div>
-      </div>
+        {expanded
+          ? <ChevronUp className="w-5 h-5 text-slate-400 shrink-0" />
+          : <ChevronDown className="w-5 h-5 text-slate-400 shrink-0" />}
+      </button>
 
+      {expanded && (
+        <>
       {/* Pool breakdown toggle */}
       {(claim.pool_items ?? []).length > 0 && (
         <div className="border-t border-gray-100">
@@ -477,6 +506,8 @@ function ClaimCard({
           )}
         </div>
       )}
+        </>
+      )}
     </div>
   )
 }
@@ -599,14 +630,15 @@ export default function ClaimApprovalList({
           <p className="text-sm">No {tab} claims</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {lists[tab].map((claim) => (
+        <div className="space-y-2">
+          {lists[tab].map((claim, index) => (
             <ClaimCard
               key={claim.id}
               claim={claim}
               adminFee={adminFee}
               insuranceFee={insuranceFee}
               onAction={tab === 'pending' ? handleAction : undefined}
+              defaultExpanded={tab === 'pending' && lists[tab].length === 1 && index === 0}
             />
           ))}
         </div>
