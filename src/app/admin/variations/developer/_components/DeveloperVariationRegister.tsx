@@ -43,13 +43,14 @@ export default function DeveloperVariationRegister({ rows }: { rows: DeveloperRe
           </p>
         </div>
         {rows.length > 0 && (
-          <a
-            href="/api/admin/variations/developer/export"
+          <button
+            type="button"
+            onClick={() => { window.location.href = '/api/admin/variations/developer/export' }}
             className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl"
           >
             <Download className="w-3.5 h-3.5" />
             Excel
-          </a>
+          </button>
         )}
       </div>
 
