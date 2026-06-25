@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, Send } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, Send, ChevronDown, ChevronUp } from 'lucide-react'
 
 type Claim = {
   id:                     string
@@ -34,6 +34,7 @@ type Group = {
   status:      string
   photoUrls:   string[]
   date:        string
+  rejectionReason: string | null
   developerSubmissionId: string | null
   developerSubmissionStatus: string | null
 }
@@ -63,6 +64,7 @@ function buildGroups(claims: Claim[]): Group[] {
         status:      c.status,
         photoUrls:   c.signedPhotoUrls ?? [],
         date:        c.created_at,
+        rejectionReason: c.admin_rejection_reason ?? null,
         developerSubmissionId: c.developer_submission_id ?? null,
         developerSubmissionStatus: c.developer_submission_status ?? null,
       })
@@ -81,20 +83,24 @@ function GroupCard({
   group,
   onAction,
   onCreateDeveloper,
+  defaultExpanded = false,
 }: {
   group:     Group
   onAction?: (ids: string[], status: string, reason?: string) => void
   onCreateDeveloper?: (ids: string[]) => void
+  defaultExpanded?: boolean
 }) {
+  const [expanded, setExpanded]       = useState(defaultExpanded)
   const [rejectMode, setRejectMode]   = useState(false)
   const [reason,     setReason]       = useState('')
   const [busy,       startTransition] = useTransition()
 
   const submitted = new Date(group.date).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
 
   const ids = group.claims.map((c) => c.id)
+  const workerCount = group.claims.length
 
   const hasDeveloperDraft = !!group.developerSubmissionId
   const developerAgreed = group.developerSubmissionStatus === 'agreed' || group.developerSubmissionStatus === 'paid'
@@ -107,159 +113,182 @@ function GroupCard({
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      {/* Header */}
-      <div className="p-5 space-y-1 border-b border-gray-100">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="font-semibold text-slate-900">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className="w-full flex items-center gap-3 p-3.5 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-slate-900 truncate text-sm">
               {group.foreman?.first_name} {group.foreman?.surname}
             </p>
-            <p className="text-xs text-slate-500">{group.site?.name} • {submitted}</p>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 capitalize ${statusBadge[group.status] ?? ''}`}>
+              {group.status}
+            </span>
+            {group.status === 'pending' && hasDeveloperDraft && !developerAgreed && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 shrink-0">
+                Dev draft
+              </span>
+            )}
           </div>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusBadge[group.status] ?? ''}`}>
-            {group.status.charAt(0).toUpperCase() + group.status.slice(1)}
-          </span>
+          <p className="text-xs text-slate-500 mt-0.5 truncate">
+            {group.site?.name} · {submitted} · {workerCount} worker{workerCount === 1 ? '' : 's'}
+          </p>
+          {!expanded && (
+            <p className="text-xs text-slate-400 mt-0.5 truncate">{group.description}</p>
+          )}
         </div>
-        <p className="text-sm text-slate-700 bg-gray-50 rounded-xl p-3 mt-2">
-          {group.description}
-        </p>
-      </div>
+        <div className="text-right shrink-0">
+          <p className="text-[10px] text-slate-400">Total</p>
+          <p className="font-bold text-orange-600 leading-tight">{fmt(group.total)}</p>
+        </div>
+        {expanded
+          ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+          : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+      </button>
 
-      {/* Worker lines table */}
-      <div className="divide-y divide-gray-50">
-        {group.claims.map((c) => (
-          <div key={c.id} className="flex items-center justify-between px-5 py-3">
-            <div>
-              <p className="text-sm font-medium text-slate-800">
-                {c.workers?.first_name} {c.workers?.surname}
-              </p>
-              <p className="text-xs text-slate-500">
-                {ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} • {c.hours}hrs @ £{c.rate_per_hour}/hr
-              </p>
+      {expanded && (
+        <>
+          <div className="px-4 pb-3 border-t border-gray-50 space-y-3">
+            <p className="text-sm text-slate-700 bg-gray-50 rounded-xl p-3 mt-3">
+              {group.description}
+            </p>
+
+            <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
+              {group.claims.map((c) => (
+                <div key={c.id} className="flex items-center justify-between px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {c.workers?.first_name} {c.workers?.surname}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} · {c.hours}hrs @ £{c.rate_per_hour}/hr
+                    </p>
+                  </div>
+                  <p className="font-semibold text-slate-800 text-sm shrink-0 ml-2">{fmt(c.total_amount)}</p>
+                </div>
+              ))}
             </div>
-            <p className="font-semibold text-slate-800 text-sm">{fmt(c.total_amount)}</p>
+
+            {group.photoUrls.length > 0 && (
+              <a
+                href={group.photoUrls[0]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-blue-600 underline"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> View photo
+              </a>
+            )}
+
+            {group.status === 'rejected' && group.rejectionReason && (
+              <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                Rejection reason: {group.rejectionReason}
+              </p>
+            )}
           </div>
-        ))}
-      </div>
 
-      {/* Grand total + photo */}
-      <div className="px-5 py-4 bg-slate-900 flex items-center justify-between">
-        <div>
-          <p className="text-slate-400 text-xs">Submission Total</p>
-          <p className="text-2xl font-bold text-orange-400">{fmt(group.total)}</p>
-        </div>
-        {group.photoUrls.length > 0 && (
-          <a
-            href={group.photoUrls[0]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs text-blue-300 underline"
-          >
-            <ExternalLink className="w-3.5 h-3.5" /> View Photo
-          </a>
-        )}
-      </div>
-
-      {group.status === 'approved' && group.developerSubmissionId && (
-        <div className="p-4 border-t border-gray-100">
-          <Link
-            href={`/admin/variations/developer/${group.developerSubmissionId}`}
-            className="flex items-center justify-center gap-2 w-full py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
-          >
-            <Send className="w-4 h-4" />
-            View developer variation
-          </Link>
-        </div>
-      )}
-
-      {/* Developer draft — while foreman still pending */}
-      {group.status === 'pending' && (
-        <div className="p-4 border-t border-gray-100 space-y-2">
-          {hasDeveloperDraft ? (
-            <>
+          {group.status === 'approved' && group.developerSubmissionId && (
+            <div className="px-4 pb-3 border-t border-gray-50">
               <Link
                 href={`/admin/variations/developer/${group.developerSubmissionId}`}
-                className="flex items-center justify-center gap-2 w-full py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
               >
                 <Send className="w-4 h-4" />
-                {developerAgreed ? 'Developer agreed — view record' : 'View / edit developer draft'}
+                View developer variation
               </Link>
-              {!developerAgreed && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-center">
-                  Foreman approval blocked until developer agrees (or delete the developer draft if not charging them).
+            </div>
+          )}
+
+          {group.status === 'pending' && (
+            <div className="px-4 pb-3 border-t border-gray-50 space-y-2">
+              {hasDeveloperDraft ? (
+                <>
+                  <Link
+                    href={`/admin/variations/developer/${group.developerSubmissionId}`}
+                    className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                    {developerAgreed ? 'Developer agreed — view record' : 'View / edit developer draft'}
+                  </Link>
+                  {!developerAgreed && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-center">
+                      Foreman approval blocked until developer agrees (or delete the developer draft if not charging them).
+                    </p>
+                  )}
+                </>
+              ) : onCreateDeveloper ? (
+                <button
+                  disabled={busy}
+                  onClick={() => startTransition(() => onCreateDeveloper(ids))}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50"
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Prepare developer variation
+                </button>
+              ) : null}
+              {!hasDeveloperDraft && (
+                <p className="text-xs text-slate-500 text-center">
+                  Not charging the developer? Approve the foreman directly below.
                 </p>
               )}
-            </>
-          ) : onCreateDeveloper ? (
-            <button
-              disabled={busy}
-              onClick={() => startTransition(() => onCreateDeveloper(ids))}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Prepare developer variation
-            </button>
-          ) : null}
-          {!hasDeveloperDraft && (
-            <p className="text-xs text-slate-500 text-center">
-              Not charging the developer? Approve the foreman directly below.
-            </p>
+            </div>
           )}
-        </div>
-      )}
 
-      {/* Admin actions — pending only */}
-      {group.status === 'pending' && onAction && (
-        <div className="p-4 space-y-2">
-          {!rejectMode ? (
-            <div className="flex gap-2">
-              <button
-                disabled={busy || !canApproveForeman}
-                onClick={() => startTransition(() => onAction(ids, 'approved'))}
-                className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-green-600 hover:bg-green-700
-                           text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
-              >
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Approve Foreman
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => setRejectMode(true)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-red-50 hover:bg-red-100
-                           text-red-600 text-sm font-semibold rounded-xl border border-red-200 transition-colors disabled:opacity-50"
-              >
-                <XCircle className="w-4 h-4" /> Reject All
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Reason for rejection (sent to foreman)..."
-                rows={2}
-                className="w-full px-3 py-2 border border-red-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-400"
-              />
-              <div className="flex gap-2">
-                <button
-                  disabled={busy || !reason.trim()}
-                  onClick={() => startTransition(() => onAction(ids, 'rejected', reason))}
-                  className="flex-1 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300
-                             text-white text-sm font-semibold rounded-xl transition-colors"
-                >
-                  Confirm Reject
-                </button>
-                <button
-                  onClick={() => { setRejectMode(false); setReason('') }}
-                  className="px-4 py-2 bg-gray-100 text-slate-700 text-sm font-medium rounded-xl"
-                >
-                  Cancel
-                </button>
-              </div>
+          {group.status === 'pending' && onAction && (
+            <div className="px-4 pb-4 space-y-2 border-t border-gray-50 pt-3">
+              {!rejectMode ? (
+                <div className="flex gap-2">
+                  <button
+                    disabled={busy || !canApproveForeman}
+                    onClick={() => startTransition(() => onAction(ids, 'approved'))}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 hover:bg-green-700
+                               text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                    Approve
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => setRejectMode(true)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-50 hover:bg-red-100
+                               text-red-600 text-sm font-semibold rounded-xl border border-red-200 transition-colors disabled:opacity-50"
+                  >
+                    <XCircle className="w-4 h-4" /> Reject
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Reason for rejection (sent to foreman)..."
+                    rows={2}
+                    className="w-full px-3 py-2 border border-red-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-400"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      disabled={busy || !reason.trim()}
+                      onClick={() => startTransition(() => onAction(ids, 'rejected', reason))}
+                      className="flex-1 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300
+                                 text-white text-sm font-semibold rounded-xl transition-colors"
+                    >
+                      Confirm reject
+                    </button>
+                    <button
+                      onClick={() => { setRejectMode(false); setReason('') }}
+                      className="px-4 py-2 bg-gray-100 text-slate-700 text-sm font-medium rounded-xl"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   )
@@ -355,7 +384,7 @@ export default function VariationList({
           <p className="text-sm">No {tab} variations</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {groups.map((g) => (
             <GroupCard
               key={g.key}
