@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const auth = await verifyAdminApiAccess()
+  if (!auth.ok) return auth.response
+
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('admin_settings')
     .select('id, global_admin_fee, insurance_fee, holiday_day_rate, college_day_rate, pay_cycle_period_start, pay_cycle_pay_day, updated_at')
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
@@ -71,6 +76,7 @@ export async function PATCH(request: NextRequest) {
     const { data: existing } = await supabase
       .from('admin_settings')
       .select('id')
+      .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 

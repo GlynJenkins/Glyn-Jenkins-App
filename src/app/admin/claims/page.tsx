@@ -3,6 +3,7 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import ClaimApprovalList from './_components/ClaimApprovalList'
 import { dedupeClaimsByForemanPeriod } from '@/lib/claims/dedupe-period-claims'
+import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,14 +55,7 @@ export default async function AdminClaimsPage() {
     return { ...claim, workers: foreman, claim_allocations: enrichedAllocations }
   }))
 
-  const { data: settings } = await supabase
-    .from('admin_settings')
-    .select('global_admin_fee, insurance_fee')
-    .limit(1)
-    .maybeSingle()
-
-  const adminFee     = settings?.global_admin_fee ?? 6
-  const insuranceFee = settings?.insurance_fee    ?? 3
+  const { adminFee, insuranceFee } = await fetchPayFeeSettings()
 
   const deduped = dedupeClaimsByForemanPeriod(claims ?? [])
 

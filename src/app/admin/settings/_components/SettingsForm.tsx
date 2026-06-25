@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { CheckCircle, AlertCircle, Loader2, PoundSterling, Shield, GraduationCap, Sun, Calendar } from 'lucide-react'
 import { computeFortnight } from '@/lib/fortnight'
 
@@ -17,6 +18,7 @@ export default function SettingsForm({
   initialAdminFee, initialInsuranceFee, initialHolidayRate, initialCollegeRate,
   initialPeriodStart, initialPayDay,
 }: Props) {
+  const router = useRouter()
   const [adminFee,     setAdminFee]     = useState(initialAdminFee.toString())
   const [insuranceFee, setInsuranceFee] = useState(initialInsuranceFee.toString())
   const [holidayRate,  setHolidayRate]  = useState(initialHolidayRate.toString())
@@ -65,7 +67,10 @@ export default function SettingsForm({
       })
       const json = await res.json()
       if (!res.ok) setError(json.error ?? 'Failed to save.')
-      else setSuccess(true)
+      else {
+        setSuccess(true)
+        router.refresh()
+      }
     })
   }
 
@@ -267,8 +272,8 @@ export default function SettingsForm({
 
       {/* Info box */}
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-700 space-y-1">
-        <p className="font-semibold">These fees apply to all future claim approvals.</p>
-        <p>Already approved claims are unaffected — changes only apply from the next approval onwards.</p>
+        <p className="font-semibold">These fees apply to pending claim previews immediately.</p>
+        <p>Already approved claims keep the fees that were saved when they were approved.</p>
       </div>
 
       {/* Feedback */}

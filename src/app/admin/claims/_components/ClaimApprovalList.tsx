@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown, ChevronUp, CheckCircle, XCircle,
@@ -523,17 +523,43 @@ function ClaimCard({
 type Tab = 'pending' | 'approved' | 'rejected'
 
 export default function ClaimApprovalList({
-  pending, approved, rejected, adminFee, insuranceFee,
+  pending, approved, rejected, adminFee: initialAdminFee, insuranceFee: initialInsuranceFee,
 }: Props) {
   const [tab,  setTab]  = useState<Tab>('pending')
   const [data, setData] = useState({ pending, approved, rejected })
+  const [adminFee, setAdminFee] = useState(initialAdminFee)
+  const [insuranceFee, setInsuranceFee] = useState(initialInsuranceFee)
   const [error, setError] = useState<string | null>(null)
   const [rejectNotice, setRejectNotice] = useState<string | null>(null)
   const router = useRouter()
 
+  const loadFees = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/settings', { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) return
+      if (json.global_admin_fee != null) setAdminFee(Number(json.global_admin_fee))
+      if (json.insurance_fee != null) setInsuranceFee(Number(json.insurance_fee))
+    } catch {
+      // keep existing values
+    }
+  }, [])
+
   useEffect(() => {
     setData({ pending, approved, rejected })
   }, [pending, approved, rejected])
+
+  useEffect(() => {
+    setAdminFee(initialAdminFee)
+    setInsuranceFee(initialInsuranceFee)
+  }, [initialAdminFee, initialInsuranceFee])
+
+  useEffect(() => {
+    loadFees()
+    const onFocus = () => { loadFees() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadFees])
 
   const lists: Record<Tab, Claim[]> = data
 
@@ -636,11 +662,18 @@ export default function ClaimApprovalList({
 
       <button
         type="button"
-        onClick={() => router.refresh()}
+        onClick={() => {
+          loadFees()
+          router.refresh()
+        }}
         className="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-white rounded-xl border border-transparent hover:border-gray-200 transition-colors"
       >
         Refresh list
       </button>
+
+      <p className="text-xs text-slate-500 text-center -mt-2">
+        Fees applied: admin £{adminFee.toFixed(2)} · insurance £{insuranceFee.toFixed(2)} per worker
+      </p>
 
       {lists[tab].length === 0 ? (
         <div className="text-center py-16 text-slate-400">
