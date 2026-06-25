@@ -65,10 +65,34 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (existingClaim) {
-      return NextResponse.json(
-        { error: 'You have already submitted a claim for this fortnight.' },
-        { status: 409 }
-      )
+      if (existingClaim.status === 'pending') {
+        return NextResponse.json(
+          { error: 'You have already submitted a claim for this fortnight. Withdraw it from your dashboard to make changes.' },
+          { status: 409 }
+        )
+      }
+      if (existingClaim.status === 'approved') {
+        return NextResponse.json(
+          { error: 'Your claim for this fortnight has already been approved.' },
+          { status: 409 }
+        )
+      }
+      if (existingClaim.status === 'rejected') {
+        // Rejection already restored grid cells — remove the old claim so foreman can resubmit.
+        const oldId = existingClaim.id
+        await supabase.from('claim_allocations').delete().eq('claim_period_id', oldId)
+        await supabase.from('apprentice_holiday_ledger').delete().eq('claim_period_id', oldId)
+        await supabase
+          .from('variation_claims')
+          .update({ claimed_in_period_id: null })
+          .eq('claimed_in_period_id', oldId)
+        await supabase.from('claim_periods').delete().eq('id', oldId)
+      } else {
+        return NextResponse.json(
+          { error: 'You have already submitted a claim for this fortnight.' },
+          { status: 409 }
+        )
+      }
     }
 
     // ── Create claim period ──────────────────────────────────────────────
