@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown, ChevronUp, CheckCircle, XCircle,
@@ -154,6 +154,11 @@ function ClaimCard({
     }))
 
   const period   = `${new Date(claim.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${new Date(claim.period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  const submittedLabel = claim.submitted_at
+    ? new Date(claim.submitted_at).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      })
+    : null
   const foreman  = claim.workers
   const allocations = claim.claim_allocations ?? []
   const foremanName = foreman
@@ -214,6 +219,7 @@ function ClaimCard({
           <p className="text-xs text-slate-500 mt-0.5 truncate">
             {siteLabel} · {period}
             {allocations.length > 0 && ` · ${allocations.length} worker${allocations.length === 1 ? '' : 's'}`}
+            {submittedLabel && ` · Submitted ${submittedLabel}`}
           </p>
         </div>
         <div className="text-right shrink-0">
@@ -525,6 +531,10 @@ export default function ClaimApprovalList({
   const [rejectNotice, setRejectNotice] = useState<string | null>(null)
   const router = useRouter()
 
+  useEffect(() => {
+    setData({ pending, approved, rejected })
+  }, [pending, approved, rejected])
+
   const lists: Record<Tab, Claim[]> = data
 
   const handleAction = async (
@@ -623,6 +633,14 @@ export default function ClaimApprovalList({
           {error}
         </p>
       )}
+
+      <button
+        type="button"
+        onClick={() => router.refresh()}
+        className="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-white rounded-xl border border-transparent hover:border-gray-200 transition-colors"
+      >
+        Refresh list
+      </button>
 
       {lists[tab].length === 0 ? (
         <div className="text-center py-16 text-slate-400">

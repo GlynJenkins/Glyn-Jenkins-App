@@ -3,6 +3,7 @@ import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { foremanHasClaimSiteAccess } from '@/lib/auth/foreman-sites'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentFortnight, toLocalDateString } from '@/lib/fortnight'
+import { deleteClaimPeriod } from '@/lib/claims/delete-claim-period'
 
 type PoolItem = {
   type:       string
@@ -56,13 +57,16 @@ export async function POST(request: NextRequest) {
     const periodStart = toLocalDateString(period.start)
     const periodEnd   = toLocalDateString(period.end)
 
-    const { data: existingClaim } = await supabase
+    const { data: existingRows } = await supabase
       .from('claim_periods')
       .select('id, status')
       .eq('foreman_id', foremanId)
       .eq('period_start', periodStart)
       .eq('period_end', periodEnd)
-      .maybeSingle()
+      .order('submitted_at', { ascending: false })
+      .limit(1)
+
+    const existingClaim = existingRows?.[0] ?? null
 
     if (existingClaim) {
       if (existingClaim.status === 'pending') {
@@ -78,15 +82,10 @@ export async function POST(request: NextRequest) {
         )
       }
       if (existingClaim.status === 'rejected') {
-        // Rejection already restored grid cells — remove the old claim so foreman can resubmit.
-        const oldId = existingClaim.id
-        await supabase.from('claim_allocations').delete().eq('claim_period_id', oldId)
-        await supabase.from('apprentice_holiday_ledger').delete().eq('claim_period_id', oldId)
-        await supabase
-          .from('variation_claims')
-          .update({ claimed_in_period_id: null })
-          .eq('claimed_in_period_id', oldId)
-        await supabase.from('claim_periods').delete().eq('id', oldId)
+        const removed = await deleteClaimPeriod(existingClaim.id)
+        if (!removed.ok) {
+          return NextResponse.json({ error: removed.error }, { status: 500 })
+        }
       } else {
         return NextResponse.json(
           { error: 'You have already submitted a claim for this fortnight.' },

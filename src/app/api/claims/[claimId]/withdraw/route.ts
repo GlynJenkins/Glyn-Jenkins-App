@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { deleteClaimPeriod } from '@/lib/claims/delete-claim-period'
 
 export async function POST(
   _request: NextRequest,
@@ -13,7 +14,6 @@ export async function POST(
     const { claimId } = await params
     const supabase = createServiceClient()
 
-    // Only allow withdrawing pending claims
     const { data: claim } = await supabase
       .from('claim_periods')
       .select('id, site_id, pool_items, foreman_id, status')
@@ -32,7 +32,6 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
-    // ── Reset price_grid cells back: decrement total_claimed_pct ──────
     const gridItems = ((claim.pool_items ?? []) as {
       type: string; id: string; amount: number; fullValue?: number
     }[]).filter((p) => p.type === 'grid_cell')
@@ -51,39 +50,30 @@ export async function POST(
       const newPct     = Math.max(0, currentPct - addedPct)
       const newColor   = newPct <= 0 ? 'white' : 'orange'
 
-      await supabase
+      const { error: gridErr } = await supabase
         .from('price_grid')
         .update({ total_claimed_pct: newPct, cell_color: newColor })
         .eq('id', item.id)
+      if (gridErr) {
+        return NextResponse.json({ error: gridErr.message }, { status: 500 })
+      }
     }
 
-    // ── Unlink variations ─────────────────────────────────────────────
-    await supabase
-      .from('variation_claims')
-      .update({ claimed_in_period_id: null })
-      .eq('claimed_in_period_id', claimId)
+    const deleted = await deleteClaimPeriod(claimId)
+    if (!deleted.ok) {
+      return NextResponse.json(
+        { error: `Could not withdraw claim: ${deleted.error}` },
+        { status: 500 }
+      )
+    }
 
-    // ── Delete allocations ────────────────────────────────────────────
-    await supabase
-      .from('claim_allocations')
-      .delete()
-      .eq('claim_period_id', claimId)
-
-    // ── Delete the claim period ───────────────────────────────────────
-    await supabase
-      .from('claim_periods')
-      .delete()
-      .eq('id', claimId)
-
-    // ── Build the cells URL param to pre-populate the grid ────────────
-    // encode as cellId:penceAmount so the claim builder restores selections
     const cellsParam = gridItems
       .map((item) => `${item.id}:${Math.round(item.amount * 100)}`)
       .join(',')
 
     return NextResponse.json({
       success:    true,
-      cellsParam, // foreman dashboard uses this to redirect back to /foreman/claim
+      cellsParam,
     })
   } catch (err) {
     return NextResponse.json(

@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import ClaimApprovalList from './_components/ClaimApprovalList'
+import { dedupeClaimsByForemanPeriod } from '@/lib/claims/dedupe-period-claims'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,9 +63,11 @@ export default async function AdminClaimsPage() {
   const adminFee     = settings?.global_admin_fee ?? 6
   const insuranceFee = settings?.insurance_fee    ?? 3
 
-  const pending  = (claims ?? []).filter((c) => c.status === 'pending')
-  const approved = (claims ?? []).filter((c) => c.status === 'approved')
-  const rejected = (claims ?? []).filter((c) => c.status === 'rejected')
+  const deduped = dedupeClaimsByForemanPeriod(claims ?? [])
+
+  const pending  = deduped.filter((c) => c.status === 'pending')
+  const approved = deduped.filter((c) => c.status === 'approved')
+  const rejected = deduped.filter((c) => c.status === 'rejected')
 
   return (
     <div className="min-h-screen bg-gray-50">
