@@ -16,6 +16,7 @@ type Line = {
   hours: number
   rate_per_hour: number
   total_amount: number | null
+  worker_role: string | null
   developer_hours: number | null
   developer_rate_per_hour: number | null
   workers: { first_name: string; surname: string; role: string } | null
@@ -48,6 +49,11 @@ type Submission = {
 
 function fmt(n: number) {
   return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2 })
+}
+
+function lineRoleLabel(line: Line) {
+  const role = line.worker_role ?? line.workers?.role ?? ''
+  return ROLE_LABELS[role] ?? role || 'Worker'
 }
 
 function LineEditor({
@@ -115,7 +121,8 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
   const isAwaitingAgreement = submission.status === 'submitted'
   const isAgreed = submission.status === 'agreed'
   const isPaid = submission.status === 'paid' || submission.payment_status === 'paid'
-  const isLocked = !isDraft
+  const isEditable = isDraft || isAwaitingAgreement
+  const isLocked = !isEditable
 
   const [lines, setLines] = useState(
     submission.lines.map((l) => ({
@@ -307,22 +314,26 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             {isLocked && <Lock className="w-4 h-4 text-slate-400" />}
           </div>
           <p className="text-xs text-slate-500">
-            Trade roles only — no worker names. Add extra lines or a 10% material uplift before sending to the developer.
+            Trade roles only — no worker names. Add extra lines or a 10% material uplift before the developer agrees.
           </p>
+          {isAwaitingAgreement && (
+            <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+              Sent to developer — you can still add workers or toggle material uplift until you mark developer agreed.
+            </p>
+          )}
 
           <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
             {submission.lines.map((line, index) => {
-              const w = line.workers
               const edit = lines[index]
               return (
                 <div key={line.id} className="px-4 py-3 space-y-2">
                   <p className="text-sm font-medium text-slate-800">
-                    {ROLE_LABELS[w?.role ?? ''] ?? w?.role ?? 'Worker'}
+                    {lineRoleLabel(line)}
                   </p>
                   <LineEditor
                     hours={edit.developer_hours}
                     rate={edit.developer_rate_per_hour}
-                    isDraft={isDraft}
+                    isDraft={isEditable}
                     onHours={(val) => setLines((prev) => prev.map((l, i) =>
                       i === index ? { ...l, developer_hours: val } : l))}
                     onRate={(val) => setLines((prev) => prev.map((l, i) =>
@@ -335,7 +346,7 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             {extraLines.map((line, index) => (
               <div key={line.id} className="px-4 py-3 space-y-2 bg-blue-50/40">
                 <div className="flex items-center justify-between gap-2">
-                  {isDraft ? (
+                  {isEditable ? (
                     <select
                       value={line.worker_role}
                       onChange={(e) => {
@@ -367,13 +378,13 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
                 <LineEditor
                   hours={line.developer_hours}
                   rate={line.developer_rate_per_hour}
-                  isDraft={isDraft}
+                  isDraft={isEditable}
                   onHours={(val) => setExtraLines((prev) => prev.map((l, i) =>
                     i === index ? { ...l, developer_hours: val } : l))}
                   onRate={(val) => setExtraLines((prev) => prev.map((l, i) =>
                     i === index ? { ...l, developer_rate_per_hour: val } : l))}
                 />
-                {isDraft && (
+                {isEditable && (
                   <button
                     type="button"
                     onClick={() => removeExtraLine(line.id)}
@@ -386,7 +397,7 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             ))}
           </div>
 
-          {isDraft && (
+          {isEditable && (
             <button
               type="button"
               onClick={addExtraLine}
@@ -398,12 +409,12 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
           )}
 
           <label className={`flex items-start gap-3 p-3 rounded-xl border ${
-            isDraft ? 'cursor-pointer hover:bg-gray-50 border-gray-200' : 'border-gray-100 bg-gray-50'
+            isEditable ? 'cursor-pointer hover:bg-gray-50 border-gray-200' : 'border-gray-100 bg-gray-50'
           }`}>
             <input
               type="checkbox"
               checked={materialUpliftEnabled}
-              disabled={!isDraft}
+              disabled={!isEditable}
               onChange={(e) => setMaterialUpliftEnabled(e.target.checked)}
               className="mt-0.5 rounded border-gray-300"
             />
@@ -501,6 +512,13 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
 
       {isAwaitingAgreement && (
         <div className="space-y-2">
+          <button
+            disabled={busy}
+            onClick={saveDraft}
+            className="w-full py-3 bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm font-semibold rounded-xl disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Save changes'}
+          </button>
           <p className="text-xs text-slate-500 text-center">
             Record when the developer agrees to these figures. Foreman approval is blocked until then.
           </p>

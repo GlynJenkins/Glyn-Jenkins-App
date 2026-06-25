@@ -39,18 +39,23 @@ export default async function DeveloperVariationDetailPage({
   const { data: lines } = await supabase
     .from('variation_claims')
     .select(`
-      id, hours, rate_per_hour, total_amount,
+      id, hours, rate_per_hour, total_amount, worker_role,
       developer_hours, developer_rate_per_hour,
       workers!variation_claims_worker_id_fkey ( first_name, surname, role )
     `)
     .eq('developer_submission_id', submissionId)
     .order('created_at')
 
-  const { data: extraLines } = await supabase
+  let extraLines: { id: string; worker_role: string; developer_hours: number; developer_rate_per_hour: number }[] = []
+  const { data: extraRows, error: extraError } = await supabase
     .from('variation_developer_lines')
     .select('id, worker_role, developer_hours, developer_rate_per_hour')
     .eq('developer_submission_id', submissionId)
     .order('created_at')
+
+  if (!extraError) {
+    extraLines = extraRows ?? []
+  }
 
   const signedPhotoUrls: string[] = []
   for (const path of submission.photo_urls ?? []) {
@@ -69,7 +74,7 @@ export default async function DeveloperVariationDetailPage({
       ...l,
       workers: relationOne(l.workers),
     })),
-    extraLines: extraLines ?? [],
+    extraLines,
   }
 
   return (

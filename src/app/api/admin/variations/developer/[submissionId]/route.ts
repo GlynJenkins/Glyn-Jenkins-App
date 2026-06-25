@@ -176,8 +176,8 @@ export async function PATCH(
     if (!submission) {
       return NextResponse.json({ error: 'Submission not found.' }, { status: 404 })
     }
-    if (submission.status !== 'draft') {
-      return NextResponse.json({ error: 'Only draft submissions can be edited.' }, { status: 400 })
+    if (submission.status !== 'draft' && submission.status !== 'submitted') {
+      return NextResponse.json({ error: 'Only draft or awaiting-agreement submissions can be edited.' }, { status: 400 })
     }
 
     if (body.lines?.length) {
