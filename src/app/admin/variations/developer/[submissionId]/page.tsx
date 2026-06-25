@@ -21,7 +21,7 @@ export default async function DeveloperVariationDetailPage({
     .from('variation_developer_submissions')
     .select(`
       id, description, status, payment_status, foreman_id,
-      foreman_total, developer_total,
+      foreman_total, developer_total, material_uplift_enabled,
       submitted_to_developer_at, paid_at, photo_urls,
       sites ( name )
     `)
@@ -46,6 +46,12 @@ export default async function DeveloperVariationDetailPage({
     .eq('developer_submission_id', submissionId)
     .order('created_at')
 
+  const { data: extraLines } = await supabase
+    .from('variation_developer_lines')
+    .select('id, worker_role, developer_hours, developer_rate_per_hour')
+    .eq('developer_submission_id', submissionId)
+    .order('created_at')
+
   const signedPhotoUrls: string[] = []
   for (const path of submission.photo_urls ?? []) {
     const { data } = await supabase.storage
@@ -63,6 +69,7 @@ export default async function DeveloperVariationDetailPage({
       ...l,
       workers: relationOne(l.workers),
     })),
+    extraLines: extraLines ?? [],
   }
 
   return (

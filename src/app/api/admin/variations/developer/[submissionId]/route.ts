@@ -3,6 +3,87 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { lineTotal } from '@/lib/variations/developer'
 import { refreshDeveloperSubmissionTotal } from '@/lib/variations/create-developer-submission'
+import { DEVELOPER_ROLES } from '@/lib/variations/rates'
+
+type ClaimLineUpdate = {
+  id: string
+  developer_hours: number
+  developer_rate_per_hour: number
+}
+
+type ExtraLineUpdate = {
+  id?: string
+  worker_role: string
+  developer_hours: number
+  developer_rate_per_hour: number
+}
+
+function isTempExtraLineId(id: string | undefined): boolean {
+  return !id || id.startsWith('temp-')
+}
+
+async function syncExtraLines(
+  submissionId: string,
+  extraLines: ExtraLineUpdate[]
+) {
+  const supabase = createServiceClient()
+
+  const { data: existing } = await supabase
+    .from('variation_developer_lines')
+    .select('id')
+    .eq('developer_submission_id', submissionId)
+
+  const keepIds = new Set(
+    extraLines
+      .map((l) => l.id)
+      .filter((id): id is string => !!id && !isTempExtraLineId(id))
+  )
+
+  const toDelete = (existing ?? [])
+    .map((l) => l.id)
+    .filter((id) => !keepIds.has(id))
+
+  if (toDelete.length > 0) {
+    const { error } = await supabase
+      .from('variation_developer_lines')
+      .delete()
+      .in('id', toDelete)
+    if (error) throw new Error(error.message)
+  }
+
+  for (const line of extraLines) {
+    if (!DEVELOPER_ROLES.includes(line.worker_role as typeof DEVELOPER_ROLES[number])) {
+      throw new Error('Invalid worker role.')
+    }
+    if (line.developer_hours < 0 || line.developer_rate_per_hour < 0) {
+      throw new Error('Hours and rates must be zero or greater.')
+    }
+
+    const payload = {
+      worker_role:             line.worker_role,
+      developer_hours:         line.developer_hours,
+      developer_rate_per_hour: line.developer_rate_per_hour,
+      updated_at:              new Date().toISOString(),
+    }
+
+    if (line.id && !isTempExtraLineId(line.id)) {
+      const { error } = await supabase
+        .from('variation_developer_lines')
+        .update(payload)
+        .eq('id', line.id)
+        .eq('developer_submission_id', submissionId)
+      if (error) throw new Error(error.message)
+    } else {
+      const { error } = await supabase
+        .from('variation_developer_lines')
+        .insert({
+          developer_submission_id: submissionId,
+          ...payload,
+        })
+      if (error) throw new Error(error.message)
+    }
+  }
+}
 
 export async function DELETE(
   _request: NextRequest,
@@ -79,11 +160,9 @@ export async function PATCH(
   try {
     const { submissionId } = await params
     const body = await request.json() as {
-      lines: { id: string; developer_hours: number; developer_rate_per_hour: number }[]
-    }
-
-    if (!body.lines?.length) {
-      return NextResponse.json({ error: 'No lines provided.' }, { status: 400 })
+      lines?: ClaimLineUpdate[]
+      extraLines?: ExtraLineUpdate[]
+      material_uplift_enabled?: boolean
     }
 
     const supabase = createServiceClient()
@@ -101,21 +180,38 @@ export async function PATCH(
       return NextResponse.json({ error: 'Only draft submissions can be edited.' }, { status: 400 })
     }
 
-    for (const line of body.lines) {
-      if (line.developer_hours < 0 || line.developer_rate_per_hour < 0) {
-        return NextResponse.json({ error: 'Hours and rates must be zero or greater.' }, { status: 400 })
-      }
+    if (body.lines?.length) {
+      for (const line of body.lines) {
+        if (line.developer_hours < 0 || line.developer_rate_per_hour < 0) {
+          return NextResponse.json({ error: 'Hours and rates must be zero or greater.' }, { status: 400 })
+        }
 
+        const { error } = await supabase
+          .from('variation_claims')
+          .update({
+            developer_hours:         line.developer_hours,
+            developer_rate_per_hour: line.developer_rate_per_hour,
+            updated_at:              new Date().toISOString(),
+          })
+          .eq('id', line.id)
+          .eq('developer_submission_id', submissionId)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    }
+
+    if (body.extraLines !== undefined) {
+      await syncExtraLines(submissionId, body.extraLines)
+    }
+
+    if (body.material_uplift_enabled !== undefined) {
       const { error } = await supabase
-        .from('variation_claims')
+        .from('variation_developer_submissions')
         .update({
-          developer_hours:         line.developer_hours,
-          developer_rate_per_hour: line.developer_rate_per_hour,
+          material_uplift_enabled: body.material_uplift_enabled,
           updated_at:              new Date().toISOString(),
         })
-        .eq('id', line.id)
-        .eq('developer_submission_id', submissionId)
-
+        .eq('id', submissionId)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 

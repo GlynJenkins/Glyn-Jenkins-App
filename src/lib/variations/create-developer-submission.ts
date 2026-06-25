@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import { sumDeveloperTotal } from '@/lib/variations/developer'
+import { computeDeveloperTotals } from '@/lib/variations/developer'
 
 type ClaimRow = {
   id: string
@@ -71,12 +71,27 @@ export async function createDeveloperSubmissionForClaims(ids: string[]): Promise
 export async function refreshDeveloperSubmissionTotal(submissionId: string) {
   const supabase = createServiceClient()
 
-  const { data: lines } = await supabase
+  const { data: submission } = await supabase
+    .from('variation_developer_submissions')
+    .select('material_uplift_enabled')
+    .eq('id', submissionId)
+    .maybeSingle()
+
+  const { data: claimLines } = await supabase
     .from('variation_claims')
     .select('developer_hours, developer_rate_per_hour')
     .eq('developer_submission_id', submissionId)
 
-  const developerTotal = sumDeveloperTotal(lines ?? [])
+  const { data: extraLines } = await supabase
+    .from('variation_developer_lines')
+    .select('developer_hours, developer_rate_per_hour')
+    .eq('developer_submission_id', submissionId)
+
+  const { developerTotal } = computeDeveloperTotals(
+    claimLines ?? [],
+    extraLines ?? [],
+    submission?.material_uplift_enabled ?? false
+  )
 
   await supabase
     .from('variation_developer_submissions')

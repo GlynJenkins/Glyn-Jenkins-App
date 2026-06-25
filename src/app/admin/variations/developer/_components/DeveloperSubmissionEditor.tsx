@@ -4,9 +4,12 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ChevronDown, ChevronUp, Loader2, Send, CheckCircle, XCircle, ExternalLink, Lock, Trash2,
+  ChevronDown, ChevronUp, Loader2, Send, CheckCircle, XCircle, ExternalLink, Lock, Trash2, Plus,
 } from 'lucide-react'
-import { lineTotal } from '@/lib/variations/developer'
+import { computeDeveloperTotals, lineTotal } from '@/lib/variations/developer'
+import {
+  DEVELOPER_ROLES, MATERIAL_UPLIFT_PERCENT, ROLE_LABELS, VARIATION_RATES,
+} from '@/lib/variations/rates'
 
 type Line = {
   id: string
@@ -18,6 +21,13 @@ type Line = {
   workers: { first_name: string; surname: string; role: string } | null
 }
 
+type ExtraLine = {
+  id: string
+  worker_role: string
+  developer_hours: number
+  developer_rate_per_hour: number
+}
+
 type Submission = {
   id: string
   description: string
@@ -25,6 +35,7 @@ type Submission = {
   payment_status: string
   foreman_total: number
   developer_total: number
+  material_uplift_enabled: boolean
   submitted_to_developer_at: string | null
   paid_at: string | null
   photo_urls: string[]
@@ -32,16 +43,65 @@ type Submission = {
   sites: { name: string } | null
   foremen: { first_name: string; surname: string } | null
   lines: Line[]
-}
-
-const ROLE_LABELS: Record<string, string> = {
-  bricklayer: 'Bricklayer',
-  labourer:   'Labourer',
-  apprentice: 'Apprentice',
+  extraLines: ExtraLine[]
 }
 
 function fmt(n: number) {
   return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2 })
+}
+
+function LineEditor({
+  hours,
+  rate,
+  isDraft,
+  onHours,
+  onRate,
+}: {
+  hours: number
+  rate: number
+  isDraft: boolean
+  onHours: (v: number) => void
+  onRate: (v: number) => void
+}) {
+  if (!isDraft) {
+    return (
+      <div className="flex justify-between text-sm">
+        <span className="text-slate-600">{hours}hrs @ {fmt(rate)}/hr</span>
+        <span className="font-semibold">{fmt(lineTotal(hours, rate))}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-2">
+      <label className="flex-1 text-xs">
+        <span className="text-slate-500">Hours</span>
+        <input
+          type="number"
+          min={0}
+          step={0.5}
+          value={hours}
+          onChange={(e) => onHours(parseFloat(e.target.value) || 0)}
+          className="mt-1 w-full px-2 py-2 border border-gray-200 rounded-lg text-sm"
+        />
+      </label>
+      <label className="flex-1 text-xs">
+        <span className="text-slate-500">Rate (£/hr)</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={rate}
+          onChange={(e) => onRate(parseFloat(e.target.value) || 0)}
+          className="mt-1 w-full px-2 py-2 border border-gray-200 rounded-lg text-sm"
+        />
+      </label>
+      <div className="text-right pt-5 shrink-0">
+        <p className="text-xs text-slate-500">Line total</p>
+        <p className="font-semibold text-sm">{fmt(lineTotal(hours, rate))}</p>
+      </div>
+    </div>
+  )
 }
 
 export default function DeveloperSubmissionEditor({ submission }: { submission: Submission }) {
@@ -65,29 +125,59 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
     }))
   )
 
-  const developerTotal = lines.reduce(
-    (sum, l) => sum + lineTotal(l.developer_hours, l.developer_rate_per_hour),
-    0
+  const [extraLines, setExtraLines] = useState(
+    (submission.extraLines ?? []).map((l) => ({
+      id: l.id,
+      worker_role: l.worker_role,
+      developer_hours: l.developer_hours,
+      developer_rate_per_hour: l.developer_rate_per_hour,
+    }))
   )
+
+  const [materialUpliftEnabled, setMaterialUpliftEnabled] = useState(
+    submission.material_uplift_enabled ?? false
+  )
+
+  const totals = computeDeveloperTotals(lines, extraLines, materialUpliftEnabled)
 
   const foremanTotal = submission.lines.reduce(
     (sum, l) => sum + (l.total_amount ?? lineTotal(l.hours, l.rate_per_hour)),
     0
   )
 
+  const buildPayload = () => ({
+    lines,
+    extraLines: extraLines.map(({ id, worker_role, developer_hours, developer_rate_per_hour }) => ({
+      id,
+      worker_role,
+      developer_hours,
+      developer_rate_per_hour,
+    })),
+    material_uplift_enabled: materialUpliftEnabled,
+  })
+
+  const savePayload = async () => {
+    const res = await fetch(`/api/admin/variations/developer/${submission.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(buildPayload()),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error ?? 'Save failed.')
+    return json
+  }
+
   const saveDraft = () => {
     setError(null)
     setMessage(null)
     startTransition(async () => {
-      const res = await fetch(`/api/admin/variations/developer/${submission.id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ lines }),
-      })
-      const json = await res.json()
-      if (!res.ok) { setError(json.error ?? 'Save failed.'); return }
-      setMessage('Developer figures saved.')
-      router.refresh()
+      try {
+        await savePayload()
+        setMessage('Developer figures saved.')
+        router.refresh()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Save failed.')
+      }
     })
   }
 
@@ -95,23 +185,18 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
     setError(null)
     setMessage(null)
     startTransition(async () => {
-      const saveRes = await fetch(`/api/admin/variations/developer/${submission.id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ lines }),
-      })
-      if (!saveRes.ok) {
-        const json = await saveRes.json()
-        setError(json.error ?? 'Save failed.')
-        return
+      try {
+        await savePayload()
+        const res = await fetch(`/api/admin/variations/developer/${submission.id}/submit`, {
+          method: 'POST',
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? 'Submit failed.')
+        setMessage('Submitted to developer record.')
+        router.refresh()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Submit failed.')
       }
-      const res = await fetch(`/api/admin/variations/developer/${submission.id}/submit`, {
-        method: 'POST',
-      })
-      const json = await res.json()
-      if (!res.ok) { setError(json.error ?? 'Submit failed.'); return }
-      setMessage('Submitted to developer record.')
-      router.refresh()
     })
   }
 
@@ -162,6 +247,22 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
     })
   }
 
+  const addExtraLine = () => {
+    setExtraLines((prev) => [
+      ...prev,
+      {
+        id: `temp-${Date.now()}-${prev.length}`,
+        worker_role: 'labourer',
+        developer_hours: 0,
+        developer_rate_per_hour: VARIATION_RATES.labourer,
+      },
+    ])
+  }
+
+  const removeExtraLine = (id: string) => {
+    setExtraLines((prev) => prev.filter((l) => l.id !== id))
+  }
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -200,14 +301,13 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
           )}
         </div>
 
-        {/* Developer submission — no foreman charges */}
         <div className="p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-800">Developer variation</h2>
             {isLocked && <Lock className="w-4 h-4 text-slate-400" />}
           </div>
           <p className="text-xs text-slate-500">
-            Prepare figures for the developer while the foreman variation is still pending. Foreman charges are logged separately and are never shown on this view.
+            Trade roles only — no worker names. Add extra lines or a 10% material uplift before sending to the developer.
           </p>
 
           <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
@@ -219,67 +319,120 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
                   <p className="text-sm font-medium text-slate-800">
                     {ROLE_LABELS[w?.role ?? ''] ?? w?.role ?? 'Worker'}
                   </p>
-                  {isDraft ? (
-                    <div className="flex gap-2">
-                      <label className="flex-1 text-xs">
-                        <span className="text-slate-500">Hours</span>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.5}
-                          value={edit.developer_hours}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0
-                            setLines((prev) => prev.map((l, i) =>
-                              i === index ? { ...l, developer_hours: val } : l))
-                          }}
-                          className="mt-1 w-full px-2 py-2 border border-gray-200 rounded-lg text-sm"
-                        />
-                      </label>
-                      <label className="flex-1 text-xs">
-                        <span className="text-slate-500">Rate (£/hr)</span>
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={edit.developer_rate_per_hour}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0
-                            setLines((prev) => prev.map((l, i) =>
-                              i === index ? { ...l, developer_rate_per_hour: val } : l))
-                          }}
-                          className="mt-1 w-full px-2 py-2 border border-gray-200 rounded-lg text-sm"
-                        />
-                      </label>
-                      <div className="text-right pt-5 shrink-0">
-                        <p className="text-xs text-slate-500">Line total</p>
-                        <p className="font-semibold text-sm">
-                          {fmt(lineTotal(edit.developer_hours, edit.developer_rate_per_hour))}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">
-                        {edit.developer_hours}hrs @ {fmt(edit.developer_rate_per_hour)}/hr
-                      </span>
-                      <span className="font-semibold">
-                        {fmt(lineTotal(edit.developer_hours, edit.developer_rate_per_hour))}
-                      </span>
-                    </div>
-                  )}
+                  <LineEditor
+                    hours={edit.developer_hours}
+                    rate={edit.developer_rate_per_hour}
+                    isDraft={isDraft}
+                    onHours={(val) => setLines((prev) => prev.map((l, i) =>
+                      i === index ? { ...l, developer_hours: val } : l))}
+                    onRate={(val) => setLines((prev) => prev.map((l, i) =>
+                      i === index ? { ...l, developer_rate_per_hour: val } : l))}
+                  />
                 </div>
               )
             })}
+
+            {extraLines.map((line, index) => (
+              <div key={line.id} className="px-4 py-3 space-y-2 bg-blue-50/40">
+                <div className="flex items-center justify-between gap-2">
+                  {isDraft ? (
+                    <select
+                      value={line.worker_role}
+                      onChange={(e) => {
+                        const role = e.target.value
+                        setExtraLines((prev) => prev.map((l, i) =>
+                          i === index
+                            ? {
+                                ...l,
+                                worker_role: role,
+                                developer_rate_per_hour: VARIATION_RATES[role] ?? l.developer_rate_per_hour,
+                              }
+                            : l))
+                      }}
+                      className="text-sm font-medium text-slate-800 bg-white border border-gray-200 rounded-lg px-2 py-1"
+                    >
+                      {DEVELOPER_ROLES.map((role) => (
+                        <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-sm font-medium text-slate-800">
+                      {ROLE_LABELS[line.worker_role] ?? line.worker_role}
+                    </p>
+                  )}
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">
+                    Added for developer
+                  </span>
+                </div>
+                <LineEditor
+                  hours={line.developer_hours}
+                  rate={line.developer_rate_per_hour}
+                  isDraft={isDraft}
+                  onHours={(val) => setExtraLines((prev) => prev.map((l, i) =>
+                    i === index ? { ...l, developer_hours: val } : l))}
+                  onRate={(val) => setExtraLines((prev) => prev.map((l, i) =>
+                    i === index ? { ...l, developer_rate_per_hour: val } : l))}
+                />
+                {isDraft && (
+                  <button
+                    type="button"
+                    onClick={() => removeExtraLine(line.id)}
+                    className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" /> Remove line
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
-          <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-            <span className="text-sm font-semibold text-slate-700">Developer total</span>
-            <span className="text-xl font-bold text-orange-600">{fmt(developerTotal)}</span>
+          {isDraft && (
+            <button
+              type="button"
+              onClick={addExtraLine}
+              className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-blue-300 text-blue-700 text-sm font-medium rounded-xl hover:bg-blue-50"
+            >
+              <Plus className="w-4 h-4" />
+              Add worker to developer variation
+            </button>
+          )}
+
+          <label className={`flex items-start gap-3 p-3 rounded-xl border ${
+            isDraft ? 'cursor-pointer hover:bg-gray-50 border-gray-200' : 'border-gray-100 bg-gray-50'
+          }`}>
+            <input
+              type="checkbox"
+              checked={materialUpliftEnabled}
+              disabled={!isDraft}
+              onChange={(e) => setMaterialUpliftEnabled(e.target.checked)}
+              className="mt-0.5 rounded border-gray-300"
+            />
+            <span className="text-sm text-slate-700">
+              <span className="font-medium">Include {MATERIAL_UPLIFT_PERCENT}% material uplift</span>
+              <span className="block text-xs text-slate-500 mt-0.5">
+                Adds {MATERIAL_UPLIFT_PERCENT}% of the labour subtotal for materials.
+              </span>
+            </span>
+          </label>
+
+          <div className="space-y-1.5 pt-2 border-t border-gray-100 text-sm">
+            <div className="flex justify-between text-slate-600">
+              <span>Labour subtotal</span>
+              <span>{fmt(totals.workersSubtotal)}</span>
+            </div>
+            {materialUpliftEnabled && (
+              <div className="flex justify-between text-slate-600">
+                <span>Material uplift ({MATERIAL_UPLIFT_PERCENT}%)</span>
+                <span>{fmt(totals.materialUpliftAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center pt-1">
+              <span className="font-semibold text-slate-700">Developer total</span>
+              <span className="text-xl font-bold text-orange-600">{fmt(totals.developerTotal)}</span>
+            </div>
           </div>
         </div>
 
-        {/* Internal foreman charge log */}
         <div className="border-t border-gray-100">
           <button
             type="button"
