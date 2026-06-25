@@ -3,6 +3,7 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import VariationList from './_components/VariationList'
 import { relationOne } from '@/lib/supabase/normalize-relations'
+import { buildPendingForemanGroups } from '@/lib/variations/pending-foreman-groups'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +30,7 @@ export default async function AdminVariationsPage() {
     .select(`
       id, hours, rate_per_hour, total_amount, description,
       photo_urls, status, admin_rejection_reason, created_at,
+      developer_submission_id,
       sites   ( id, name ),
       workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
       foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )
@@ -50,9 +52,49 @@ export default async function AdminVariationsPage() {
     })
   )
 
-  const pending  = variationsWithUrls.filter((v) => v.status === 'pending').map(normalizeVariation)
-  const approved = variationsWithUrls.filter((v) => v.status === 'approved').map(normalizeVariation)
-  const rejected = variationsWithUrls.filter((v) => v.status === 'rejected').map(normalizeVariation)
+  const submissionIds = [
+    ...new Set(
+      variationsWithUrls
+        .map((v) => v.developer_submission_id)
+        .filter(Boolean)
+    ),
+  ] as string[]
+
+  const statusBySubmission = new Map<string, string>()
+  if (submissionIds.length > 0) {
+    const { data: subs } = await supabase
+      .from('variation_developer_submissions')
+      .select('id, status')
+      .in('id', submissionIds)
+    for (const s of subs ?? []) {
+      statusBySubmission.set(s.id, s.status)
+    }
+  }
+
+  const enrich = (v: typeof variationsWithUrls[number]) => ({
+    ...normalizeVariation(v),
+    developer_submission_status: v.developer_submission_id
+      ? statusBySubmission.get(v.developer_submission_id) ?? null
+      : null,
+  })
+
+  const pending  = variationsWithUrls.filter((v) => v.status === 'pending').map(enrich)
+  const approved = variationsWithUrls.filter((v) => v.status === 'approved').map(enrich)
+  const rejected = variationsWithUrls.filter((v) => v.status === 'rejected').map(enrich)
+
+  const pendingForemanGroups = buildPendingForemanGroups(
+    pending.map((v) => ({
+      id:                      v.id,
+      status:                  v.status,
+      description:             v.description,
+      total_amount:            v.total_amount,
+      photo_urls:              v.photo_urls,
+      created_at:              v.created_at,
+      developer_submission_id: v.developer_submission_id,
+      sites:                   v.sites,
+      foremen:                 v.foremen,
+    }))
+  )
 
   // Running spend per site (approved only)
   const siteSpend = new Map<string, { name: string; total: number }>()
@@ -84,6 +126,26 @@ export default async function AdminVariationsPage() {
 
       <div className="px-4 pt-5 pb-16 max-w-lg mx-auto space-y-5">
 
+        {pendingForemanGroups.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-2">
+            <p className="text-sm font-semibold text-blue-900">
+              {pendingForemanGroups.length} foreman variation{pendingForemanGroups.length === 1 ? '' : 's'} waiting
+            </p>
+            <ol className="text-xs text-blue-800 space-y-1 list-decimal list-inside leading-relaxed">
+              <li>Open the <strong>Pending</strong> tab below</li>
+              <li>Tap <strong>Prepare developer variation</strong> on Daniel&apos;s submission</li>
+              <li>Adjust hours/rates → <strong>Send to developer</strong> → <strong>Mark developer agreed</strong></li>
+              <li>Then tap <strong>Approve Foreman</strong></li>
+            </ol>
+            <Link
+              href="/admin/variations/developer"
+              className="block text-center text-xs font-semibold text-blue-700 underline pt-1"
+            >
+              Or open Developer variations queue →
+            </Link>
+          </div>
+        )}
+
         {/* Running site spend */}
         {siteSpend.size > 0 && (
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
@@ -100,6 +162,18 @@ export default async function AdminVariationsPage() {
             ))}
           </div>
         )}
+
+        <Link
+          href="/admin/variations/developer"
+          className="block bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold text-center py-3 rounded-xl transition-colors"
+        >
+          Developer variations queue
+          {pendingForemanGroups.length > 0 && (
+            <span className="ml-1.5 inline-flex min-w-[1.25rem] h-5 px-1.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold align-middle">
+              {pendingForemanGroups.length}
+            </span>
+          )}
+        </Link>
 
         <VariationList
           pending={pending}

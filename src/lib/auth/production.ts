@@ -9,5 +9,6 @@ export function isProduction(): boolean {
  */
 export function allowLegacyAdmin(): boolean {
   if (!isProduction()) return true
-  return process.env.ALLOW_LEGACY_ADMIN === 'true'
+  const flag = process.env.ALLOW_LEGACY_ADMIN?.trim().toLowerCase()
+  return flag === 'true' || flag === '1' || flag === 'yes'
 }

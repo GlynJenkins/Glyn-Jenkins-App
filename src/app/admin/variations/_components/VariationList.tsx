@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle, XCircle, Clock, Loader2, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
+import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, Send } from 'lucide-react'
 
 type Claim = {
   id:                     string
@@ -14,6 +15,8 @@ type Claim = {
   signedPhotoUrls:        string[]
   status:                 string
   admin_rejection_reason: string | null
+  developer_submission_id: string | null
+  developer_submission_status: string | null
   created_at:             string
   sites:   { id: string; name: string } | null
   workers: { id: string; first_name: string; surname: string; role: string } | null
@@ -31,6 +34,8 @@ type Group = {
   status:      string
   photoUrls:   string[]
   date:        string
+  developerSubmissionId: string | null
+  developerSubmissionStatus: string | null
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -58,6 +63,8 @@ function buildGroups(claims: Claim[]): Group[] {
         status:      c.status,
         photoUrls:   c.signedPhotoUrls ?? [],
         date:        c.created_at,
+        developerSubmissionId: c.developer_submission_id ?? null,
+        developerSubmissionStatus: c.developer_submission_status ?? null,
       })
     }
     const g = map.get(key)!
@@ -73,9 +80,11 @@ function buildGroups(claims: Claim[]): Group[] {
 function GroupCard({
   group,
   onAction,
+  onCreateDeveloper,
 }: {
   group:     Group
   onAction?: (ids: string[], status: string, reason?: string) => void
+  onCreateDeveloper?: (ids: string[]) => void
 }) {
   const [rejectMode, setRejectMode]   = useState(false)
   const [reason,     setReason]       = useState('')
@@ -86,6 +95,10 @@ function GroupCard({
   })
 
   const ids = group.claims.map((c) => c.id)
+
+  const hasDeveloperDraft = !!group.developerSubmissionId
+  const developerAgreed = group.developerSubmissionStatus === 'agreed' || group.developerSubmissionStatus === 'paid'
+  const canApproveForeman = !hasDeveloperDraft || developerAgreed
 
   const statusBadge: Record<string, string> = {
     pending:  'bg-amber-100 text-amber-700',
@@ -148,19 +161,67 @@ function GroupCard({
         )}
       </div>
 
+      {group.status === 'approved' && group.developerSubmissionId && (
+        <div className="p-4 border-t border-gray-100">
+          <Link
+            href={`/admin/variations/developer/${group.developerSubmissionId}`}
+            className="flex items-center justify-center gap-2 w-full py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
+          >
+            <Send className="w-4 h-4" />
+            View developer variation
+          </Link>
+        </div>
+      )}
+
+      {/* Developer draft — while foreman still pending */}
+      {group.status === 'pending' && (
+        <div className="p-4 border-t border-gray-100 space-y-2">
+          {hasDeveloperDraft ? (
+            <>
+              <Link
+                href={`/admin/variations/developer/${group.developerSubmissionId}`}
+                className="flex items-center justify-center gap-2 w-full py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
+              >
+                <Send className="w-4 h-4" />
+                {developerAgreed ? 'Developer agreed — view record' : 'View / edit developer draft'}
+              </Link>
+              {!developerAgreed && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-center">
+                  Foreman approval blocked until developer agrees (or delete the developer draft if not charging them).
+                </p>
+              )}
+            </>
+          ) : onCreateDeveloper ? (
+            <button
+              disabled={busy}
+              onClick={() => startTransition(() => onCreateDeveloper(ids))}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Prepare developer variation
+            </button>
+          ) : null}
+          {!hasDeveloperDraft && (
+            <p className="text-xs text-slate-500 text-center">
+              Not charging the developer? Approve the foreman directly below.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Admin actions — pending only */}
       {group.status === 'pending' && onAction && (
         <div className="p-4 space-y-2">
           {!rejectMode ? (
             <div className="flex gap-2">
               <button
-                disabled={busy}
+                disabled={busy || !canApproveForeman}
                 onClick={() => startTransition(() => onAction(ids, 'approved'))}
                 className="flex-1 flex items-center justify-center gap-1.5 py-3 bg-green-600 hover:bg-green-700
                            text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
               >
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                Approve All
+                Approve Foreman
               </button>
               <button
                 disabled={busy}
@@ -228,7 +289,8 @@ export default function VariationList({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ ids, status, admin_rejection_reason: reason }),
       })
-      if (!res.ok) throw new Error('Action failed')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Action failed')
 
       setAll((prev) => {
         const moved = prev.pending.filter((c) => ids.includes(c.id))
@@ -242,8 +304,24 @@ export default function VariationList({
         }
       })
       router.refresh()
-    } catch {
-      setError('Could not process action. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not process action. Please try again.')
+    }
+  }
+
+  const handleCreateDeveloper = async (ids: string[]) => {
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/variations/developer/create', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ids }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not create developer draft.')
+      router.push(`/admin/variations/developer/${json.developerSubmissionId}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create developer draft.')
     }
   }
 
@@ -283,6 +361,7 @@ export default function VariationList({
               key={g.key}
               group={g}
               onAction={tab === 'pending' ? handleAction : undefined}
+              onCreateDeveloper={tab === 'pending' ? handleCreateDeveloper : undefined}
             />
           ))}
         </div>
