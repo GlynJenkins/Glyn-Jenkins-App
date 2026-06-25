@@ -217,10 +217,7 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
               return (
                 <div key={line.id} className="px-4 py-3 space-y-2">
                   <p className="text-sm font-medium text-slate-800">
-                    {w?.first_name} {w?.surname}
-                    <span className="text-xs text-slate-400 font-normal ml-1">
-                      ({ROLE_LABELS[w?.role ?? ''] ?? w?.role})
-                    </span>
+                    {ROLE_LABELS[w?.role ?? ''] ?? w?.role ?? 'Worker'}
                   </p>
                   {isDraft ? (
                     <div className="flex gap-2">
