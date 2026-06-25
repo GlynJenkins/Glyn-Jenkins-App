@@ -4,16 +4,9 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { Send, Loader2, ChevronRight } from 'lucide-react'
+import type { PendingForemanGroup } from '@/lib/variations/pending-foreman-groups'
 
-export type PendingForemanGroup = {
-  key: string
-  claimIds: string[]
-  foremanName: string
-  siteName: string
-  description: string
-  total: number
-  submittedAt: string
-}
+export type { PendingForemanGroup }
 
 function fmt(n: number) {
   return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2 })

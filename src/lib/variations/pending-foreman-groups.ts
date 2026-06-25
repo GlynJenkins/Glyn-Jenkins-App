@@ -1,4 +1,12 @@
-import type { PendingForemanGroup } from '../developer/_components/PendingForemanQueue'
+export type PendingForemanGroup = {
+  key: string
+  claimIds: string[]
+  foremanName: string
+  siteName: string
+  description: string
+  total: number
+  submittedAt: string
+}
 
 type VariationRow = {
   id: string
