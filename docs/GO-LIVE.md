@@ -28,6 +28,8 @@ Copy `.env.example` as a template.
 
 **Common Vercel build error:** `Invalid supabaseUrl: Must be a valid HTTP or HTTPS URL` on `/login` — the Supabase URL variable is missing, empty, or malformed. In Vercel → **Settings → Environment Variables**, set `NEXT_PUBLIC_SUPABASE_URL` to your full project URL (e.g. `https://abcdefgh.supabase.co`), with no quotes or trailing spaces. Enable it for **Production** and **Preview**, then redeploy.
 
+**Common runtime error:** `500 MIDDLEWARE_INVOCATION_FAILED` on login — usually missing Supabase env vars on Vercel, or an older middleware build using the service-role key on the Edge runtime. Ensure all three Supabase variables are set and redeploy after any middleware fix.
+
 ## 3. Supabase configuration
 
 ### Authentication → URL Configuration
