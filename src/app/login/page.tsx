@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [error,    setError]    = useState<string | null>(null)
   const [success,  setSuccess]  = useState<string | null>(null)
   const [loading,  setLoading]  = useState(false)
-  const supabase = createClient()
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('passwordReset') === '1') {
@@ -27,6 +26,7 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      const supabase = createClient()
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
