@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-import { lineTotal } from '@/lib/variations/developer'
-import { refreshDeveloperSubmissionTotal } from '@/lib/variations/create-developer-submission'
+import { refreshSubmissionTotals } from '@/lib/variations/submission-totals'
 import { DEVELOPER_ROLES } from '@/lib/variations/rates'
 
 type ClaimLineUpdate = {
@@ -215,22 +214,12 @@ export async function PATCH(
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const developerTotal = await refreshDeveloperSubmissionTotal(submissionId)
-
-    const { data: claimLines } = await supabase
-      .from('variation_claims')
-      .select('hours, rate_per_hour, total_amount')
-      .eq('developer_submission_id', submissionId)
-
-    const computedForemanTotal = (claimLines ?? []).reduce(
-      (sum, c) => sum + (c.total_amount ?? lineTotal(c.hours, c.rate_per_hour)),
-      0
-    )
+    const { developerTotal, foremanTotal } = await refreshSubmissionTotals(submissionId)
 
     return NextResponse.json({
       success: true,
       developerTotal,
-      foremanTotal: computedForemanTotal,
+      foremanTotal,
     })
   } catch (err) {
     return NextResponse.json(

@@ -449,6 +449,26 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
               <span className="text-xl font-bold text-orange-600">{fmt(totals.developerTotal)}</span>
             </div>
           </div>
+
+          <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl space-y-1.5 text-sm">
+            <p className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wide">
+              Internal — margin (admin only)
+            </p>
+            <div className="flex justify-between text-slate-600">
+              <span>Foreman variation cost</span>
+              <span>{fmt(foremanTotal)}</span>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <span>Developer charge</span>
+              <span>{fmt(totals.developerTotal)}</span>
+            </div>
+            <div className="flex justify-between font-semibold pt-1 border-t border-emerald-100">
+              <span className="text-emerald-900">Profit</span>
+              <span className={totals.developerTotal - foremanTotal >= 0 ? 'text-emerald-700' : 'text-red-600'}>
+                {fmt(totals.developerTotal - foremanTotal)}
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="border-t border-gray-100">

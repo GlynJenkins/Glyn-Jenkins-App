@@ -21,6 +21,10 @@ function fmt(n: number) {
   return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2 })
 }
 
+function profit(foreman: number, developer: number) {
+  return Math.round((developer - foreman) * 100) / 100
+}
+
 export default function DeveloperSubmissionList({ submissions }: { submissions: Submission[] }) {
   const drafts     = submissions.filter((s) => s.status === 'draft')
   const awaiting   = submissions.filter((s) => s.status === 'submitted')
@@ -65,9 +69,15 @@ export default function DeveloperSubmissionList({ submissions }: { submissions: 
                   <p className="text-xs text-slate-500 truncate">
                     {s.sites?.name} · {s.description}
                   </p>
+                  {s.status !== 'draft' && (
+                    <p className="text-[10px] text-emerald-700 mt-1">
+                      Profit {fmt(profit(s.foreman_total, s.developer_total))}
+                      {' · '}Foreman {fmt(s.foreman_total)}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-xs text-slate-500">Developer total</p>
+                  <p className="text-xs text-slate-500">Developer charge</p>
                   <p className="font-bold text-orange-600">{fmt(s.developer_total)}</p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />

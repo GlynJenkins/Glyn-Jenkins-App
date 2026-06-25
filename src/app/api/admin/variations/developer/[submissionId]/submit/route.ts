@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-import { refreshDeveloperSubmissionTotal } from '@/lib/variations/create-developer-submission'
+import { refreshSubmissionTotals } from '@/lib/variations/submission-totals'
 
 export async function POST(
   _request: NextRequest,
@@ -27,13 +27,14 @@ export async function POST(
       return NextResponse.json({ error: 'Already submitted to developer.' }, { status: 400 })
     }
 
-    const developerTotal = await refreshDeveloperSubmissionTotal(submissionId)
+    const { foremanTotal, developerTotal } = await refreshSubmissionTotals(submissionId)
     const now = new Date().toISOString()
 
     const { error } = await supabase
       .from('variation_developer_submissions')
       .update({
         status:                    'submitted',
+        foreman_total:             foremanTotal,
         developer_total:           developerTotal,
         submitted_to_developer_at: now,
         updated_at:                now,

@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 import DeveloperSubmissionList from './_components/DeveloperSubmissionList'
 import PendingForemanQueue from './_components/PendingForemanQueue'
+import DeveloperVariationRegister from './_components/DeveloperVariationRegister'
 import { buildPendingForemanGroups } from '@/lib/variations/pending-foreman-groups'
+import { loadDeveloperRegisterRows } from '@/lib/variations/submission-totals'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +64,8 @@ export default async function DeveloperVariationsPage() {
     }))
   )
 
+  const registerRows = await loadDeveloperRegisterRows()
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-slate-900 px-5 pt-12 pb-6">
@@ -84,6 +88,7 @@ export default async function DeveloperVariationsPage() {
 
       <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
         <PendingForemanQueue groups={pendingForemanGroups} />
+        <DeveloperVariationRegister rows={registerRows} />
         <DeveloperSubmissionList submissions={normalized as never} />
       </div>
     </div>
