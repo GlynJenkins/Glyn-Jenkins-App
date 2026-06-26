@@ -37,7 +37,8 @@ export async function GET(
         washed,
         pct:    plots.length ? Math.round((washed / plots.length) * 100) : 0,
       },
-      readOnly: auth.isAdmin,
+      readOnly: false,
+      canMark:  true,
     })
   } catch (err) {
     return NextResponse.json(

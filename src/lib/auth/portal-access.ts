@@ -166,6 +166,14 @@ export async function verifyJetwashViewAccess(): Promise<
   return { ok: false, response: NextResponse.json({ error: 'Forbidden.' }, { status: 403 }) }
 }
 
+/** Mark plots washed: jetwasher or admin/management. */
+export async function verifyJetwashMarkAccess(): Promise<
+  | { ok: true; user: User; worker: PortalWorker | null; isAdmin: boolean }
+  | { ok: false; response: NextResponse }
+> {
+  return verifyJetwashViewAccess()
+}
+
 export async function verifyForemanApiAccess(): Promise<
   | { ok: true; user: User; worker: PortalWorker }
   | { ok: false; response: NextResponse }

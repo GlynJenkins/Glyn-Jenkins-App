@@ -10,7 +10,23 @@ export type JetwashPlotRow = {
   washer: { first_name: string; surname: string } | null
 }
 
-export type JetwashSiteSummary = {
+export type JetwashPayLogEntry = {
+  id: string
+  washed_at: string
+  plot_number: string
+  site_id: string
+  site_name: string
+  site_address: string | null
+  washed_by: string | null
+  washer: { first_name: string; surname: string } | null
+}
+
+export type JetwashPayLogDay = {
+  date: string
+  label: string
+  entries: JetwashPayLogEntry[]
+}
+
   site_id: string
   name: string
   address: string | null
@@ -152,7 +168,11 @@ export async function fetchJetwashSiteSummaries(activeOnly = true): Promise<Jetw
   return summaries
 }
 
-export async function markPlotWashed(siteId: string, plotNumber: string, workerId: string) {
+export async function markPlotWashed(
+  siteId: string,
+  plotNumber: string,
+  workerId: string | null
+) {
   const supabase = createServiceClient()
 
   const { data: existing, error: fetchErr } = await supabase
@@ -184,4 +204,94 @@ export async function markPlotWashed(siteId: string, plotNumber: string, workerI
   if (updateErr) throw updateErr
 
   return { ok: true as const, washed_at: now }
+}
+
+function formatDayLabel(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day:     'numeric',
+    month:   'short',
+    year:    'numeric',
+  })
+}
+
+function dayKeyFromIso(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export async function fetchJetwashPayLog(input: {
+  periodStart: Date
+  lockTime: Date
+  workerId?: string | null
+}): Promise<{ entries: JetwashPayLogEntry[]; byDay: JetwashPayLogDay[]; total: number }> {
+  const supabase = createServiceClient()
+  const startIso = input.periodStart.toISOString()
+  const endIso = input.lockTime.toISOString()
+
+  let query = supabase
+    .from('jetwash_plot_status')
+    .select(`
+      id, plot_number, washed_at, washed_by, site_id,
+      sites!jetwash_plot_status_site_id_fkey ( name, address ),
+      washer:workers!jetwash_plot_status_washed_by_fkey ( first_name, surname )
+    `)
+    .not('washed_at', 'is', null)
+    .gte('washed_at', startIso)
+    .lte('washed_at', endIso)
+    .order('washed_at', { ascending: true })
+
+  if (input.workerId) {
+    query = query.eq('washed_by', input.workerId)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const entries: JetwashPayLogEntry[] = (data ?? []).map((row) => {
+    const site = relationOne(row.sites) as { name: string; address: string | null } | null
+    return {
+      id:           row.id,
+      washed_at:    row.washed_at!,
+      plot_number:  row.plot_number,
+      site_id:      row.site_id,
+      site_name:    site?.name ?? 'Unknown site',
+      site_address: site?.address ?? null,
+      washed_by:    row.washed_by,
+      washer:       relationOne(row.washer) as { first_name: string; surname: string } | null,
+    }
+  })
+
+  const dayMap = new Map<string, JetwashPayLogEntry[]>()
+  for (const entry of entries) {
+    const key = dayKeyFromIso(entry.washed_at)
+    const list = dayMap.get(key) ?? []
+    list.push(entry)
+    dayMap.set(key, list)
+  }
+
+  const byDay: JetwashPayLogDay[] = [...dayMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, dayEntries]) => ({
+      date,
+      label:   formatDayLabel(dayEntries[0]!.washed_at),
+      entries: dayEntries,
+    }))
+
+  return { entries, byDay, total: entries.length }
+}
+
+export async function fetchJetwashers() {
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('workers')
+    .select('id, first_name, surname')
+    .eq('role', 'jetwasher')
+    .eq('status', 'active')
+    .order('surname')
+
+  return data ?? []
 }

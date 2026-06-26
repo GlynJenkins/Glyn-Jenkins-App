@@ -56,8 +56,22 @@ export default async function AdminJetwashPage() {
           </div>
         ) : (
           <>
+            <Link
+              href="/admin/jetwash/pay"
+              className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-4 hover:border-orange-300 transition-colors"
+            >
+              <div>
+                <p className="font-semibold text-orange-900">Pay period log</p>
+                <p className="text-xs text-orange-700 mt-0.5">
+                  Daily washed plots by fortnight — export for payroll
+                </p>
+              </div>
+              <span className="px-4 py-2 bg-orange-500 text-white text-xs font-semibold rounded-xl shrink-0">
+                View
+              </span>
+            </Link>
             <p className="text-xs text-slate-500 mb-4">
-              Tap a site to see which plots have been jetwashed. Plot lists come from each site&apos;s uploaded grid.
+              Tap a site to tick plots or view progress. Plot lists come from each site&apos;s uploaded grid.
             </p>
             <JetwashSiteList sites={sites} variant="admin" />
           </>

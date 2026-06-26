@@ -52,7 +52,7 @@ export default async function AdminSiteJetwashPage({
           siteId={siteId}
           siteName={site.name}
           initialPlots={plots}
-          readOnly
+          canMark
         />
       </div>
     </div>

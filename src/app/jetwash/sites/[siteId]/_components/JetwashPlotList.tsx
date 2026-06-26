@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useTransition, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Check, Loader2, Droplets } from 'lucide-react'
 import type { JetwashPlotRow } from '@/lib/jetwash/queries'
 
@@ -9,11 +8,24 @@ type Props = {
   siteId: string
   siteName: string
   initialPlots: JetwashPlotRow[]
-  readOnly?: boolean
+  canMark?: boolean
 }
 
-export default function JetwashPlotList({ siteId, siteName, initialPlots, readOnly }: Props) {
-  const router = useRouter()
+function fmtWashedAt(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day:   'numeric',
+    month: 'short',
+    hour:  '2-digit',
+    minute: '2-digit',
+  })
+}
+
+export default function JetwashPlotList({
+  siteId,
+  siteName,
+  initialPlots,
+  canMark = true,
+}: Props) {
   const [plots, setPlots] = useState(initialPlots)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -24,7 +36,7 @@ export default function JetwashPlotList({ siteId, siteName, initialPlots, readOn
   const pct = total ? Math.round((washed / total) * 100) : 0
 
   const markWashed = useCallback((plot: JetwashPlotRow) => {
-    if (readOnly || plot.washed_at) return
+    if (!canMark || plot.washed_at) return
 
     setError(null)
     setBusyId(plot.id)
@@ -41,19 +53,11 @@ export default function JetwashPlotList({ siteId, siteName, initialPlots, readOn
         return
       }
 
-      setPlots((prev) =>
-        prev.map((p) =>
-          p.id === plot.id
-            ? { ...p, washed_at: json.washed_at as string }
-            : p
-        )
-      )
-
       const refresh = await fetch(`/api/jetwash/sites/${siteId}`, { cache: 'no-store' })
       const refreshed = await refresh.json()
       if (refresh.ok) setPlots(refreshed.plots)
     })
-  }, [readOnly, router, siteId])
+  }, [canMark, siteId])
 
   if (total === 0) {
     return (
@@ -85,9 +89,9 @@ export default function JetwashPlotList({ siteId, siteName, initialPlots, readOn
           />
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          {readOnly
-            ? 'View only — jetwashers tick plots when washed.'
-            : 'Tap a plot to mark as washed. Once green it cannot be washed again.'}
+          {canMark
+            ? 'Tap a plot to mark as washed. Once green it cannot be washed again.'
+            : 'View only.'}
         </p>
       </div>
 
@@ -117,15 +121,18 @@ export default function JetwashPlotList({ siteId, siteName, initialPlots, readOn
                   <p className={`text-sm font-semibold ${isWashed ? 'text-green-800' : 'text-slate-900'}`}>
                     Plot {plot.plot_number}
                   </p>
-                  {isWashed && plot.washer && (
+                  {isWashed && (
                     <p className="text-[10px] text-green-600 mt-0.5">
-                      {plot.washer.first_name} {plot.washer.surname}
+                      {plot.washer
+                        ? `${plot.washer.first_name} ${plot.washer.surname} · `
+                        : ''}
+                      {fmtWashedAt(plot.washed_at!)}
                     </p>
                   )}
                 </div>
 
                 <div className="px-4 py-3 flex justify-center min-w-[88px]">
-                  {readOnly ? (
+                  {!canMark ? (
                     <span
                       className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                         isWashed ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-300'

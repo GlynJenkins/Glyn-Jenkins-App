@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server'
-import { verifyJetwasherApiAccess } from '@/lib/auth/portal-access'
+import { NextRequest, NextResponse } from 'next/server'
+import { verifyJetwashMarkAccess } from '@/lib/auth/portal-access'
 import { markPlotWashed } from '@/lib/jetwash/queries'
 
 export const dynamic = 'force-dynamic'
@@ -8,14 +8,18 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ siteId: string; plotNumber: string }> }
 ) {
-  const auth = await verifyJetwasherApiAccess()
+  const auth = await verifyJetwashMarkAccess()
   if (!auth.ok) return auth.response
 
   try {
     const { siteId, plotNumber: encoded } = await params
     const plotNumber = decodeURIComponent(encoded)
 
-    const result = await markPlotWashed(siteId, plotNumber, auth.worker.id)
+    const result = await markPlotWashed(
+      siteId,
+      plotNumber,
+      auth.worker?.id ?? null
+    )
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }

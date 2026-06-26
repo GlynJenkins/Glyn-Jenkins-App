@@ -180,6 +180,30 @@ export async function fetchPayCycleSettings(
   return resolvePayCycleSettings(data)
 }
 
+export function listFortnightOptions(
+  count: number,
+  settings?: PayCycleSettings | null,
+  at = new Date()
+): FortnightPeriod[] {
+  const cfg = settings ?? DEFAULT_SETTINGS
+  const currentIdx = periodIndexForDate(at, cfg)
+  const periods: FortnightPeriod[] = []
+
+  for (let i = currentIdx; i >= Math.max(0, currentIdx - count + 1); i--) {
+    const prevLock = i > 0 ? buildPeriodCore(i - 1, cfg).lockTime : undefined
+    const core = buildPeriodCore(i, cfg, prevLock)
+    const isCurrent = i === currentIdx
+    periods.push(
+      toFortnightPeriod(core, at, cfg, {
+        isLocked:     isCurrent ? at > core.lockTime : true,
+        isGracePeriod: isCurrent && at > endOfLocalDay(core.end) && at <= core.lockTime,
+      })
+    )
+  }
+
+  return periods
+}
+
 export async function getCurrentFortnight(
   supabase: SupabaseClient
 ): Promise<FortnightPeriod> {
