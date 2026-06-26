@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import { cellText, garageStages } from '@/lib/jetwash/plot-descriptions'
+import { garageCellLabel, garageStages } from '@/lib/jetwash/plot-descriptions'
 
 export type WashItemKey = {
   plot_number: string
@@ -49,7 +49,7 @@ export async function fetchGarageWashItems(siteId: string): Promise<WashItemKey[
     if (!data || data.length === 0) break
 
     for (const row of data) {
-      const text = cellText(row.contract_value, row.override_note)
+      const text = garageCellLabel(row.contract_value, row.override_note)
       if (!text) continue
 
       const plot = row.plot_number?.trim()

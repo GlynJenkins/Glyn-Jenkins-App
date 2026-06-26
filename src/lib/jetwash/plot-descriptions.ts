@@ -33,6 +33,28 @@ export function garageStages(stages: SiteStage[]): SiteStage[] {
   return stages.filter((s) => isGarageStage(s.stage_name))
 }
 
+/** True when a cell value is a price/number, not a garage description like "single garage". */
+export function isNumericOnlyLabel(text: string): boolean {
+  const cleaned = text.replace(/[£$€,\s]/g, '')
+  if (!cleaned) return false
+  return /^[\d.]+$/.test(cleaned) && !isNaN(parseFloat(cleaned))
+}
+
+/** Garage wash tick — text labels only (override_note). Ignores contract_value sums. */
+export function garageCellLabel(
+  contractValue: number | null,
+  overrideNote: string | null
+): string | null {
+  const note = overrideNote?.trim()
+  if (note) {
+    if (isNumericOnlyLabel(note)) return null
+    return note
+  }
+  // Numeric garage column values (e.g. 2759.03) are prices — not a wash item
+  if (contractValue != null && contractValue !== 0) return null
+  return null
+}
+
 export function cellText(contractValue: number | null, overrideNote: string | null): string | null {
   const note = overrideNote?.trim()
   if (note) return note
