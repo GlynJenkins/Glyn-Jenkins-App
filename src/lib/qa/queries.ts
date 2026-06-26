@@ -212,3 +212,15 @@ export async function getQaInspectionForDownload(inspectionId: string) {
   if (error) throw error
   return data
 }
+
+export async function getQaInspectionById(inspectionId: string) {
+  const supabase = createServiceClient()
+  const { data, error } = await supabase
+    .from('qa_plot_inspections')
+    .select('id, site_id, plot_number, stage, status, signature_path, pdf_path, form_data')
+    .eq('id', inspectionId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}

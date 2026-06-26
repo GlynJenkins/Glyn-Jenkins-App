@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, Download, ImagePlus, X } from 'lucide-react'
+import { Check, Download, ImagePlus, Trash2, X } from 'lucide-react'
 import SignaturePad from '@/components/SignaturePad'
 import {
   QA_STAGES,
@@ -55,6 +55,8 @@ function InspectionFormModal({
   const [firesockError,  setFiresockError]  = useState<string | null>(null)
   const [error,          setError]          = useState<string | null>(null)
   const [submitting,     setSubmitting]     = useState(false)
+  const [confirmRemove,  setConfirmRemove]  = useState(false)
+  const [removing,       setRemoving]       = useState(false)
 
   const needsFiresock = stageRequiresFiresock(cell.stage)
   const allowsFiresockNa = stageAllowsFiresockNa(cell.stage)
@@ -132,6 +134,29 @@ function InspectionFormModal({
     }
   }
 
+  const remove = async () => {
+    const inspectionId = cell.existing?.id
+    if (!inspectionId) return
+
+    setError(null)
+    setRemoving(true)
+    try {
+      const res  = await fetch(`/api/qa/inspections/${inspectionId}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) {
+        setError(json.error ?? 'Could not remove inspection.')
+        return
+      }
+      onSaved(json.grid)
+      onClose()
+    } catch {
+      setError('Network error — please try again.')
+    } finally {
+      setRemoving(false)
+      setConfirmRemove(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50">
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto shadow-xl">
@@ -175,6 +200,38 @@ function InspectionFormModal({
                       ? 'Photo on file'
                       : '—'}
                 </p>
+              )}
+              {!confirmRemove ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmRemove(true)}
+                  className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-red-700 hover:text-red-800"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remove inspection
+                </button>
+              ) : (
+                <div className="mt-3 p-2.5 rounded-lg bg-white border border-red-200">
+                  <p className="text-xs text-red-900 font-medium">Remove this inspection? The cell will turn back to white.</p>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      disabled={removing}
+                      onClick={remove}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold"
+                    >
+                      {removing ? 'Removing…' : 'Yes, remove'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={removing}
+                      onClick={() => setConfirmRemove(false)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -356,7 +413,7 @@ export default function QaInspectionGrid({ initialGrid, inspectorDefault }: Prop
           <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
         </div>
         <p className="text-[11px] text-slate-400 mt-2">
-          Tap a stage cell to inspect. Completed stages turn green and can be downloaded as PDF.
+          Tap a stage cell to inspect. Completed stages turn green — open one to download the PDF or remove it.
         </p>
       </div>
 
