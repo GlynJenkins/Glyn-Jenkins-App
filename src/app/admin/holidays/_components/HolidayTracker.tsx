@@ -11,6 +11,7 @@ import {
   type HolidayAllowanceRow,
   type HolidayRequestRow,
 } from '@/lib/holidays/management'
+import HolidayTeamCalendar from './HolidayTeamCalendar'
 
 type Payload = {
   year: number
@@ -142,6 +143,13 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
       {message && (
         <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-3">{message}</p>
       )}
+
+      <HolidayTeamCalendar
+        year={data.year}
+        allowances={data.allowances}
+        requests={data.requests}
+        currentWorkerId={data.currentWorkerId}
+      />
 
       {/* Request holiday */}
       {data.currentWorkerId && (
@@ -297,11 +305,11 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
         </div>
       )}
 
-      {/* Team calendar */}
+      {/* Bookings list */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
           <Calendar className="w-5 h-5 text-blue-600" />
-          <h2 className="font-semibold text-slate-900">Team holiday calendar</h2>
+          <h2 className="font-semibold text-slate-900">All bookings</h2>
         </div>
         {teamCalendar.length === 0 ? (
           <p className="text-sm text-slate-400 text-center py-10">No upcoming holidays booked.</p>
