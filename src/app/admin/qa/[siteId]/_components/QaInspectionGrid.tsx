@@ -1,9 +1,16 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, Download, Loader2, X } from 'lucide-react'
+import { Check, Download, ImagePlus, X } from 'lucide-react'
 import SignaturePad from '@/components/SignaturePad'
-import { QA_STAGES, qaStageLabel, type QaStageKey } from '@/lib/qa/stages'
+import {
+  QA_STAGES,
+  qaStageLabel,
+  stageRequiresFiresock,
+  stageAllowsFiresockNa,
+  firesockRequirementMet,
+  type QaStageKey,
+} from '@/lib/qa/stages'
 import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 
 type Props = {
@@ -41,16 +48,59 @@ function InspectionFormModal({
   const [observations,   setObservations]   = useState('')
   const [result,         setResult]         = useState('Pass')
   const [signatureBlob,  setSignatureBlob]  = useState<Blob | null>(null)
+  const [firesockPhoto,  setFiresockPhoto]  = useState<File | null>(null)
+  const [firesockPreview, setFiresockPreview] = useState<string | null>(null)
+  const [firesockNa,     setFiresockNa]     = useState(false)
   const [sigError,       setSigError]       = useState<string | null>(null)
+  const [firesockError,  setFiresockError]  = useState<string | null>(null)
   const [error,          setError]          = useState<string | null>(null)
   const [submitting,     setSubmitting]     = useState(false)
+
+  const needsFiresock = stageRequiresFiresock(cell.stage)
+  const allowsFiresockNa = stageAllowsFiresockNa(cell.stage)
+  const firesockOk = firesockRequirementMet(cell.stage, {
+    firesockNa,
+    hasPhoto: !!firesockPhoto,
+  })
+
+  const handleFiresockPhoto = (file: File | null) => {
+    if (firesockPreview) URL.revokeObjectURL(firesockPreview)
+    if (!file) {
+      setFiresockPhoto(null)
+      setFiresockPreview(null)
+      return
+    }
+    setFiresockNa(false)
+    setFiresockPhoto(file)
+    setFiresockPreview(URL.createObjectURL(file))
+    setFiresockError(null)
+  }
+
+  const toggleFiresockNa = () => {
+    if (firesockNa) {
+      setFiresockNa(false)
+      return
+    }
+    handleFiresockPhoto(null)
+    setFiresockNa(true)
+    setFiresockError(null)
+  }
 
   const completed = cell.existing?.status === 'completed'
 
   const submit = async () => {
     setError(null)
     setSigError(null)
+    setFiresockError(null)
     if (!inspectorName.trim()) { setError('Inspector name is required.'); return }
+    if (needsFiresock && !firesockOk) {
+      setFiresockError(
+        allowsFiresockNa
+          ? 'Upload a firesock photo or tap N/A if not required.'
+          : 'Upload a firesock photo before completing this inspection.',
+      )
+      return
+    }
     if (!signatureBlob) { setSigError('Please sign the form.'); return }
 
     setSubmitting(true)
@@ -63,6 +113,8 @@ function InspectionFormModal({
       fd.append('inspectionDate', inspectionDate)
       fd.append('observations', observations)
       fd.append('result', result)
+      fd.append('firesockNa', firesockNa ? 'true' : 'false')
+      if (firesockPhoto) fd.append('firesockPhoto', firesockPhoto)
       fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
 
       const res  = await fetch('/api/qa/inspections', { method: 'POST', body: fd })
@@ -114,6 +166,16 @@ function InspectionFormModal({
                   Download PDF
                 </a>
               )}
+              {needsFiresock && cell.existing.form_data && (
+                <p className="text-xs mt-2 text-green-800">
+                  Firesock:{' '}
+                  {(cell.existing.form_data as { firesock_na?: boolean }).firesock_na
+                    ? 'N/A'
+                    : (cell.existing.form_data as { firesock_photo_path?: string }).firesock_photo_path
+                      ? 'Photo on file'
+                      : '—'}
+                </p>
+              )}
             </div>
           )}
 
@@ -122,6 +184,75 @@ function InspectionFormModal({
               ? 'Submit again to replace this inspection record and PDF.'
               : 'Complete the inspection checklist below. Custom stage forms can be added later — for now use observations to record findings.'}
           </p>
+
+          {needsFiresock && (
+            <div className="rounded-xl border-2 border-orange-300 bg-orange-50 p-3 space-y-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-900 block">Firesock photo</label>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {allowsFiresockNa
+                    ? 'Required — upload a photo or tap N/A if not needed on this plot.'
+                    : 'Required — upload a photo before completing this inspection.'}
+                </p>
+              </div>
+
+              {firesockPreview && (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={firesockPreview}
+                    alt="Firesock preview"
+                    className="w-full max-h-40 object-contain rounded-lg border border-orange-200 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleFiresockPhoto(null)}
+                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/90 border border-slate-200 text-slate-600 hover:bg-white"
+                    aria-label="Remove firesock photo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-orange-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-orange-100">
+                  <ImagePlus className="w-4 h-4 text-orange-600" />
+                  {firesockPhoto ? 'Change photo' : 'Upload photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={(e) => handleFiresockPhoto(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {allowsFiresockNa && (
+                  <button
+                    type="button"
+                    onClick={toggleFiresockNa}
+                    className={`px-3 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+                      firesockNa
+                        ? 'bg-slate-900 border-slate-900 text-white'
+                        : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    N/A
+                  </button>
+                )}
+              </div>
+
+              {firesockNa && (
+                <p className="text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2">
+                  Firesock marked N/A — not required on this plot.
+                </p>
+              )}
+
+              {firesockError && (
+                <p className="text-xs text-red-600 font-medium">{firesockError}</p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="text-xs text-slate-500 mb-1 block">Inspector name</label>

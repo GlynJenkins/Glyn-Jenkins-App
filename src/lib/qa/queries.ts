@@ -12,6 +12,7 @@ export type QaInspectionRecord = {
   status:        string
   inspected_at:  string | null
   pdf_path:      string | null
+  form_data:     Record<string, unknown> | null
   inspector:     { first_name: string; surname: string } | null
 }
 
@@ -103,7 +104,7 @@ export async function fetchQaSiteGrid(siteId: string): Promise<QaSiteGrid> {
     fetchDescriptionLabels(siteId),
     supabase
       .from('qa_plot_inspections')
-      .select('id, plot_number, stage, status, inspected_at, pdf_path, inspected_by')
+      .select('id, plot_number, stage, status, inspected_at, pdf_path, form_data, inspected_by')
       .eq('site_id', siteId)
       .eq('status', 'completed'),
   ])
@@ -134,6 +135,7 @@ export async function fetchQaSiteGrid(siteId: string): Promise<QaSiteGrid> {
       status:       row.status,
       inspected_at: row.inspected_at,
       pdf_path:     row.pdf_path,
+      form_data:    (row.form_data as Record<string, unknown> | null) ?? null,
       inspector:    row.inspected_by ? inspectorMap.get(row.inspected_by) ?? null : null,
     })
   }

@@ -3,7 +3,7 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid } from '@/lib/qa/queries'
 import { generateQaInspectionPdf } from '@/lib/qa/generate-inspection-pdf'
-import { isQaStageKey, qaStageLabel } from '@/lib/qa/stages'
+import { isQaStageKey, qaStageLabel, firesockRequirementMet, stageAllowsFiresockNa } from '@/lib/qa/stages'
 import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +21,8 @@ export async function POST(request: NextRequest) {
     const inspectionDate = (formData.get('inspectionDate') as string)?.trim()
     const observations   = (formData.get('observations') as string)?.trim() ?? ''
     const result         = (formData.get('result') as string)?.trim() || 'Pass'
+    const firesockNa     = formData.get('firesockNa') === 'true'
+    const firesockPhoto  = formData.get('firesockPhoto') as File | null
     const signature      = formData.get('signature') as File | null
 
     if (!siteId || !plotNumber || !stage || !inspectorName || !inspectionDate) {
@@ -31,6 +33,20 @@ export async function POST(request: NextRequest) {
     }
     if (!signature) {
       return NextResponse.json({ error: 'Signature is required.' }, { status: 400 })
+    }
+
+    const hasFiresockPhoto = !!(firesockPhoto && firesockPhoto.size > 0)
+    if (!firesockRequirementMet(stage, { firesockNa, hasPhoto: hasFiresockPhoto })) {
+      const msg = stageAllowsFiresockNa(stage)
+        ? 'Upload a firesock photo or select N/A before completing this inspection.'
+        : 'Upload a firesock photo before completing this inspection.'
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
+    if (firesockNa && hasFiresockPhoto) {
+      return NextResponse.json({ error: 'Choose either a firesock photo or N/A, not both.' }, { status: 400 })
+    }
+    if (!stageAllowsFiresockNa(stage) && firesockNa) {
+      return NextResponse.json({ error: 'N/A is only available for Joist lift.' }, { status: 400 })
     }
 
     const supabase = createServiceClient()
@@ -49,6 +65,15 @@ export async function POST(request: NextRequest) {
     const signedAt = new Date()
     const plotDetails = (await fetchPlotDetailsBySite(siteId)).get(plotNumber) ?? []
 
+    let firesockBuffer: Buffer | undefined
+    let firesockMime: string | undefined
+    let firesockPhotoPath: string | undefined
+
+    if (hasFiresockPhoto && firesockPhoto) {
+      firesockBuffer = Buffer.from(await firesockPhoto.arrayBuffer())
+      firesockMime = firesockPhoto.type || 'image/jpeg'
+    }
+
     const pdfBuffer = await generateQaInspectionPdf({
       siteName:       site.name,
       plotNumber,
@@ -60,11 +85,25 @@ export async function POST(request: NextRequest) {
       signedAt,
       signaturePng: signatureBuffer,
       plotDetails,
+      firesockNa:     firesockNa && stageAllowsFiresockNa(stage),
+      firesockPhoto:  firesockBuffer,
+      firesockMime,
     })
 
     const ts = Date.now()
     const signaturePath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-signature.png`
     const pdfPath       = `qa/${siteId}/${plotNumber}/${stage}/${ts}-inspection.pdf`
+
+    if (firesockBuffer && firesockPhoto) {
+      const ext = firesockMime?.includes('png') ? 'png' : 'jpg'
+      firesockPhotoPath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-firesock.${ext}`
+      const { error: firesockErr } = await supabase.storage
+        .from('worker-documents')
+        .upload(firesockPhotoPath, firesockBuffer, { contentType: firesockMime ?? 'image/jpeg', upsert: false })
+      if (firesockErr) {
+        return NextResponse.json({ error: `Firesock photo upload failed: ${firesockErr.message}` }, { status: 500 })
+      }
+    }
 
     const { error: sigUploadErr } = await supabase.storage
       .from('worker-documents')
@@ -96,6 +135,8 @@ export async function POST(request: NextRequest) {
         observations,
         result,
         stageLabel: qaStageLabel(stage),
+        firesock_na: firesockNa && stageAllowsFiresockNa(stage),
+        firesock_photo_path: firesockPhotoPath ?? null,
       },
       notes:          observations,
       signature_path: signaturePath,

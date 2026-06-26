@@ -36,6 +36,9 @@ export type QaInspectionPdfInput = {
   signedAt:     Date
   signaturePng: Buffer
   plotDetails?: { label: string; value: string }[]
+  firesockNa?:   boolean
+  firesockPhoto?: Buffer
+  firesockMime?: string
 }
 
 export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Promise<Buffer> {
@@ -85,6 +88,35 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
   const noteLines = wrapText(input.observations || '—', maxWidth, font, BODY_SIZE)
   drawLines(noteLines)
   y -= 16
+
+  if (input.firesockNa || input.firesockPhoto) {
+    drawLines(['Firesock'], { bold: true, size: 12 })
+    y -= 4
+    if (input.firesockNa) {
+      drawLines(['Status: N/A — not required for this plot'])
+    } else if (input.firesockPhoto) {
+      drawLines(['Status: Photo attached below'])
+      y -= 8
+      const isJpeg = input.firesockMime?.includes('jpeg') || input.firesockMime?.includes('jpg')
+      const photo = isJpeg
+        ? await pdf.embedJpg(input.firesockPhoto)
+        : await pdf.embedPng(input.firesockPhoto)
+      const photoWidth = maxWidth
+      const photoHeight = (photo.height / photo.width) * photoWidth
+      if (y - photoHeight < MARGIN) {
+        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+        y = PAGE_HEIGHT - MARGIN
+      }
+      page.drawImage(photo, {
+        x: MARGIN,
+        y: y - photoHeight,
+        width: photoWidth,
+        height: photoHeight,
+      })
+      y -= photoHeight + 12
+    }
+    y -= 8
+  }
 
   drawLines(['SIGNATURE'], { bold: true, size: 12 })
   y -= 4

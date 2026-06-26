@@ -16,3 +16,21 @@ export function qaStageLabel(key: string): string {
 export function isQaStageKey(key: string): key is QaStageKey {
   return QA_STAGE_KEYS.includes(key as QaStageKey)
 }
+
+/** Joist lift and Plate/Roof require a firesock photo (Joist may use N/A instead). */
+export function stageRequiresFiresock(stage: QaStageKey): boolean {
+  return stage === 'joist_lift' || stage === 'plate_roof'
+}
+
+export function stageAllowsFiresockNa(stage: QaStageKey): boolean {
+  return stage === 'joist_lift'
+}
+
+export function firesockRequirementMet(
+  stage: QaStageKey,
+  opts: { firesockNa: boolean; hasPhoto: boolean },
+): boolean {
+  if (!stageRequiresFiresock(stage)) return true
+  if (stageAllowsFiresockNa(stage) && opts.firesockNa) return true
+  return opts.hasPhoto
+}
