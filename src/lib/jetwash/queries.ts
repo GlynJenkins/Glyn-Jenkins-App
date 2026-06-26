@@ -27,6 +27,7 @@ export type JetwashPayLogDay = {
   entries: JetwashPayLogEntry[]
 }
 
+export type JetwashSiteSummary = {
   site_id: string
   name: string
   address: string | null
