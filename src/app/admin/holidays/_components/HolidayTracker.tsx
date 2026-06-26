@@ -151,6 +151,64 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
         currentWorkerId={data.currentWorkerId}
       />
 
+      {/* Admin: set days per person */}
+      {data.isAdmin && (
+        <div id="holiday-allowances" className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-slate-600" />
+              <h2 className="font-semibold text-slate-900">Set holiday allowance</h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Admin only — enter total days for each person for {data.year}, then tap Save.
+              Default is 25 days if not set.
+            </p>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {data.allowances.map((a) => (
+              <div key={a.worker_id} className="px-5 py-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">
+                      {a.worker.first_name} {a.worker.surname}
+                    </p>
+                    <p className="text-xs text-slate-500 capitalize">{a.worker.role}</p>
+                  </div>
+                  <div className="text-right text-xs text-slate-500">
+                    <p>Used {fmtDays(a.used_days)}</p>
+                    <p className="text-emerald-600 font-medium">{fmtDays(a.remaining_days)} left</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <label className="sr-only" htmlFor={`allowance-${a.worker_id}`}>
+                    Days for {a.worker.first_name} {a.worker.surname}
+                  </label>
+                  <input
+                    id={`allowance-${a.worker_id}`}
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={editingAllowance[a.worker_id] ?? String(a.allocated_days)}
+                    onChange={(e) => setEditingAllowance((p) => ({ ...p, [a.worker_id]: e.target.value }))}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    placeholder="Days"
+                  />
+                  <span className="text-xs text-slate-400 shrink-0">days</span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => saveAllowance(a.worker_id)}
+                    className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Request holiday */}
       {data.currentWorkerId && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
@@ -212,52 +270,6 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
           <p className="text-[11px] text-slate-400 leading-relaxed">
             The system blocks dates that overlap another manager&apos;s pending or approved holiday.
           </p>
-        </div>
-      )}
-
-      {/* Admin: allowances */}
-      {data.isAdmin && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
-            <Users className="w-5 h-5 text-slate-600" />
-            <h2 className="font-semibold text-slate-900">{data.year} allowances</h2>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {data.allowances.map((a) => (
-              <div key={a.worker_id} className="px-5 py-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">
-                      {a.worker.first_name} {a.worker.surname}
-                    </p>
-                    <p className="text-xs text-slate-500 capitalize">{a.worker.role}</p>
-                  </div>
-                  <div className="text-right text-xs text-slate-500">
-                    <p>Used {fmtDays(a.used_days)}</p>
-                    <p className="text-emerald-600 font-medium">{fmtDays(a.remaining_days)} left</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={editingAllowance[a.worker_id] ?? String(a.allocated_days)}
-                    onChange={(e) => setEditingAllowance((p) => ({ ...p, [a.worker_id]: e.target.value }))}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
-                  />
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => saveAllowance(a.worker_id)}
-                    className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl disabled:opacity-50"
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

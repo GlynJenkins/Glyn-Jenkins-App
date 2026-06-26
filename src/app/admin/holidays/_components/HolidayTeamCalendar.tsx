@@ -10,6 +10,7 @@ import {
   colorForWorker,
   formatMonthLabel,
   monthGrid,
+  shortFirstName,
   toDateKey,
 } from '@/lib/holidays/calendar'
 
@@ -106,7 +107,7 @@ export default function HolidayTeamCalendar({
 
           {cells.map((day, idx) => {
             if (day === null) {
-              return <div key={`empty-${idx}`} className="bg-white min-h-[52px]" />
+              return <div key={`empty-${idx}`} className="bg-white min-h-[56px]" />
             }
 
             const dateKey = toDateKey(viewYear, viewMonth, day)
@@ -115,44 +116,50 @@ export default function HolidayTeamCalendar({
             const pending = bookings.filter((b) => b.status === 'pending')
             const isToday = dateKey === todayKey
             const isWeekend = idx % 7 >= 5
-
-            const title = bookings.length
-              ? bookings.map((b) => `${b.name} (${b.status})`).join(', ')
-              : undefined
+            const hasBookings = bookings.length > 0
 
             return (
               <div
                 key={dateKey}
-                title={title}
-                className={`relative bg-white min-h-[52px] p-0.5 flex flex-col ${
-                  isWeekend ? 'bg-slate-50/80' : ''
-                } ${isToday ? 'ring-2 ring-inset ring-orange-400 z-[1]' : ''}`}
+                className={`relative bg-white p-0.5 flex flex-col ${
+                  hasBookings ? 'min-h-[76px]' : 'min-h-[56px]'
+                } ${isWeekend ? 'bg-slate-50/80' : ''} ${
+                  isToday ? 'ring-2 ring-inset ring-orange-400 z-[1]' : ''
+                }`}
               >
                 <span
-                  className={`text-[10px] font-medium px-1 ${
+                  className={`text-[10px] font-medium px-1 shrink-0 ${
                     isToday ? 'text-orange-600' : 'text-slate-500'
                   }`}
                 >
                   {day}
                 </span>
 
-                <div className="flex-1 flex flex-col gap-px mt-0.5">
+                <div className="flex-1 flex flex-col gap-0.5 mt-0.5 overflow-hidden">
                   {approved.map((b) => {
                     const c = colorForWorker(personColors, b.workerId)
+                    const label = shortFirstName(b.name)
                     return (
                       <div
                         key={`${dateKey}-a-${b.workerId}`}
-                        className={`flex-1 min-h-[6px] rounded-sm ${c?.solid ?? 'bg-slate-400'} opacity-90`}
-                      />
+                        className={`px-1 py-0.5 rounded-sm ${c?.solid ?? 'bg-slate-500'} text-white text-[9px] font-semibold leading-tight truncate`}
+                        title={`${b.name} — approved`}
+                      >
+                        {label}
+                      </div>
                     )
                   })}
                   {pending.map((b) => {
                     const c = colorForWorker(personColors, b.workerId)
+                    const label = shortFirstName(b.name)
                     return (
                       <div
                         key={`${dateKey}-p-${b.workerId}`}
-                        className={`flex-1 min-h-[6px] rounded-sm border border-dashed ${c?.border ?? 'border-slate-300'} ${c?.light ?? 'bg-slate-100'}`}
-                      />
+                        className={`px-1 py-0.5 rounded-sm border border-dashed ${c?.border ?? 'border-slate-300'} ${c?.light ?? 'bg-slate-100'} ${c?.text ?? 'text-slate-700'} text-[9px] font-semibold leading-tight truncate`}
+                        title={`${b.name} — pending`}
+                      >
+                        {label}
+                      </div>
                     )
                   })}
                 </div>
@@ -163,7 +170,7 @@ export default function HolidayTeamCalendar({
       </div>
 
       <p className="px-5 pb-4 text-[11px] text-slate-400 leading-relaxed">
-        Solid colours = approved holiday (blocked). Dashed = pending approval. Navigate months to plan ahead.
+        Names on solid blocks = approved holiday (blocked). Dashed = pending approval.
         {viewYear !== year && ` Showing ${viewYear} — allowance year is ${year}.`}
       </p>
     </div>

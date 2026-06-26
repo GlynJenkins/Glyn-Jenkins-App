@@ -91,4 +91,8 @@ export function formatMonthLabel(year: number, month: number): string {
   })
 }
 
+export function shortFirstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] ?? fullName
+}
+
 export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
