@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import {
   User, Phone, FileText, Building2,
   TrendingUp, Download, ChevronDown, ChevronUp,
@@ -48,6 +49,15 @@ type Worker = {
 interface Props {
   worker: Worker
   ledger: LedgerEntry[]
+  payDiagnostics?: {
+    approvedGross:              number
+    approvedAllocationCount:    number
+    pendingGross:               number
+    pendingAllocationCount:     number
+    approvedClaimsAsForeman:    number
+    foremanClaimsWithoutPay:    number
+    duplicateNameMatches:       { id: string; first_name: string; surname: string; role: string }[]
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -228,7 +238,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function WorkerProfile({ worker, ledger }: Props) {
+export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props) {
   const currentYear = new Date().getFullYear()
   const [fromDate,   setFromDate]   = useState(`${currentYear}-04-06`)
   const [toDate,     setToDate]     = useState(`${currentYear + 1}-04-05`)
@@ -521,6 +531,53 @@ export default function WorkerProfile({ worker, ledger }: Props) {
           {roleSaving ? 'Saving…' : 'Save role changes'}
         </button>
       </div>
+
+      {/* Pay diagnostics when empty or unclear */}
+      {payDiagnostics && ledger.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-950 space-y-2">
+          <p className="font-semibold">No pay records for this worker profile</p>
+          {payDiagnostics.approvedAllocationCount === 0 &&
+           payDiagnostics.pendingAllocationCount === 0 &&
+           payDiagnostics.approvedClaimsAsForeman === 0 && (
+            <p className="text-amber-900">
+              No booking-in claims have allocated wages to this worker yet. Pay only appears
+              after a foreman adds them to the gang with a gross amount and admin approves the claim.
+            </p>
+          )}
+          {payDiagnostics.foremanClaimsWithoutPay > 0 && (
+            <p className="text-amber-900">
+              This worker submitted {payDiagnostics.foremanClaimsWithoutPay} approved claim
+              {payDiagnostics.foremanClaimsWithoutPay !== 1 ? 's' : ''} as foreman but was not
+              given any pay on {payDiagnostics.foremanClaimsWithoutPay !== 1 ? 'those claims' : 'that claim'}.
+              To pay a foreman, include them in the gang and enter a gross amount before submitting.
+            </p>
+          )}
+          {payDiagnostics.pendingAllocationCount > 0 && (
+            <p className="text-amber-900">
+              {payDiagnostics.pendingAllocationCount} pending payment
+              {payDiagnostics.pendingAllocationCount !== 1 ? 's' : ''} totalling{' '}
+              {fmt(payDiagnostics.pendingGross)} — will show here once the claim is approved.
+            </p>
+          )}
+          {payDiagnostics.duplicateNameMatches.length > 0 && (
+            <div className="pt-1">
+              <p className="text-amber-900 font-medium">Other profiles with the same name:</p>
+              <ul className="mt-1 space-y-1">
+                {payDiagnostics.duplicateNameMatches.map((match) => (
+                  <li key={match.id}>
+                    <Link
+                      href={`/admin/workers/${match.id}`}
+                      className="text-orange-700 underline underline-offset-2"
+                    >
+                      {match.first_name} {match.surname} · {ROLE_LABELS[match.role] ?? match.role}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* All-time totals */}
       <div className="bg-slate-900 rounded-2xl p-5 shadow-sm">
