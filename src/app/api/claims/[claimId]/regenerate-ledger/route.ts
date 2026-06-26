@@ -3,6 +3,7 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 import { calculatePayLine } from '@/lib/cis/calculate-pay'
+import { resolveClaimLedgerSiteId } from '@/lib/cis/resolve-claim-site'
 
 export async function POST(
   _request: NextRequest,
@@ -18,13 +19,21 @@ export async function POST(
     // Only allow for approved claims
     const { data: claimBase } = await supabase
       .from('claim_periods')
-      .select('id, site_id, status, approved_at, claim_allocations ( id, worker_id, gross_amount )')
+      .select('id, site_id, foreman_id, status, approved_at, pool_items, claim_allocations ( id, worker_id, gross_amount )')
       .eq('id', claimId)
       .eq('status', 'approved')
       .single()
 
     if (!claimBase) {
       return NextResponse.json({ error: 'Approved claim not found.' }, { status: 404 })
+    }
+
+    const ledgerSiteId = await resolveClaimLedgerSiteId(supabase, claimBase)
+    if (!ledgerSiteId) {
+      return NextResponse.json(
+        { error: 'Could not determine site for this claim — check pool items are linked to sites.' },
+        { status: 422 },
+      )
     }
 
     // Enrich allocations with worker details
@@ -63,7 +72,7 @@ export async function POST(
         worker_id:             worker.id,
         claim_period_id:       claimId,
         claim_allocation_id:   alloc.id,
-        site_id:               claimBase.site_id,
+        site_id:               ledgerSiteId,
         date_of_pay:           dateOfPay,
         gross_pay:             pay.gross,
         admin_fee:             pay.adminFee,

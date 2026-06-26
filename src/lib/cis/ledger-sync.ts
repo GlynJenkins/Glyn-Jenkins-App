@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 import { calculatePayLine } from './calculate-pay'
+import { resolveClaimLedgerSiteId } from './resolve-claim-site'
 
 type AllocationRow = {
   id: string
@@ -9,13 +10,17 @@ type AllocationRow = {
   claim_periods: {
     id: string
     site_id: string | null
+    foreman_id: string | null
     status: string
     approved_at: string | null
+    pool_items: { type: string; id: string; amount: number; siteId?: string }[] | null
   } | {
     id: string
     site_id: string | null
+    foreman_id: string | null
     status: string
     approved_at: string | null
+    pool_items: { type: string; id: string; amount: number; siteId?: string }[] | null
   }[] | null
 }
 
@@ -50,7 +55,7 @@ export async function syncMissingCisLedger(
     .from('claim_allocations')
     .select(`
       id, worker_id, gross_amount,
-      claim_periods!inner ( id, site_id, status, approved_at )
+      claim_periods!inner ( id, site_id, foreman_id, status, approved_at, pool_items )
     `)
     .gt('gross_amount', 0)
 
@@ -116,6 +121,7 @@ export async function syncMissingCisLedger(
   }
 
   const fees = await fetchPayFeeSettings()
+  const siteCache = new Map<string, string>()
 
   for (const alloc of missing) {
     const claim = relationOne(alloc.claim_periods)
@@ -123,6 +129,17 @@ export async function syncMissingCisLedger(
     if (!claim || !worker) {
       result.errors.push(`Missing worker or claim for allocation ${alloc.id}`)
       continue
+    }
+
+    let ledgerSiteId = siteCache.get(claim.id)
+    if (!ledgerSiteId) {
+      const resolved = await resolveClaimLedgerSiteId(supabase, claim)
+      if (!resolved) {
+        result.errors.push(`Could not resolve site for claim ${claim.id}`)
+        continue
+      }
+      ledgerSiteId = resolved
+      siteCache.set(claim.id, ledgerSiteId)
     }
 
     const gross = alloc.gross_amount ?? 0
@@ -137,7 +154,7 @@ export async function syncMissingCisLedger(
       worker_id:             worker.id,
       claim_period_id:       claim.id,
       claim_allocation_id:   alloc.id,
-      site_id:               claim.site_id,
+      site_id:               ledgerSiteId,
       date_of_pay:           dateOfPay,
       gross_pay:             pay.gross,
       admin_fee:             pay.adminFee,

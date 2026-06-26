@@ -3,6 +3,7 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 import { calculatePayLine } from '@/lib/cis/calculate-pay'
+import { resolveClaimLedgerSiteId } from '@/lib/cis/resolve-claim-site'
 
 export async function POST(
   request: NextRequest,
@@ -23,7 +24,7 @@ export async function POST(
     // ── Fetch claim + allocations ──────────────────────────────────────
     const { data: claimBase } = await supabase
       .from('claim_periods')
-      .select('id, site_id, pool_items, status, claim_allocations ( id, worker_id, gross_amount )')
+      .select('id, site_id, foreman_id, pool_items, status, claim_allocations ( id, worker_id, gross_amount )')
       .eq('id', claimId)
       .eq('status', 'pending')
       .single()
@@ -52,6 +53,14 @@ export async function POST(
     }
 
     const fees = await fetchPayFeeSettings()
+
+    const ledgerSiteId = await resolveClaimLedgerSiteId(supabase, claim)
+    if (!ledgerSiteId) {
+      return NextResponse.json(
+        { error: 'Could not determine site for this claim — check pool items are linked to sites.' },
+        { status: 422 },
+      )
+    }
 
     // ── Calculate and insert CIS ledger rows ───────────────────────────
     const allocations = (claim.claim_allocations ?? []) as {
@@ -89,7 +98,7 @@ export async function POST(
         worker_id:             worker.id,
         claim_period_id:       claimId,
         claim_allocation_id:   alloc.id,
-        site_id:               claim.site_id,
+        site_id:               ledgerSiteId,
         date_of_pay:           new Date().toISOString().split('T')[0],
         gross_pay:             pay.gross,
         admin_fee:             pay.adminFee,
