@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Building2,
   ClipboardCheck,
+  ClipboardList,
   Droplets,
   FileUp,
   Settings,
@@ -74,6 +75,12 @@ function buildSections(counts: AdminNavCounts): NavSection[] {
           icon:        Droplets,
           label:       'Jetwash',
           description: 'Plot washing progress & pay log',
+        },
+        {
+          href:        '/admin/qa',
+          icon:        ClipboardList,
+          label:       'Quality checks',
+          description: 'Stage inspections by plot',
         },
       ],
     },
