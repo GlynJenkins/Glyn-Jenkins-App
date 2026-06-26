@@ -1,9 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
-import { Building2, FileUp, ClipboardCheck, Settings } from 'lucide-react'
+import { Building2, FileUp, ClipboardCheck, Settings, Sun } from 'lucide-react'
 import WorkerList from './_components/WorkerList'
 import LogoutButton from './_components/LogoutButton'
+import { countPendingHolidayRequests } from '@/lib/holidays/queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,13 @@ export default async function AdminPage() {
     (pendingVariationRows ?? []).map((v) => (v.photo_urls ?? [])[0] ?? v.id)
   ).size
 
+  let pendingHolidayCount = 0
+  try {
+    pendingHolidayCount = await countPendingHolidayRequests()
+  } catch {
+    // table may not exist until migration runs
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -48,8 +56,8 @@ export default async function AdminPage() {
           <LogoutButton />
         </div>
 
-        {/* Quick nav */}
-        <div className="flex gap-2 mt-4 max-w-lg mx-auto">
+        {/* Quick nav — row 1 */}
+        <div className="flex flex-wrap gap-2 mt-4 max-w-lg mx-auto">
           <Link
             href="/admin/sites"
             className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
@@ -87,6 +95,18 @@ export default async function AdminPage() {
           >
             <Settings className="w-4 h-4 text-orange-400" />
             Settings
+          </Link>
+          <Link
+            href="/admin/holidays"
+            className="relative flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            <Sun className="w-4 h-4 text-orange-400" />
+            Holidays
+            {pendingHolidayCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {pendingHolidayCount}
+              </span>
+            )}
           </Link>
         </div>
       </header>
