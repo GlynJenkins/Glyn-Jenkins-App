@@ -2,7 +2,7 @@ import { requireJetwasherAccess } from '@/lib/auth/portal-access'
 import { fetchJetwashSiteSummaries } from '@/lib/jetwash/queries'
 import LogoutButton from '@/app/admin/_components/LogoutButton'
 import PortalHeader from '@/components/PortalHeader'
-import JetwashSiteList from '../_components/JetwashSiteList'
+import JetwashSiteList from './_components/JetwashSiteList'
 
 export const dynamic = 'force-dynamic'
 
