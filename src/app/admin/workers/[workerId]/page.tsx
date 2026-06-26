@@ -4,6 +4,7 @@ import { notFound }            from 'next/navigation'
 import Link                    from 'next/link'
 import WorkerProfile           from './_components/WorkerProfile'
 import { relationOne }         from '@/lib/supabase/normalize-relations'
+import { syncMissingCisLedger } from '@/lib/cis/ledger-sync'
 import type { LedgerEntry }    from './_components/WorkerProfile'
 
 export const dynamic = 'force-dynamic'
@@ -30,6 +31,8 @@ export default async function WorkerProfilePage({
     .maybeSingle()
 
   if (!worker) notFound()
+
+  await syncMissingCisLedger(supabase, { workerId })
 
   const { data: ledgerRaw } = await supabase
     .from('worker_cis_ledger')

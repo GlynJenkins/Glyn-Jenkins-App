@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-
-const DEFAULT_ADMIN_FEE     = 6
-const DEFAULT_INSURANCE_FEE = 3
-const CIS_RATE              = 0.20
+import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
+import { calculatePayLine } from '@/lib/cis/calculate-pay'
 
 export async function POST(
   request: NextRequest,
@@ -53,15 +51,7 @@ export async function POST(
       return NextResponse.json({ error: 'Claim not found or already processed.' }, { status: 404 })
     }
 
-    // ── Fetch admin fee settings ───────────────────────────────────────
-    const { data: settings } = await supabase
-      .from('admin_settings')
-      .select('global_admin_fee, insurance_fee')
-      .limit(1)
-      .maybeSingle()
-
-    const adminFeeDefault     = settings?.global_admin_fee ?? DEFAULT_ADMIN_FEE
-    const insuranceFeeDefault = settings?.insurance_fee    ?? DEFAULT_INSURANCE_FEE
+    const fees = await fetchPayFeeSettings()
 
     // ── Calculate and insert CIS ledger rows ───────────────────────────
     const allocations = (claim.claim_allocations ?? []) as {
@@ -86,32 +76,46 @@ export async function POST(
       if (!worker) continue
 
       const gross         = alloc.gross_amount ?? 0
-      const adminFee      = adminFeeDefault
-      const insuranceFee  = worker.has_own_insurance ? 0 : insuranceFeeDefault
       const customDed     = workerDeductions[worker.id]?.amount   ?? 0
       const customReason  = workerDeductions[worker.id]?.reason   ?? null
-      const taxable       = Math.max(0, gross - adminFee - insuranceFee - customDed)
-      const cisTax        = worker.tax_type === 'cis_20'
-        ? Math.round(taxable * CIS_RATE * 100) / 100
-        : 0
-      const net           = Math.round((taxable - cisTax) * 100) / 100
+      const pay = calculatePayLine(
+        gross,
+        { id: worker.id, tax_type: worker.tax_type, has_personal_insurance: worker.has_own_insurance },
+        fees,
+        customDed,
+      )
 
-      await supabase.from('worker_cis_ledger').insert({
+      const { error: ledgerErr } = await supabase.from('worker_cis_ledger').insert({
         worker_id:             worker.id,
         claim_period_id:       claimId,
         claim_allocation_id:   alloc.id,
         site_id:               claim.site_id,
         date_of_pay:           new Date().toISOString().split('T')[0],
-        gross_pay:             gross,
-        admin_fee:             adminFee,
-        insurance_fee:         insuranceFee,
+        gross_pay:             pay.gross,
+        admin_fee:             pay.adminFee,
+        insurance_fee:         pay.insuranceFee,
         custom_deduction:      customDed,
         custom_deduction_note: customReason,
-        cis_tax_deducted:      cisTax,
-        net_pay:               net,
+        cis_tax_deducted:      pay.cisTax,
+        net_pay:               pay.net,
       })
 
-      payslips.push({ worker, gross, cisTax, adminFee, insuranceFee, customDed, net })
+      if (ledgerErr) {
+        return NextResponse.json(
+          { error: `Failed to write pay record for ${worker.first_name} ${worker.surname}: ${ledgerErr.message}` },
+          { status: 500 },
+        )
+      }
+
+      payslips.push({
+        worker,
+        gross: pay.gross,
+        cisTax: pay.cisTax,
+        adminFee: pay.adminFee,
+        insuranceFee: pay.insuranceFee,
+        customDed,
+        net: pay.net,
+      })
     }
 
     // ── Update claim to approved ───────────────────────────────────────

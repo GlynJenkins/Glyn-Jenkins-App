@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-
-const DEFAULT_ADMIN_FEE     = 6
-const DEFAULT_INSURANCE_FEE = 3
-const CIS_RATE              = 0.20
+import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
+import { calculatePayLine } from '@/lib/cis/calculate-pay'
 
 export async function POST(
   _request: NextRequest,
@@ -41,14 +39,7 @@ export async function POST(
       })
     )
 
-    const { data: settings } = await supabase
-      .from('admin_settings')
-      .select('global_admin_fee, insurance_fee')
-      .limit(1)
-      .maybeSingle()
-
-    const adminFeeDefault     = settings?.global_admin_fee ?? DEFAULT_ADMIN_FEE
-    const insuranceFeeDefault = settings?.insurance_fee    ?? DEFAULT_INSURANCE_FEE
+    const fees = await fetchPayFeeSettings()
 
     // Delete any existing ledger rows for this claim (idempotent)
     await supabase
@@ -65,14 +56,8 @@ export async function POST(
       const worker = alloc.worker
       if (!worker) continue
 
-      const gross        = alloc.gross_amount ?? 0
-      const adminFee     = adminFeeDefault
-      const insuranceFee = (worker.has_personal_insurance) ? 0 : insuranceFeeDefault
-      const taxable      = Math.max(0, gross - adminFee - insuranceFee)
-      const cisTax       = worker.tax_type === 'cis_20'
-        ? Math.round(taxable * CIS_RATE * 100) / 100
-        : 0
-      const net          = Math.round((taxable - cisTax) * 100) / 100
+      const gross = alloc.gross_amount ?? 0
+      const pay = calculatePayLine(gross, worker, fees)
 
       const { error } = await supabase.from('worker_cis_ledger').insert({
         worker_id:             worker.id,
@@ -80,12 +65,12 @@ export async function POST(
         claim_allocation_id:   alloc.id,
         site_id:               claimBase.site_id,
         date_of_pay:           dateOfPay,
-        gross_pay:             gross,
-        admin_fee:             adminFee,
-        insurance_fee:         insuranceFee,
+        gross_pay:             pay.gross,
+        admin_fee:             pay.adminFee,
+        insurance_fee:         pay.insuranceFee,
         custom_deduction:      0,
-        cis_tax_deducted:      cisTax,
-        net_pay:               net,
+        cis_tax_deducted:      pay.cisTax,
+        net_pay:               pay.net,
       })
 
       if (error) {

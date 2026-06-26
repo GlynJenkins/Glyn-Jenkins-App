@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import WorkerList from '../_components/WorkerList'
 import LogoutButton from '../_components/LogoutButton'
+import { syncMissingCisLedger } from '@/lib/cis/ledger-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,11 @@ export default async function AdminWorkersPage() {
   await requireAdminAccess()
 
   const supabase = createServiceClient()
+  const syncResult = await syncMissingCisLedger(supabase)
+  if (syncResult.inserted > 0) {
+    console.info(`[Admin Workers] Backfilled ${syncResult.inserted} missing CIS ledger rows`)
+  }
+
   const { data: workers, error } = await supabase
     .from('workers')
     .select('id, first_name, surname, phone, utr_number, tax_type, role, status, has_personal_insurance, cscs_card_url, id_document_url, insurance_certificate_url, created_at')
