@@ -1,15 +1,14 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
-import Link from 'next/link'
-import { Building2, FileUp, ClipboardCheck, Settings, Sun, Droplets, TrendingUp } from 'lucide-react'
 import WorkerList from './_components/WorkerList'
 import LogoutButton from './_components/LogoutButton'
+import AdminDashboardNav from './_components/AdminDashboardNav'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminPage() {
-  await requireAdminAccess()
+  const { worker } = await requireAdminAccess()
 
   const supabase = createServiceClient()
   const { data: workers, error } = await supabase
@@ -20,6 +19,9 @@ export default async function AdminPage() {
   if (error) {
     console.error('[Admin] Failed to fetch workers:', error.message)
   }
+
+  const workerRows = workers ?? []
+  const pendingWorkerCount = workerRows.filter((w) => w.status === 'pending_verification').length
 
   const { count: pendingClaimCount } = await supabase
     .from('claim_periods')
@@ -42,93 +44,54 @@ export default async function AdminPage() {
     // table may not exist until migration runs
   }
 
+  const navCounts = {
+    pendingClaims:     pendingClaimCount ?? 0,
+    pendingVariations: pendingVariationCount,
+    pendingHolidays:   pendingHolidayCount,
+    pendingWorkers:    pendingWorkerCount,
+  }
+
+  const displayName = worker
+    ? `${worker.first_name} ${worker.surname}`
+    : 'Admin'
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-slate-900 px-5 pt-12 pb-6">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
+      <header className="bg-slate-900 px-5 pt-12 pb-8">
+        <div className="max-w-5xl mx-auto flex items-start justify-between gap-4">
           <div>
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
               Glyn Jenkins LTD
             </p>
-            <h1 className="text-xl font-bold text-white">Admin Dashboard</h1>
+            <h1 className="text-2xl font-bold text-white mt-0.5">Dashboard</h1>
+            <p className="text-slate-400 text-sm mt-1">Signed in as {displayName}</p>
           </div>
           <LogoutButton />
         </div>
-
-        {/* Quick nav — row 1 */}
-        <div className="flex flex-wrap gap-2 mt-4 max-w-lg mx-auto">
-          <Link
-            href="/admin/sites"
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <Building2 className="w-4 h-4 text-orange-400" />
-            Manage Sites
-          </Link>
-          <Link
-            href="/admin/variations"
-            className="relative flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <FileUp className="w-4 h-4 text-orange-400" />
-            Variations
-            {pendingVariationCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                {pendingVariationCount}
-              </span>
-            )}
-          </Link>
-          <Link
-            href="/admin/claims"
-            className="relative flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <ClipboardCheck className="w-4 h-4" />
-            Claims
-            {(pendingClaimCount ?? 0) > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                {pendingClaimCount}
-              </span>
-            )}
-          </Link>
-          <Link
-            href="/admin/settings"
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <Settings className="w-4 h-4 text-orange-400" />
-            Settings
-          </Link>
-          <Link
-            href="/admin/holidays"
-            className="relative flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <Sun className="w-4 h-4 text-orange-400" />
-            Holidays
-            {pendingHolidayCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                {pendingHolidayCount}
-              </span>
-            )}
-          </Link>
-          <Link
-            href="/admin/jetwash"
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <Droplets className="w-4 h-4 text-orange-400" />
-            Jetwash
-          </Link>
-          <Link
-            href="/admin/production"
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            <TrendingUp className="w-4 h-4 text-orange-400" />
-            Production
-          </Link>
-        </div>
       </header>
 
-      {/* Worker list */}
-      <div className="pt-5">
-        <WorkerList initialWorkers={workers ?? []} />
-      </div>
+      <main className="max-w-5xl mx-auto px-4 -mt-5 pb-16 space-y-10">
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+          <AdminDashboardNav counts={navCounts} />
+        </section>
+
+        <section id="workers" className="scroll-mt-6">
+          <div className="flex items-end justify-between gap-3 mb-4 px-0.5">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Workers</h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                Inductions, profiles &amp; activation
+              </p>
+            </div>
+            {pendingWorkerCount > 0 && (
+              <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
+                {pendingWorkerCount} pending
+              </span>
+            )}
+          </div>
+          <WorkerList initialWorkers={workerRows} />
+        </section>
+      </main>
     </div>
   )
 }

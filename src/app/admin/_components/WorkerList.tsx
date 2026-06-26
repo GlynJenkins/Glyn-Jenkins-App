@@ -199,7 +199,7 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
   ]
 
   return (
-    <div className="px-4 pb-16 space-y-4 max-w-lg mx-auto">
+    <div className="space-y-4 pb-4">
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 pt-1">
