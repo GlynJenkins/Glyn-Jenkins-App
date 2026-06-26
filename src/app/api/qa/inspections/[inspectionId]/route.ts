@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid, getQaInspectionById } from '@/lib/qa/queries'
+import { storagePathsFromFormData } from '@/lib/qa/inspection-photos'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,10 +14,7 @@ function storagePathsForInspection(row: {
   const paths: string[] = []
   if (row.signature_path) paths.push(row.signature_path)
   if (row.pdf_path) paths.push(row.pdf_path)
-
-  const formData = row.form_data as { firesock_photo_path?: string | null } | null
-  if (formData?.firesock_photo_path) paths.push(formData.firesock_photo_path)
-
+  paths.push(...storagePathsFromFormData(row.form_data))
   return paths
 }
 

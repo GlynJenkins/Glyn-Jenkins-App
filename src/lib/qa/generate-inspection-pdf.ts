@@ -8,6 +8,12 @@ const LINE_HEIGHT = 14
 const BODY_SIZE   = 10
 const TITLE_SIZE  = 14
 
+export type QaPdfPhoto = {
+  label:  string
+  buffer: Buffer
+  mime:   string
+}
+
 function wrapText(text: string, maxWidth: number, font: Awaited<ReturnType<PDFDocument['embedFont']>>, fontSize: number): string[] {
   const words = text.split(/\s+/).filter(Boolean)
   const lines: string[] = []
@@ -25,20 +31,27 @@ function wrapText(text: string, maxWidth: number, font: Awaited<ReturnType<PDFDo
   return lines.length ? lines : ['']
 }
 
+function isJpegMime(mime: string): boolean {
+  return mime.includes('jpeg') || mime.includes('jpg')
+}
+
+async function embedPhotoImage(pdf: PDFDocument, buffer: Buffer, mime: string) {
+  return isJpegMime(mime) ? pdf.embedJpg(buffer) : pdf.embedPng(buffer)
+}
+
 export type QaInspectionPdfInput = {
-  siteName:     string
-  plotNumber:   string
-  stage:        string
-  inspectorName: string
+  siteName:       string
+  plotNumber:     string
+  stage:          string
+  inspectorName:  string
   inspectionDate: string
-  observations: string
-  result:       string
-  signedAt:     Date
-  signaturePng: Buffer
-  plotDetails?: { label: string; value: string }[]
-  firesockNa?:   boolean
-  firesockPhoto?: Buffer
-  firesockMime?: string
+  observations:   string
+  result:         string
+  signedAt:       Date
+  signaturePng:   Buffer
+  plotDetails?:   { label: string; value: string }[]
+  firesockNa?:    boolean
+  photos?:        QaPdfPhoto[]
 }
 
 export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Promise<Buffer> {
@@ -60,6 +73,25 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
       page.drawText(line, { x: MARGIN, y, size, font: f, color: rgb(0.12, 0.12, 0.12) })
       y -= LINE_HEIGHT
     }
+  }
+
+  const drawPhoto = async (photo: QaPdfPhoto) => {
+    drawLines([photo.label], { bold: true, size: 11 })
+    y -= 4
+    const image = await embedPhotoImage(pdf, photo.buffer, photo.mime)
+    const photoWidth = maxWidth
+    const photoHeight = (image.height / image.width) * photoWidth
+    if (y - photoHeight < MARGIN) {
+      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      y = PAGE_HEIGHT - MARGIN
+    }
+    page.drawImage(image, {
+      x: MARGIN,
+      y: y - photoHeight,
+      width: photoWidth,
+      height: photoHeight,
+    })
+    y -= photoHeight + 16
   }
 
   drawLines(['QUALITY INSPECTION — GLYN JENKINS LTD'], { bold: true, size: TITLE_SIZE })
@@ -89,35 +121,6 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
   drawLines(noteLines)
   y -= 16
 
-  if (input.firesockNa || input.firesockPhoto) {
-    drawLines(['Firesock'], { bold: true, size: 12 })
-    y -= 4
-    if (input.firesockNa) {
-      drawLines(['Status: N/A — not required for this plot'])
-    } else if (input.firesockPhoto) {
-      drawLines(['Status: Photo attached below'])
-      y -= 8
-      const isJpeg = input.firesockMime?.includes('jpeg') || input.firesockMime?.includes('jpg')
-      const photo = isJpeg
-        ? await pdf.embedJpg(input.firesockPhoto)
-        : await pdf.embedPng(input.firesockPhoto)
-      const photoWidth = maxWidth
-      const photoHeight = (photo.height / photo.width) * photoWidth
-      if (y - photoHeight < MARGIN) {
-        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-        y = PAGE_HEIGHT - MARGIN
-      }
-      page.drawImage(photo, {
-        x: MARGIN,
-        y: y - photoHeight,
-        width: photoWidth,
-        height: photoHeight,
-      })
-      y -= photoHeight + 12
-    }
-    y -= 8
-  }
-
   drawLines(['SIGNATURE'], { bold: true, size: 12 })
   y -= 4
   drawLines([
@@ -140,6 +143,26 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
   page.drawText('Inspector signature', {
     x: MARGIN, y: y - sigHeight - 14, size: 9, font, color: rgb(0.4, 0.4, 0.4),
   })
+  y -= sigHeight + 32
+
+  const hasPhotos = (input.photos?.length ?? 0) > 0
+  if (input.firesockNa || hasPhotos) {
+    if (y - 40 < MARGIN) {
+      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      y = PAGE_HEIGHT - MARGIN
+    }
+    drawLines(['PHOTOS'], { bold: true, size: 12 })
+    y -= 8
+
+    if (input.firesockNa) {
+      drawLines(['Firesock: N/A — not required for this plot'])
+      y -= 8
+    }
+
+    for (const photo of input.photos ?? []) {
+      await drawPhoto(photo)
+    }
+  }
 
   return Buffer.from(await pdf.save())
 }

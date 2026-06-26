@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid } from '@/lib/qa/queries'
-import { generateQaInspectionPdf } from '@/lib/qa/generate-inspection-pdf'
+import { generateQaInspectionPdf, type QaPdfPhoto } from '@/lib/qa/generate-inspection-pdf'
 import { isQaStageKey, qaStageLabel, firesockRequirementMet, stageAllowsFiresockNa } from '@/lib/qa/stages'
 import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
+import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto } from '@/lib/qa/inspection-photos'
 
 export const dynamic = 'force-dynamic'
+
+function validImageFile(file: File): boolean {
+  return file.size > 0 && (file.type.startsWith('image/') || file.name.length > 0)
+}
 
 export async function POST(request: NextRequest) {
   const auth = await verifyAdminApiAccess()
@@ -24,6 +29,8 @@ export async function POST(request: NextRequest) {
     const firesockNa     = formData.get('firesockNa') === 'true'
     const firesockPhoto  = formData.get('firesockPhoto') as File | null
     const signature      = formData.get('signature') as File | null
+    const inspectionPhotoFiles = (formData.getAll('inspectionPhotos') as File[])
+      .filter(validImageFile)
 
     if (!siteId || !plotNumber || !stage || !inspectorName || !inspectionDate) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
@@ -33,6 +40,12 @@ export async function POST(request: NextRequest) {
     }
     if (!signature) {
       return NextResponse.json({ error: 'Signature is required.' }, { status: 400 })
+    }
+    if (inspectionPhotoFiles.length > MAX_QA_INSPECTION_PHOTOS) {
+      return NextResponse.json(
+        { error: `Maximum ${MAX_QA_INSPECTION_PHOTOS} inspection photos allowed.` },
+        { status: 400 },
+      )
     }
 
     const hasFiresockPhoto = !!(firesockPhoto && firesockPhoto.size > 0)
@@ -64,6 +77,7 @@ export async function POST(request: NextRequest) {
     const signatureBuffer = Buffer.from(await signature.arrayBuffer())
     const signedAt = new Date()
     const plotDetails = (await fetchPlotDetailsBySite(siteId)).get(plotNumber) ?? []
+    const ts = Date.now()
 
     let firesockBuffer: Buffer | undefined
     let firesockMime: string | undefined
@@ -73,6 +87,27 @@ export async function POST(request: NextRequest) {
       firesockBuffer = Buffer.from(await firesockPhoto.arrayBuffer())
       firesockMime = firesockPhoto.type || 'image/jpeg'
     }
+
+    const inspectionBuffers: { buffer: Buffer; mime: string; file: File }[] = []
+    for (const file of inspectionPhotoFiles) {
+      inspectionBuffers.push({
+        buffer: Buffer.from(await file.arrayBuffer()),
+        mime:   file.type || 'image/jpeg',
+        file,
+      })
+    }
+
+    const pdfPhotos: QaPdfPhoto[] = []
+    if (firesockBuffer && firesockMime) {
+      pdfPhotos.push({ label: 'Firesock photo', buffer: firesockBuffer, mime: firesockMime })
+    }
+    inspectionBuffers.forEach((item, index) => {
+      pdfPhotos.push({
+        label: `Inspection photo ${index + 1}`,
+        buffer: item.buffer,
+        mime: item.mime,
+      })
+    })
 
     const pdfBuffer = await generateQaInspectionPdf({
       siteName:       site.name,
@@ -86,23 +121,35 @@ export async function POST(request: NextRequest) {
       signaturePng: signatureBuffer,
       plotDetails,
       firesockNa:     firesockNa && stageAllowsFiresockNa(stage),
-      firesockPhoto:  firesockBuffer,
-      firesockMime,
+      photos:         pdfPhotos,
     })
 
-    const ts = Date.now()
     const signaturePath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-signature.png`
     const pdfPath       = `qa/${siteId}/${plotNumber}/${stage}/${ts}-inspection.pdf`
+    const storedInspectionPhotos: StoredInspectionPhoto[] = []
 
-    if (firesockBuffer && firesockPhoto) {
-      const ext = firesockMime?.includes('png') ? 'png' : 'jpg'
+    if (firesockBuffer && firesockMime) {
+      const ext = photoExtension(firesockMime)
       firesockPhotoPath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-firesock.${ext}`
       const { error: firesockErr } = await supabase.storage
         .from('worker-documents')
-        .upload(firesockPhotoPath, firesockBuffer, { contentType: firesockMime ?? 'image/jpeg', upsert: false })
+        .upload(firesockPhotoPath, firesockBuffer, { contentType: firesockMime, upsert: false })
       if (firesockErr) {
         return NextResponse.json({ error: `Firesock photo upload failed: ${firesockErr.message}` }, { status: 500 })
       }
+    }
+
+    for (let i = 0; i < inspectionBuffers.length; i++) {
+      const { buffer, mime } = inspectionBuffers[i]
+      const ext = photoExtension(mime)
+      const path = `qa/${siteId}/${plotNumber}/${stage}/${ts}-photo-${i + 1}.${ext}`
+      const { error: photoErr } = await supabase.storage
+        .from('worker-documents')
+        .upload(path, buffer, { contentType: mime, upsert: false })
+      if (photoErr) {
+        return NextResponse.json({ error: `Inspection photo upload failed: ${photoErr.message}` }, { status: 500 })
+      }
+      storedInspectionPhotos.push({ path, mime })
     }
 
     const { error: sigUploadErr } = await supabase.storage
@@ -137,6 +184,7 @@ export async function POST(request: NextRequest) {
         stageLabel: qaStageLabel(stage),
         firesock_na: firesockNa && stageAllowsFiresockNa(stage),
         firesock_photo_path: firesockPhotoPath ?? null,
+        inspection_photo_paths: storedInspectionPhotos.map((p) => p.path),
       },
       notes:          observations,
       signature_path: signaturePath,

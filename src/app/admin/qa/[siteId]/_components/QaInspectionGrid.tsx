@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Check, Download, ImagePlus, Trash2, X } from 'lucide-react'
+import { Check, Camera, Download, ImagePlus, Trash2, X } from 'lucide-react'
 import SignaturePad from '@/components/SignaturePad'
 import {
   QA_STAGES,
@@ -11,6 +11,7 @@ import {
   firesockRequirementMet,
   type QaStageKey,
 } from '@/lib/qa/stages'
+import { MAX_QA_INSPECTION_PHOTOS } from '@/lib/qa/inspection-photos'
 import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 
 type Props = {
@@ -22,6 +23,12 @@ type OpenCell = {
   plotNumber: string
   stage:      QaStageKey
   existing:   QaPlotRow['stages'][QaStageKey]
+}
+
+type PendingPhoto = {
+  id:      string
+  file:    File
+  preview: string
 }
 
 function fmtDate(iso: string) {
@@ -51,6 +58,7 @@ function InspectionFormModal({
   const [firesockPhoto,  setFiresockPhoto]  = useState<File | null>(null)
   const [firesockPreview, setFiresockPreview] = useState<string | null>(null)
   const [firesockNa,     setFiresockNa]     = useState(false)
+  const [inspectionPhotos, setInspectionPhotos] = useState<PendingPhoto[]>([])
   const [sigError,       setSigError]       = useState<string | null>(null)
   const [firesockError,  setFiresockError]  = useState<string | null>(null)
   const [error,          setError]          = useState<string | null>(null)
@@ -88,6 +96,23 @@ function InspectionFormModal({
     setFiresockError(null)
   }
 
+  const addInspectionPhoto = (file: File | null) => {
+    if (!file) return
+    if (inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS) return
+    setInspectionPhotos((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) },
+    ])
+  }
+
+  const removeInspectionPhoto = (id: string) => {
+    setInspectionPhotos((prev) => {
+      const item = prev.find((p) => p.id === id)
+      if (item) URL.revokeObjectURL(item.preview)
+      return prev.filter((p) => p.id !== id)
+    })
+  }
+
   const completed = cell.existing?.status === 'completed'
 
   const submit = async () => {
@@ -117,6 +142,7 @@ function InspectionFormModal({
       fd.append('result', result)
       fd.append('firesockNa', firesockNa ? 'true' : 'false')
       if (firesockPhoto) fd.append('firesockPhoto', firesockPhoto)
+      inspectionPhotos.forEach((p) => fd.append('inspectionPhotos', p.file))
       fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
 
       const res  = await fetch('/api/qa/inspections', { method: 'POST', body: fd })
@@ -199,6 +225,12 @@ function InspectionFormModal({
                     : (cell.existing.form_data as { firesock_photo_path?: string }).firesock_photo_path
                       ? 'Photo on file'
                       : '—'}
+                </p>
+              )}
+              {cell.existing.form_data && (
+                <p className="text-xs mt-1 text-green-800">
+                  Inspection photos:{' '}
+                  {((cell.existing.form_data as { inspection_photo_paths?: string[] }).inspection_photo_paths?.length ?? 0)}
                 </p>
               )}
               {!confirmRemove ? (
@@ -352,6 +384,77 @@ function InspectionFormModal({
               placeholder="Record inspection findings…"
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-400 resize-none"
             />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+            <div>
+              <label className="text-sm font-semibold text-slate-900 block">Inspection photos</label>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Optional — take or upload multiple photos during the inspection. All photos appear at the bottom of the PDF after your signature.
+              </p>
+            </div>
+
+            {inspectionPhotos.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {inspectionPhotos.map((photo, index) => (
+                  <div key={photo.id} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.preview}
+                      alt={`Inspection photo ${index + 1}`}
+                      className="w-full h-28 object-cover rounded-lg border border-slate-200 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeInspectionPhoto(photo.id)}
+                      className="absolute top-1.5 right-1.5 p-1 rounded-md bg-white/90 border border-slate-200 text-slate-600 hover:bg-white"
+                      aria-label={`Remove inspection photo ${index + 1}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium">
+                      {index + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-slate-100">
+                <Camera className="w-4 h-4 text-slate-700" />
+                Take photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  disabled={inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS}
+                  onChange={(e) => {
+                    addInspectionPhoto(e.target.files?.[0] ?? null)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-slate-100">
+                <ImagePlus className="w-4 h-4 text-slate-700" />
+                Upload photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  disabled={inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS}
+                  onChange={(e) => {
+                    addInspectionPhoto(e.target.files?.[0] ?? null)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              {inspectionPhotos.length} / {MAX_QA_INSPECTION_PHOTOS} photos added
+            </p>
           </div>
 
           <div>
