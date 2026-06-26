@@ -17,14 +17,23 @@ export function isFirstLiftStage(name: string): boolean {
   return /1st\s*lift|first\s*lift|^lift\s*1/.test(n)
 }
 
+/** Column header is a garage field — separate tickable item, not a house description. */
+export function isGarageStage(name: string): boolean {
+  return name.toLowerCase().includes('garage')
+}
+
 export function descriptionStages(stages: SiteStage[]): SiteStage[] {
   const sorted = [...stages].sort((a, b) => a.stage_order - b.stage_order)
   const liftIdx = sorted.findIndex((s) => isFirstLiftStage(s.stage_name))
   if (liftIdx <= 0) return []
-  return sorted.slice(0, liftIdx)
+  return sorted.slice(0, liftIdx).filter((s) => !isGarageStage(s.stage_name))
 }
 
-function cellText(contractValue: number | null, overrideNote: string | null): string | null {
+export function garageStages(stages: SiteStage[]): SiteStage[] {
+  return stages.filter((s) => isGarageStage(s.stage_name))
+}
+
+export function cellText(contractValue: number | null, overrideNote: string | null): string | null {
   const note = overrideNote?.trim()
   if (note) return note
   if (contractValue != null && contractValue !== 0) {

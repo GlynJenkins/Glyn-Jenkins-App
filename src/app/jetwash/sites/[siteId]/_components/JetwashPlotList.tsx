@@ -41,10 +41,7 @@ export default function JetwashPlotList({
     setError(null)
     setBusyId(plot.id)
     startTransition(async () => {
-      const res = await fetch(
-        `/api/jetwash/sites/${siteId}/plots/${encodeURIComponent(plot.plot_number)}`,
-        { method: 'POST' }
-      )
+      const res = await fetch(`/api/jetwash/records/${plot.id}`, { method: 'POST' })
       const json = await res.json()
       setBusyId(null)
 
@@ -118,10 +115,17 @@ export default function JetwashPlotList({
                 }`}
               >
                 <div className="px-4 py-3">
-                  <p className={`text-sm font-semibold ${isWashed ? 'text-green-800' : 'text-slate-900'}`}>
-                    Plot {plot.plot_number}
-                  </p>
-                  {plot.details.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className={`text-sm font-semibold ${isWashed ? 'text-green-800' : 'text-slate-900'}`}>
+                      {plot.title}
+                    </p>
+                    {plot.item_type === 'garage' && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                        Garage
+                      </span>
+                    )}
+                  </div>
+                  {plot.item_type === 'house' && plot.details.length > 0 && (
                     <div className="mt-1 space-y-0.5">
                       {plot.details.map((d) => (
                         <p key={`${plot.id}-${d.label}`} className="text-[11px] text-slate-600 leading-snug">

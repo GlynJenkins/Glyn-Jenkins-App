@@ -23,7 +23,7 @@ function fmtTime(iso: string) {
 
 function buildCsv(byDay: JetwashPayLogDay[], periodLabel: string) {
   const rows = [
-    ['Date', 'Time', 'Site', 'Address', 'Plot', 'Description', 'Washed by'].join(','),
+    ['Date', 'Time', 'Site', 'Address', 'Item', 'Type', 'Description', 'Washed by'].join(','),
   ]
   for (const day of byDay) {
     for (const e of day.entries) {
@@ -32,7 +32,8 @@ function buildCsv(byDay: JetwashPayLogDay[], periodLabel: string) {
         fmtTime(e.washed_at),
         `"${e.site_name.replace(/"/g, '""')}"`,
         `"${(e.site_address ?? '').replace(/"/g, '""')}"`,
-        e.plot_number,
+        `"${e.title.replace(/"/g, '""')}"`,
+        e.item_type,
         `"${formatPlotDetails(e.details).replace(/"/g, '""')}"`,
         e.washer ? `"${e.washer.first_name} ${e.washer.surname}"` : '',
       ].join(','))
@@ -151,11 +152,17 @@ export default function JetwashPayLog({ initial }: { initial: Payload }) {
                 <div key={e.id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">
-                        Plot {e.plot_number} · {e.site_name}
-                      </p>
+                      <p className="text-sm font-semibold text-slate-900">{e.title}</p>
+                      {e.item_type === 'garage' && (
+                        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 mt-0.5">
+                          Garage
+                        </span>
+                      )}
+                      {e.site_name && (
+                        <p className="text-xs text-slate-500 truncate">{e.site_name}</p>
+                      )}
                       {e.site_address && (
-                        <p className="text-xs text-slate-500 truncate">{e.site_address}</p>
+                        <p className="text-xs text-slate-400 truncate">{e.site_address}</p>
                       )}
                       {e.details.length > 0 && (
                         <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">

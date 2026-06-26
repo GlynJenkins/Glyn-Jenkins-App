@@ -4,11 +4,20 @@ import {
   fetchPlotDetailsBySite,
   type PlotDetail,
 } from '@/lib/jetwash/plot-descriptions'
+import {
+  fetchAllWashItems,
+  jetwashDisplayTitle,
+  washItemKeyString,
+  type WashItemKey,
+} from '@/lib/jetwash/wash-items'
 
 export type JetwashPlotRow = {
   id: string
   site_id: string
   plot_number: string
+  item_type: 'house' | 'garage'
+  item_label: string
+  title: string
   washed_at: string | null
   washed_by: string | null
   washer: { first_name: string; surname: string } | null
@@ -19,6 +28,9 @@ export type JetwashPayLogEntry = {
   id: string
   washed_at: string
   plot_number: string
+  item_type: 'house' | 'garage'
+  item_label: string
+  title: string
   site_id: string
   site_name: string
   site_address: string | null
@@ -77,27 +89,60 @@ export async function fetchDistinctPlotNumbers(siteId: string): Promise<string[]
   return sortPlotNumbers([...plots])
 }
 
-/** Mirror price_grid plot numbers into jetwash_plot_status (keeps existing wash records). */
+function sortWashRows(rows: JetwashPlotRow[]): JetwashPlotRow[] {
+  return [...rows].sort((a, b) => {
+    const na = parseFloat(a.plot_number)
+    const nb = parseFloat(b.plot_number)
+    const plotCmp =
+      !isNaN(na) && !isNaN(nb)
+        ? na - nb
+        : a.plot_number.localeCompare(b.plot_number, undefined, { numeric: true })
+    if (plotCmp !== 0) return plotCmp
+    if (a.item_type !== b.item_type) return a.item_type === 'house' ? -1 : 1
+    return a.item_label.localeCompare(b.item_label)
+  })
+}
+
+function dbItemKey(row: {
+  plot_number: string
+  item_type?: string | null
+  item_label?: string | null
+}): string {
+  return washItemKeyString({
+    plot_number: row.plot_number,
+    item_type:   (row.item_type === 'garage' ? 'garage' : 'house'),
+    item_label:  row.item_label ?? '',
+  })
+}
+
+/** Mirror price_grid plots + garage columns into jetwash_plot_status. */
 export async function syncJetwashPlots(
   siteId: string,
   plotNumbers?: string[]
-): Promise<string[]> {
+): Promise<WashItemKey[]> {
   const supabase = createServiceClient()
-  const plots = plotNumbers ?? (await fetchDistinctPlotNumbers(siteId))
+  const items = await fetchAllWashItems(siteId, plotNumbers)
 
   const { data: existing, error: fetchErr } = await supabase
     .from('jetwash_plot_status')
-    .select('id, plot_number')
+    .select('id, plot_number, item_type, item_label, washed_at')
     .eq('site_id', siteId)
 
   if (fetchErr) throw fetchErr
 
-  const existingSet = new Set((existing ?? []).map((r) => r.plot_number))
-  const plotSet = new Set(plots)
+  const expected = new Set(items.map(washItemKeyString))
+  const existingByKey = new Map(
+    (existing ?? []).map((r) => [dbItemKey(r), r])
+  )
 
-  const toInsert = plots
-    .filter((p) => !existingSet.has(p))
-    .map((plot_number) => ({ site_id: siteId, plot_number }))
+  const toInsert = items
+    .filter((item) => !existingByKey.has(washItemKeyString(item)))
+    .map((item) => ({
+      site_id:     siteId,
+      plot_number: item.plot_number,
+      item_type:   item.item_type,
+      item_label:  item.item_label,
+    }))
 
   if (toInsert.length > 0) {
     const { error: insertErr } = await supabase.from('jetwash_plot_status').insert(toInsert)
@@ -105,7 +150,7 @@ export async function syncJetwashPlots(
   }
 
   const orphanIds = (existing ?? [])
-    .filter((r) => !plotSet.has(r.plot_number))
+    .filter((r) => !expected.has(dbItemKey(r)) && !r.washed_at)
     .map((r) => r.id)
 
   if (orphanIds.length > 0) {
@@ -116,7 +161,7 @@ export async function syncJetwashPlots(
     if (deleteErr) throw deleteErr
   }
 
-  return plots
+  return items
 }
 
 export async function fetchJetwashPlots(siteId: string): Promise<JetwashPlotRow[]> {
@@ -126,30 +171,36 @@ export async function fetchJetwashPlots(siteId: string): Promise<JetwashPlotRow[
   const { data, error } = await supabase
     .from('jetwash_plot_status')
     .select(`
-      id, site_id, plot_number, washed_at, washed_by,
+      id, site_id, plot_number, item_type, item_label, washed_at, washed_by,
       washer:workers!jetwash_plot_status_washed_by_fkey ( first_name, surname )
     `)
     .eq('site_id', siteId)
-    .order('plot_number')
 
   if (error) throw error
 
   const detailsByPlot = await fetchPlotDetailsBySite(siteId)
 
-  const rows = (data ?? []).map((row) => ({
-    id:           row.id,
-    site_id:      row.site_id,
-    plot_number:  row.plot_number,
-    washed_at:    row.washed_at,
-    washed_by:    row.washed_by,
-    washer:       relationOne(row.washer) as { first_name: string; surname: string } | null,
-    details:      detailsByPlot.get(row.plot_number) ?? [],
-  }))
-
-  return sortPlotNumbers(rows.map((r) => r.plot_number)).map((plot) => {
-    const row = rows.find((r) => r.plot_number === plot)!
-    return row
+  const rows: JetwashPlotRow[] = (data ?? []).map((row) => {
+    const item: WashItemKey = {
+      plot_number: row.plot_number,
+      item_type:   row.item_type === 'garage' ? 'garage' : 'house',
+      item_label:  row.item_label ?? '',
+    }
+    return {
+      id:           row.id,
+      site_id:      row.site_id,
+      plot_number:  row.plot_number,
+      item_type:    item.item_type,
+      item_label:   item.item_label,
+      title:        jetwashDisplayTitle(item),
+      washed_at:    row.washed_at,
+      washed_by:    row.washed_by,
+      washer:       relationOne(row.washer) as { first_name: string; surname: string } | null,
+      details:      item.item_type === 'house' ? (detailsByPlot.get(row.plot_number) ?? []) : [],
+    }
   })
+
+  return sortWashRows(rows)
 }
 
 export async function fetchJetwashSiteSummaries(activeOnly = true): Promise<JetwashSiteSummary[]> {
@@ -178,26 +229,21 @@ export async function fetchJetwashSiteSummaries(activeOnly = true): Promise<Jetw
   return summaries
 }
 
-export async function markPlotWashed(
-  siteId: string,
-  plotNumber: string,
-  workerId: string | null
-) {
+export async function markPlotWashedById(recordId: string, workerId: string | null) {
   const supabase = createServiceClient()
 
   const { data: existing, error: fetchErr } = await supabase
     .from('jetwash_plot_status')
     .select('id, washed_at')
-    .eq('site_id', siteId)
-    .eq('plot_number', plotNumber)
+    .eq('id', recordId)
     .maybeSingle()
 
   if (fetchErr) throw fetchErr
   if (!existing) {
-    return { ok: false as const, error: 'Plot not found on this site.' }
+    return { ok: false as const, error: 'Item not found.' }
   }
   if (existing.washed_at) {
-    return { ok: false as const, error: 'This plot has already been jetwashed.' }
+    return { ok: false as const, error: 'This item has already been jetwashed.' }
   }
 
   const now = new Date().toISOString()
@@ -208,12 +254,32 @@ export async function markPlotWashed(
       washed_by:  workerId,
       updated_at: now,
     })
-    .eq('id', existing.id)
+    .eq('id', recordId)
     .is('washed_at', null)
 
   if (updateErr) throw updateErr
 
   return { ok: true as const, washed_at: now }
+}
+
+/** @deprecated Use markPlotWashedById */
+export async function markPlotWashed(
+  siteId: string,
+  plotNumber: string,
+  workerId: string | null
+) {
+  const supabase = createServiceClient()
+  const { data } = await supabase
+    .from('jetwash_plot_status')
+    .select('id')
+    .eq('site_id', siteId)
+    .eq('plot_number', plotNumber)
+    .eq('item_type', 'house')
+    .eq('item_label', '')
+    .maybeSingle()
+
+  if (!data) return { ok: false as const, error: 'Plot not found on this site.' }
+  return markPlotWashedById(data.id, workerId)
 }
 
 function formatDayLabel(iso: string): string {
@@ -245,7 +311,7 @@ export async function fetchJetwashPayLog(input: {
   let query = supabase
     .from('jetwash_plot_status')
     .select(`
-      id, plot_number, washed_at, washed_by, site_id,
+      id, plot_number, item_type, item_label, washed_at, washed_by, site_id,
       sites!jetwash_plot_status_site_id_fkey ( name, address ),
       washer:workers!jetwash_plot_status_washed_by_fkey ( first_name, surname )
     `)
@@ -270,16 +336,24 @@ export async function fetchJetwashPayLog(input: {
   const entries: JetwashPayLogEntry[] = (data ?? []).map((row) => {
     const site = relationOne(row.sites) as { name: string; address: string | null } | null
     const siteDetails = detailsBySitePlot.get(row.site_id)
+    const item: WashItemKey = {
+      plot_number: row.plot_number,
+      item_type:   row.item_type === 'garage' ? 'garage' : 'house',
+      item_label:  row.item_label ?? '',
+    }
     return {
       id:           row.id,
       washed_at:    row.washed_at!,
       plot_number:  row.plot_number,
+      item_type:    item.item_type,
+      item_label:   item.item_label,
+      title:        jetwashDisplayTitle(item),
       site_id:      row.site_id,
       site_name:    site?.name ?? 'Unknown site',
       site_address: site?.address ?? null,
       washed_by:    row.washed_by,
       washer:       relationOne(row.washer) as { first_name: string; surname: string } | null,
-      details:      siteDetails?.get(row.plot_number) ?? [],
+      details:      item.item_type === 'house' ? (siteDetails?.get(row.plot_number) ?? []) : [],
     }
   })
 
