@@ -111,14 +111,15 @@ async function fallbackForemanSite(
 ): Promise<string | null> {
   if (!foremanId) return null
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('foreman_site_assignments')
     .select('site_id')
     .eq('foreman_id', foremanId)
+    .order('site_id')
     .limit(1)
-    .maybeSingle()
 
-  return data?.site_id ?? null
+  if (error) return null
+  return data?.[0]?.site_id ?? null
 }
 
 /** Resolve a non-null site_id for CIS ledger rows on single- and multi-site claims. */
@@ -145,6 +146,18 @@ export async function resolveClaimLedgerSiteId(
 
     const dominant = dominantSiteFromPool(poolItems, cellSiteById, variationSiteByKey)
     if (dominant) return dominant
+  }
+
+  // Any variation linked to this claim period
+  const { data: linkedVariation } = await supabase
+    .from('variation_claims')
+    .select('site_id')
+    .eq('claimed_in_period_id', claim.id)
+    .not('site_id', 'is', null)
+    .limit(1)
+
+  if (linkedVariation?.[0]?.site_id) {
+    return linkedVariation[0].site_id
   }
 
   return fallbackForemanSite(supabase, claim.foreman_id)
