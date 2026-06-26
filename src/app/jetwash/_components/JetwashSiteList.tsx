@@ -4,7 +4,17 @@ import Link from 'next/link'
 import { Building2, MapPin, ChevronRight } from 'lucide-react'
 import type { JetwashSiteSummary } from '@/lib/jetwash/queries'
 
-export default function JetwashSiteList({ sites }: { sites: JetwashSiteSummary[] }) {
+export default function JetwashSiteList({
+  sites,
+  variant = 'jetwasher',
+}: {
+  sites: JetwashSiteSummary[]
+  variant?: 'jetwasher' | 'admin'
+}) {
+  const siteHref = (siteId: string) =>
+    variant === 'admin'
+      ? `/admin/sites/${siteId}/jetwash`
+      : `/jetwash/sites/${siteId}`
   if (sites.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
@@ -28,7 +38,7 @@ export default function JetwashSiteList({ sites }: { sites: JetwashSiteSummary[]
         return (
           <Link
             key={site.site_id}
-            href={`/jetwash/sites/${site.site_id}`}
+            href={siteHref(site.site_id)}
             className={`block bg-white rounded-2xl border shadow-sm p-4 transition-colors ${
               complete
                 ? 'border-green-200 hover:border-green-300'

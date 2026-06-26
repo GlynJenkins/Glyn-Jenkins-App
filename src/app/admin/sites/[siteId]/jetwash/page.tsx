@@ -37,10 +37,10 @@ export default async function AdminSiteJetwashPage({
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <div>
             <Link
-              href={`/admin/sites/${siteId}`}
+              href="/admin/jetwash"
               className="text-orange-400 text-xs font-semibold tracking-widest uppercase hover:text-orange-300"
             >
-              ← {site.name}
+              ← Jetwashing
             </Link>
             <h1 className="text-xl font-bold text-white mt-1">Jetwash progress</h1>
           </div>

@@ -126,14 +126,13 @@ export async function fetchJetwashPlots(siteId: string): Promise<JetwashPlotRow[
   })
 }
 
-export async function fetchJetwashSiteSummaries(): Promise<JetwashSiteSummary[]> {
+export async function fetchJetwashSiteSummaries(activeOnly = true): Promise<JetwashSiteSummary[]> {
   const supabase = createServiceClient()
 
-  const { data: sites, error: sitesErr } = await supabase
-    .from('sites')
-    .select('id, name, address')
-    .eq('is_active', true)
-    .order('name')
+  let query = supabase.from('sites').select('id, name, address').order('name')
+  if (activeOnly) query = query.eq('is_active', true)
+
+  const { data: sites, error: sitesErr } = await query
 
   if (sitesErr) throw sitesErr
 

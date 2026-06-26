@@ -119,6 +119,22 @@ export default async function AdminSitePage({
           assignedForemen={assignedForemen ?? []}
           availableForemen={availableForemen}
         />
+
+        {hasData && (
+          <Link
+            href={`/admin/sites/${siteId}/jetwash`}
+            className="flex items-center justify-between bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-orange-200 transition-colors"
+          >
+            <div>
+              <p className="font-semibold text-slate-900">Jetwash progress</p>
+              <p className="text-xs text-slate-500 mt-0.5">View which plots have been washed on this site</p>
+            </div>
+            <span className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl shrink-0">
+              View
+            </span>
+          </Link>
+        )}
+
         {!hasData ? (
           <div className="text-center py-24 text-slate-400 space-y-3">
             <div className="text-5xl">📊</div>
