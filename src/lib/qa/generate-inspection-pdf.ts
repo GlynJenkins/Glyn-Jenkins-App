@@ -7,6 +7,9 @@ const MARGIN      = 50
 const LINE_HEIGHT = 14
 const BODY_SIZE   = 10
 const TITLE_SIZE  = 14
+/** Max draw area per photo on the PDF page (points) — fit inside, preserve aspect ratio. */
+const MAX_PHOTO_DRAW_W = PAGE_WIDTH - 2 * MARGIN
+const MAX_PHOTO_DRAW_H = 360
 
 export type QaPdfPhoto = {
   label:  string
@@ -79,19 +82,21 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
     drawLines([photo.label], { bold: true, size: 11 })
     y -= 4
     const image = await embedPhotoImage(pdf, photo.buffer, photo.mime)
-    const photoWidth = maxWidth
-    const photoHeight = (image.height / image.width) * photoWidth
-    if (y - photoHeight < MARGIN) {
+    const scale = Math.min(MAX_PHOTO_DRAW_W / image.width, MAX_PHOTO_DRAW_H / image.height)
+    const drawW = image.width * scale
+    const drawH = image.height * scale
+    if (y - drawH < MARGIN) {
       page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
       y = PAGE_HEIGHT - MARGIN
     }
+    const x = MARGIN + (MAX_PHOTO_DRAW_W - drawW) / 2
     page.drawImage(image, {
-      x: MARGIN,
-      y: y - photoHeight,
-      width: photoWidth,
-      height: photoHeight,
+      x,
+      y: y - drawH,
+      width: drawW,
+      height: drawH,
     })
-    y -= photoHeight + 16
+    y -= drawH + 16
   }
 
   drawLines(['QUALITY INSPECTION — GLYN JENKINS LTD'], { bold: true, size: TITLE_SIZE })

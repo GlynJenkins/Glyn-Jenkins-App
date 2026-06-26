@@ -96,13 +96,20 @@ function InspectionFormModal({
     setFiresockError(null)
   }
 
-  const addInspectionPhoto = (file: File | null) => {
-    if (!file) return
-    if (inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS) return
-    setInspectionPhotos((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) },
-    ])
+  const addInspectionPhotos = (files: FileList | File[] | null) => {
+    if (!files?.length) return
+    setInspectionPhotos((prev) => {
+      const remaining = MAX_QA_INSPECTION_PHOTOS - prev.length
+      if (remaining <= 0) return prev
+      const toAdd = Array.from(files)
+        .slice(0, remaining)
+        .map((file) => ({
+          id:      crypto.randomUUID(),
+          file,
+          preview: URL.createObjectURL(file),
+        }))
+      return [...prev, ...toAdd]
+    })
   }
 
   const removeInspectionPhoto = (id: string) => {
@@ -402,7 +409,7 @@ function InspectionFormModal({
                     <img
                       src={photo.preview}
                       alt={`Inspection photo ${index + 1}`}
-                      className="w-full h-28 object-cover rounded-lg border border-slate-200 bg-white"
+                      className="w-full h-32 object-contain rounded-lg border border-slate-200 bg-white"
                     />
                     <button
                       type="button"
@@ -431,21 +438,22 @@ function InspectionFormModal({
                   className="sr-only"
                   disabled={inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS}
                   onChange={(e) => {
-                    addInspectionPhoto(e.target.files?.[0] ?? null)
+                    addInspectionPhotos(e.target.files)
                     e.target.value = ''
                   }}
                 />
               </label>
               <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-slate-100">
                 <ImagePlus className="w-4 h-4 text-slate-700" />
-                Upload photo
+                Upload photos
                 <input
                   type="file"
                   accept="image/*"
+                  multiple
                   className="sr-only"
                   disabled={inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS}
                   onChange={(e) => {
-                    addInspectionPhoto(e.target.files?.[0] ?? null)
+                    addInspectionPhotos(e.target.files)
                     e.target.value = ''
                   }}
                 />

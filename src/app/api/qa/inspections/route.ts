@@ -6,6 +6,7 @@ import { generateQaInspectionPdf, type QaPdfPhoto } from '@/lib/qa/generate-insp
 import { isQaStageKey, qaStageLabel, firesockRequirementMet, stageAllowsFiresockNa } from '@/lib/qa/stages'
 import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
 import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto } from '@/lib/qa/inspection-photos'
+import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,16 +85,19 @@ export async function POST(request: NextRequest) {
     let firesockPhotoPath: string | undefined
 
     if (hasFiresockPhoto && firesockPhoto) {
-      firesockBuffer = Buffer.from(await firesockPhoto.arrayBuffer())
-      firesockMime = firesockPhoto.type || 'image/jpeg'
+      const raw = Buffer.from(await firesockPhoto.arrayBuffer())
+      const normalized = await normalizePhotoForPdf(raw)
+      firesockBuffer = normalized.buffer
+      firesockMime = normalized.mime
     }
 
-    const inspectionBuffers: { buffer: Buffer; mime: string; file: File }[] = []
+    const inspectionBuffers: { buffer: Buffer; mime: string }[] = []
     for (const file of inspectionPhotoFiles) {
+      const raw = Buffer.from(await file.arrayBuffer())
+      const normalized = await normalizePhotoForPdf(raw)
       inspectionBuffers.push({
-        buffer: Buffer.from(await file.arrayBuffer()),
-        mime:   file.type || 'image/jpeg',
-        file,
+        buffer: normalized.buffer,
+        mime:   normalized.mime,
       })
     }
 
