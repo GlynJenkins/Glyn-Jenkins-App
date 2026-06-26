@@ -27,6 +27,7 @@ type Worker = {
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin', foreman: 'Foreman', management: 'Management',
   bricklayer: 'Bricklayer', labourer: 'Labourer', apprentice: 'Apprentice',
+  jetwasher: 'Jetwasher',
 }
 
 const TAX_LABELS: Record<string, string> = {

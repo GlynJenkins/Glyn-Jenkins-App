@@ -73,6 +73,7 @@ export async function middleware(request: NextRequest) {
     if (
       (pathname.startsWith('/admin') ||
         pathname.startsWith('/foreman') ||
+        pathname.startsWith('/jetwash') ||
         pathname.startsWith('/dashboard')) &&
       !user
     ) {
@@ -89,6 +90,7 @@ export const config = {
   matcher: [
     '/admin/:path*',
     '/foreman/:path*',
+    '/jetwash/:path*',
     '/dashboard/:path*',
     '/login',
     '/api/:path*',

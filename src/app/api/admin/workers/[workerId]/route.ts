@@ -11,6 +11,7 @@ const ASSIGNABLE_ROLES = [
   'labourer',
   'apprentice',
   'management',
+  'jetwasher',
 ] as const
 
 type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]

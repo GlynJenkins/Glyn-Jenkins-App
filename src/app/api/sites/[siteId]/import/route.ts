@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { syncJetwashPlots } from '@/lib/jetwash/queries'
 import * as XLSX from 'xlsx'
 
 export const dynamic = 'force-dynamic'
@@ -253,6 +254,12 @@ export async function POST(
       const na = parseFloat(a), nb = parseFloat(b)
       return isNaN(na) || isNaN(nb) ? a.localeCompare(b) : na - nb
     })
+
+    try {
+      await syncJetwashPlots(siteId, plotList)
+    } catch (syncErr) {
+      console.error('[Jetwash sync]', syncErr)
+    }
 
     // Raw rows around the boundary — helps diagnose cutoff issues
     const boundaryDump = rows.slice(headerRowIndex + 1).map((r, i) => {

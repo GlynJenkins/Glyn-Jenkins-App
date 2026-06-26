@@ -61,6 +61,7 @@ const fmtDate = (d: string) =>
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin', foreman: 'Foreman', management: 'Management',
   bricklayer: 'Bricklayer', labourer: 'Labourer', apprentice: 'Apprentice',
+  jetwasher: 'Jetwasher',
 }
 
 const ASSIGNABLE_ROLES = [
@@ -69,6 +70,7 @@ const ASSIGNABLE_ROLES = [
   { value: 'apprentice', label: 'Apprentice' },
   { value: 'foreman',    label: 'Foreman' },
   { value: 'management', label: 'Management' },
+  { value: 'jetwasher',  label: 'Jetwasher' },
 ] as const
 
 const STATUS_COLORS: Record<string, string> = {

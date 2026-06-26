@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import { canAccessAdmin } from '@/lib/worker-access'
+import { canAccessAdmin, canAccessJetwash } from '@/lib/worker-access'
 import { allowLegacyAdmin } from '@/lib/auth/production'
 
 export type PortalWorker = {
@@ -103,6 +103,67 @@ export async function verifyAdminApiAccess(): Promise<
   }
 
   return { ok: true, user, worker }
+}
+
+/** Jetwasher portal: `jetwasher` role only. */
+export async function requireJetwasherAccess(): Promise<{ user: User; worker: PortalWorker }> {
+  const user = await getAuthUser()
+  if (!user) redirect('/login')
+
+  const worker = await getWorkerForUser(user.id)
+  if (!worker || !canAccessJetwash(worker.role)) redirect('/access-denied')
+  if (worker.status !== 'active') redirect('/pending-approval')
+
+  return { user, worker }
+}
+
+export async function verifyJetwasherApiAccess(): Promise<
+  | { ok: true; user: User; worker: PortalWorker }
+  | { ok: false; response: NextResponse }
+> {
+  const user = await getAuthUser()
+  if (!user) {
+    return { ok: false, response: NextResponse.json({ error: 'Unauthorized.' }, { status: 401 }) }
+  }
+
+  const worker = await getWorkerForUser(user.id)
+  if (!worker || !canAccessJetwash(worker.role)) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden.' }, { status: 403 }) }
+  }
+  if (worker.status !== 'active') {
+    return { ok: false, response: NextResponse.json({ error: 'Account pending approval.' }, { status: 403 }) }
+  }
+
+  return { ok: true, user, worker }
+}
+
+/** Jetwash data: jetwasher or admin/management. */
+export async function verifyJetwashViewAccess(): Promise<
+  | { ok: true; user: User; worker: PortalWorker | null; isAdmin: boolean }
+  | { ok: false; response: NextResponse }
+> {
+  const user = await getAuthUser()
+  if (!user) {
+    return { ok: false, response: NextResponse.json({ error: 'Unauthorized.' }, { status: 401 }) }
+  }
+
+  const worker = await getWorkerForUser(user.id)
+  if (!worker) {
+    if (!allowLegacyAdmin()) {
+      return { ok: false, response: NextResponse.json({ error: 'Forbidden.' }, { status: 403 }) }
+    }
+    return { ok: true, user, worker: null, isAdmin: true }
+  }
+
+  if (worker.status !== 'active') {
+    return { ok: false, response: NextResponse.json({ error: 'Account pending approval.' }, { status: 403 }) }
+  }
+
+  if (canAccessJetwash(worker.role) || canAccessAdmin(worker.role)) {
+    return { ok: true, user, worker, isAdmin: canAccessAdmin(worker.role) }
+  }
+
+  return { ok: false, response: NextResponse.json({ error: 'Forbidden.' }, { status: 403 }) }
 }
 
 export async function verifyForemanApiAccess(): Promise<

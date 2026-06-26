@@ -26,7 +26,7 @@ const schema = z.object({
   surname:              z.string().min(1, 'Surname is required'),
   phone:                z.string().min(10, 'Enter a valid UK phone number'),
   email:                z.string().email('Enter a valid email address'),
-  role:                 z.enum(['foreman', 'bricklayer', 'labourer', 'apprentice', 'management'], { error: 'Select your role' }),
+  role:                 z.enum(['foreman', 'bricklayer', 'labourer', 'apprentice', 'management', 'jetwasher'], { error: 'Select your role' }),
   hasPersonalInsurance: z.enum(['yes', 'no'], { error: 'Please answer this question' }),
   bankSortCode:         z.string().regex(/^\d{2}-\d{2}-\d{2}$/, 'Format: 12-34-56'),
   bankAccountNumber:    z.string().regex(/^\d{8}$/, 'Must be exactly 8 digits'),
@@ -495,6 +495,7 @@ export default function InductionPage() {
               <option value="labourer">Labourer</option>
               <option value="apprentice">Apprentice</option>
               <option value="management">Management</option>
+              <option value="jetwasher">Jetwasher</option>
             </select>
             <FieldError message={errors.role?.message} />
           </div>
@@ -534,13 +535,19 @@ export default function InductionPage() {
           </div>
         </SectionCard>
 
-        {/* Section 2b — Portal login (foreman / management only) */}
+        {/* Section 2b — Portal login (foreman / management / jetwasher) */}
         {needsLogin && (
           <SectionCard icon={KeyRound} title="Portal Login">
             <p className="text-xs text-slate-500 leading-relaxed">
-              As {selectedRole === 'foreman' ? 'a Foreman' : 'Management'}, you&apos;ll use the app
-              to manage sites and claims. Choose a password now — your login will be activated
-              once an administrator approves your registration.
+              {selectedRole === 'foreman' && (
+                <>As a Foreman, you&apos;ll use the app to manage sites and claims. Choose a password now — your login will be activated once an administrator approves your registration.</>
+              )}
+              {selectedRole === 'management' && (
+                <>As Management, you&apos;ll use the app to manage sites and claims. Choose a password now — your login will be activated once an administrator approves your registration.</>
+              )}
+              {selectedRole === 'jetwasher' && (
+                <>As a Jetwasher, you&apos;ll use the app to log plot washing on each site. Choose a password now — your login will be activated once an administrator approves your registration.</>
+              )}
             </p>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">

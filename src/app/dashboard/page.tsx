@@ -1,5 +1,5 @@
 import { getAuthUser, getWorkerForUser } from '@/lib/auth/portal-access'
-import { canAccessAdmin } from '@/lib/worker-access'
+import { canAccessAdmin, canAccessJetwash } from '@/lib/worker-access'
 import { allowLegacyAdmin } from '@/lib/auth/production'
 import { redirect } from 'next/navigation'
 
@@ -25,6 +25,7 @@ export default async function DashboardPage() {
   if (worker.status !== 'active') redirect('/pending-approval')
 
   if (worker.role === 'foreman') redirect('/foreman')
+  if (canAccessJetwash(worker.role)) redirect('/jetwash')
   if (canAccessAdmin(worker.role)) redirect('/admin')
 
   redirect('/access-denied')
