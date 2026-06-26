@@ -1,5 +1,9 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { relationOne } from '@/lib/supabase/normalize-relations'
+import {
+  fetchPlotDetailsBySite,
+  type PlotDetail,
+} from '@/lib/jetwash/plot-descriptions'
 
 export type JetwashPlotRow = {
   id: string
@@ -8,6 +12,7 @@ export type JetwashPlotRow = {
   washed_at: string | null
   washed_by: string | null
   washer: { first_name: string; surname: string } | null
+  details: PlotDetail[]
 }
 
 export type JetwashPayLogEntry = {
@@ -19,6 +24,7 @@ export type JetwashPayLogEntry = {
   site_address: string | null
   washed_by: string | null
   washer: { first_name: string; surname: string } | null
+  details: PlotDetail[]
 }
 
 export type JetwashPayLogDay = {
@@ -128,6 +134,8 @@ export async function fetchJetwashPlots(siteId: string): Promise<JetwashPlotRow[
 
   if (error) throw error
 
+  const detailsByPlot = await fetchPlotDetailsBySite(siteId)
+
   const rows = (data ?? []).map((row) => ({
     id:           row.id,
     site_id:      row.site_id,
@@ -135,6 +143,7 @@ export async function fetchJetwashPlots(siteId: string): Promise<JetwashPlotRow[
     washed_at:    row.washed_at,
     washed_by:    row.washed_by,
     washer:       relationOne(row.washer) as { first_name: string; surname: string } | null,
+    details:      detailsByPlot.get(row.plot_number) ?? [],
   }))
 
   return sortPlotNumbers(rows.map((r) => r.plot_number)).map((plot) => {
@@ -252,8 +261,15 @@ export async function fetchJetwashPayLog(input: {
   const { data, error } = await query
   if (error) throw error
 
+  const siteIds = [...new Set((data ?? []).map((r) => r.site_id))]
+  const detailsBySitePlot = new Map<string, Map<string, PlotDetail[]>>()
+  for (const siteId of siteIds) {
+    detailsBySitePlot.set(siteId, await fetchPlotDetailsBySite(siteId))
+  }
+
   const entries: JetwashPayLogEntry[] = (data ?? []).map((row) => {
     const site = relationOne(row.sites) as { name: string; address: string | null } | null
+    const siteDetails = detailsBySitePlot.get(row.site_id)
     return {
       id:           row.id,
       washed_at:    row.washed_at!,
@@ -263,6 +279,7 @@ export async function fetchJetwashPayLog(input: {
       site_address: site?.address ?? null,
       washed_by:    row.washed_by,
       washer:       relationOne(row.washer) as { first_name: string; surname: string } | null,
+      details:      siteDetails?.get(row.plot_number) ?? [],
     }
   })
 

@@ -121,6 +121,15 @@ export default function JetwashPlotList({
                   <p className={`text-sm font-semibold ${isWashed ? 'text-green-800' : 'text-slate-900'}`}>
                     Plot {plot.plot_number}
                   </p>
+                  {plot.details.length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {plot.details.map((d) => (
+                        <p key={`${plot.id}-${d.label}`} className="text-[11px] text-slate-600 leading-snug">
+                          <span className="text-slate-400">{d.label}:</span> {d.value}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   {isWashed && (
                     <p className="text-[10px] text-green-600 mt-0.5">
                       {plot.washer

@@ -4,6 +4,7 @@ import { useState, useTransition, useCallback } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react'
 import type { JetwashPayLogDay, JetwashPayLogEntry } from '@/lib/jetwash/queries'
+import { formatPlotDetails } from '@/lib/jetwash/plot-descriptions'
 
 type PeriodOption = { index: number; label: string; payLabel: string }
 type Jetwasher = { id: string; first_name: string; surname: string }
@@ -22,7 +23,7 @@ function fmtTime(iso: string) {
 
 function buildCsv(byDay: JetwashPayLogDay[], periodLabel: string) {
   const rows = [
-    ['Date', 'Time', 'Site', 'Address', 'Plot', 'Washed by'].join(','),
+    ['Date', 'Time', 'Site', 'Address', 'Plot', 'Description', 'Washed by'].join(','),
   ]
   for (const day of byDay) {
     for (const e of day.entries) {
@@ -32,6 +33,7 @@ function buildCsv(byDay: JetwashPayLogDay[], periodLabel: string) {
         `"${e.site_name.replace(/"/g, '""')}"`,
         `"${(e.site_address ?? '').replace(/"/g, '""')}"`,
         e.plot_number,
+        `"${formatPlotDetails(e.details).replace(/"/g, '""')}"`,
         e.washer ? `"${e.washer.first_name} ${e.washer.surname}"` : '',
       ].join(','))
     }
@@ -154,6 +156,11 @@ export default function JetwashPayLog({ initial }: { initial: Payload }) {
                       </p>
                       {e.site_address && (
                         <p className="text-xs text-slate-500 truncate">{e.site_address}</p>
+                      )}
+                      {e.details.length > 0 && (
+                        <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                          {formatPlotDetails(e.details)}
+                        </p>
                       )}
                       {e.washer && (
                         <p className="text-[10px] text-slate-400 mt-0.5">
