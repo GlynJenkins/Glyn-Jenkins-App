@@ -8,6 +8,7 @@ import {
   Settings,
   Sun,
   TrendingUp,
+  Users,
 } from 'lucide-react'
 
 export type AdminNavCounts = {
@@ -79,6 +80,14 @@ function buildSections(counts: AdminNavCounts): NavSection[] {
     {
       title: 'Team',
       items: [
+        {
+          href:        '/admin/workers',
+          icon:        Users,
+          label:       'Workers',
+          description: 'Inductions, profiles & activation',
+          badge:       counts.pendingWorkers,
+          accent:      counts.pendingWorkers > 0,
+        },
         {
           href:        '/admin/holidays',
           icon:        Sun,
@@ -171,12 +180,12 @@ function ActionBanner({ counts }: { counts: AdminNavCounts }) {
           </Link>
         )}
         {counts.pendingWorkers > 0 && (
-          <a
-            href="#workers"
+          <Link
+            href="/admin/workers"
             className="px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 text-xs font-semibold rounded-lg border border-amber-300 transition-colors"
           >
             Review workers
-          </a>
+          </Link>
         )}
       </div>
     </div>

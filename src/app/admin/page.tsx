@@ -1,6 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
-import WorkerList from './_components/WorkerList'
 import LogoutButton from './_components/LogoutButton'
 import AdminDashboardNav from './_components/AdminDashboardNav'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
@@ -11,17 +10,11 @@ export default async function AdminPage() {
   const { worker } = await requireAdminAccess()
 
   const supabase = createServiceClient()
-  const { data: workers, error } = await supabase
+
+  const { count: pendingWorkerCount } = await supabase
     .from('workers')
-    .select('id, first_name, surname, phone, utr_number, tax_type, role, status, has_personal_insurance, cscs_card_url, id_document_url, insurance_certificate_url, created_at')
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    console.error('[Admin] Failed to fetch workers:', error.message)
-  }
-
-  const workerRows = workers ?? []
-  const pendingWorkerCount = workerRows.filter((w) => w.status === 'pending_verification').length
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending_verification')
 
   const { count: pendingClaimCount } = await supabase
     .from('claim_periods')
@@ -48,7 +41,7 @@ export default async function AdminPage() {
     pendingClaims:     pendingClaimCount ?? 0,
     pendingVariations: pendingVariationCount,
     pendingHolidays:   pendingHolidayCount,
-    pendingWorkers:    pendingWorkerCount,
+    pendingWorkers:    pendingWorkerCount ?? 0,
   }
 
   const displayName = worker
@@ -70,26 +63,9 @@ export default async function AdminPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 -mt-5 pb-16 space-y-10">
+      <main className="max-w-5xl mx-auto px-4 -mt-5 pb-16">
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
           <AdminDashboardNav counts={navCounts} />
-        </section>
-
-        <section id="workers" className="scroll-mt-6">
-          <div className="flex items-end justify-between gap-3 mb-4 px-0.5">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Workers</h2>
-              <p className="text-sm text-slate-500 mt-0.5">
-                Inductions, profiles &amp; activation
-              </p>
-            </div>
-            {pendingWorkerCount > 0 && (
-              <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
-                {pendingWorkerCount} pending
-              </span>
-            )}
-          </div>
-          <WorkerList initialWorkers={workerRows} />
         </section>
       </main>
     </div>
