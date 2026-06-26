@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
-import { Building2, FileUp, ClipboardCheck, Settings, Sun, Droplets } from 'lucide-react'
+import { Building2, FileUp, ClipboardCheck, Settings, Sun, Droplets, TrendingUp } from 'lucide-react'
 import WorkerList from './_components/WorkerList'
 import LogoutButton from './_components/LogoutButton'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
@@ -114,6 +114,13 @@ export default async function AdminPage() {
           >
             <Droplets className="w-4 h-4 text-orange-400" />
             Jetwash
+          </Link>
+          <Link
+            href="/admin/production"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            <TrendingUp className="w-4 h-4 text-orange-400" />
+            Production
           </Link>
         </div>
       </header>
