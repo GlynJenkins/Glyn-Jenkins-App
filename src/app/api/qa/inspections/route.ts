@@ -10,7 +10,6 @@ import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import {
   checklistAllAnswered,
   checklistForStage,
-  checklistValidForResult,
   parseChecklistAnswers,
   type QaChecklistAnswers,
 } from '@/lib/qa/checklists'
@@ -58,12 +57,6 @@ export async function POST(request: NextRequest) {
     if (stageChecklist.length > 0 && !checklistAllAnswered(stage, checklistAnswers)) {
       return NextResponse.json(
         { error: 'Select Yes, No, or N/A for every checklist item.' },
-        { status: 400 },
-      )
-    }
-    if (stageChecklist.length > 0 && !checklistValidForResult(stage, checklistAnswers, result)) {
-      return NextResponse.json(
-        { error: 'Pass results require Yes or N/A on every checklist item (no No answers).' },
         { status: 400 },
       )
     }

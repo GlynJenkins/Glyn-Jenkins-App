@@ -102,20 +102,6 @@ export function checklistAllAnswered(stage: QaStageKey, answers: QaChecklistAnsw
   return checklistForStage(stage).every((item) => isChecklistValue(answers[item.key]))
 }
 
-export function checklistValidForResult(
-  stage: QaStageKey,
-  answers: QaChecklistAnswers,
-  result: string,
-): boolean {
-  if (!checklistAllAnswered(stage, answers)) return false
-  const passing = result === 'Pass' || result === 'Pass with notes'
-  if (!passing) return true
-  return checklistForStage(stage).every((item) => {
-    const v = answers[item.key]
-    return v === 'yes' || v === 'na'
-  })
-}
-
 export function checklistAnswerLabel(value: QaChecklistValue): string {
   if (value === 'yes') return 'Yes'
   if (value === 'no') return 'No'

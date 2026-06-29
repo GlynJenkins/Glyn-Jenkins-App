@@ -19,7 +19,6 @@ import {
   parseChecklistAnswers,
   stageHasChecklist,
   checklistAllAnswered,
-  checklistValidForResult,
   type QaChecklistAnswers,
   type QaChecklistValue,
 } from '@/lib/qa/checklists'
@@ -193,10 +192,6 @@ function InspectionFormModal({
     if (!inspectorName.trim()) { setError('Inspector name is required.'); return }
     if (hasChecklist && !checklistAllAnswered(cell.stage, checklist)) {
       setChecklistError('Select Yes, No, or N/A for every checklist item.')
-      return
-    }
-    if (hasChecklist && !checklistValidForResult(cell.stage, checklist, result)) {
-      setChecklistError('Pass results require Yes or N/A on every item (change result to Fail if any No).')
       return
     }
     if (needsFiresock && !firesockOk) {
@@ -506,7 +501,7 @@ function InspectionFormModal({
               <div>
                 <p className="text-sm font-semibold text-slate-900">Inspection checklist</p>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  Select Yes, No, or N/A for each item — included on the PDF.
+                  Select Yes, No, or N/A for each item. Use No or N/A to flag issues for trades — included on the PDF.
                 </p>
               </div>
               <ul className="space-y-3">
