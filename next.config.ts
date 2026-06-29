@@ -27,7 +27,7 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['xlsx'],
+  serverExternalPackages: ['xlsx', 'sharp'],
 };
 
 export default withPWA(nextConfig);

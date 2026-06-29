@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { Check, Camera, Download, ImagePlus, Trash2, X } from 'lucide-react'
 import SignaturePad from '@/components/SignaturePad'
 import {
@@ -11,7 +11,7 @@ import {
   firesockRequirementMet,
   type QaStageKey,
 } from '@/lib/qa/stages'
-import { MAX_QA_INSPECTION_PHOTOS } from '@/lib/qa/inspection-photos'
+import { MAX_QA_INSPECTION_PHOTOS, isImageUploadFile } from '@/lib/qa/inspection-photos'
 import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 
 type Props = {
@@ -35,6 +35,10 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
+}
+
+function newPhotoId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function InspectionFormModal({
@@ -65,6 +69,13 @@ function InspectionFormModal({
   const [submitting,     setSubmitting]     = useState(false)
   const [confirmRemove,  setConfirmRemove]  = useState(false)
   const [removing,       setRemoving]       = useState(false)
+  const [inspectionPhotoError, setInspectionPhotoError] = useState<string | null>(null)
+
+  const firesockInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+
+  const atPhotoLimit = inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS
 
   const needsFiresock = stageRequiresFiresock(cell.stage)
   const allowsFiresockNa = stageAllowsFiresockNa(cell.stage)
@@ -98,18 +109,27 @@ function InspectionFormModal({
 
   const addInspectionPhotos = (files: FileList | File[] | null) => {
     if (!files?.length) return
+    const valid = Array.from(files).filter(isImageUploadFile)
+    if (valid.length === 0) {
+      setInspectionPhotoError('Could not use that file — please choose a photo (JPEG, PNG, or HEIC).')
+      return
+    }
+
+    setInspectionPhotoError(null)
     setInspectionPhotos((prev) => {
       const remaining = MAX_QA_INSPECTION_PHOTOS - prev.length
       if (remaining <= 0) return prev
-      const toAdd = Array.from(files)
-        .slice(0, remaining)
-        .map((file) => ({
-          id:      crypto.randomUUID(),
-          file,
-          preview: URL.createObjectURL(file),
-        }))
+      const toAdd = valid.slice(0, remaining).map((file) => ({
+        id:      newPhotoId(),
+        file,
+        preview: URL.createObjectURL(file),
+      }))
       return [...prev, ...toAdd]
     })
+  }
+
+  const clearFileInput = (input: HTMLInputElement | null) => {
+    if (input) input.value = ''
   }
 
   const removeInspectionPhoto = (id: string) => {
@@ -192,6 +212,47 @@ function InspectionFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50">
+      {/* File inputs live outside the scroll area — fixes iOS/PWA picker inside modals */}
+      <input
+        ref={firesockInputRef}
+        type="file"
+        accept="image/*,.heic,.heif"
+        capture="environment"
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => {
+          handleFiresockPhoto(e.target.files?.[0] ?? null)
+          clearFileInput(e.currentTarget)
+        }}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*,.heic,.heif"
+        capture="environment"
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => {
+          addInspectionPhotos(e.target.files)
+          clearFileInput(e.currentTarget)
+        }}
+      />
+      <input
+        ref={uploadInputRef}
+        type="file"
+        accept="image/*,.heic,.heif"
+        multiple
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => {
+          addInspectionPhotos(e.target.files)
+          clearFileInput(e.currentTarget)
+        }}
+      />
+
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto shadow-xl">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-start justify-between gap-3">
           <div>
@@ -312,17 +373,14 @@ function InspectionFormModal({
               )}
 
               <div className="flex flex-wrap gap-2">
-                <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-orange-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-orange-100">
+                <button
+                  type="button"
+                  onClick={() => firesockInputRef.current?.click()}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-orange-300 bg-white text-sm font-semibold text-slate-800 hover:bg-orange-100"
+                >
                   <ImagePlus className="w-4 h-4 text-orange-600" />
                   {firesockPhoto ? 'Change photo' : 'Upload photo'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="sr-only"
-                    onChange={(e) => handleFiresockPhoto(e.target.files?.[0] ?? null)}
-                  />
-                </label>
+                </button>
                 {allowsFiresockNa && (
                   <button
                     type="button"
@@ -428,37 +486,29 @@ function InspectionFormModal({
             )}
 
             <div className="flex flex-wrap gap-2">
-              <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-slate-100">
+              <button
+                type="button"
+                disabled={atPhotoLimit}
+                onClick={() => cameraInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50 disabled:pointer-events-none"
+              >
                 <Camera className="w-4 h-4 text-slate-700" />
                 Take photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="sr-only"
-                  disabled={inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS}
-                  onChange={(e) => {
-                    addInspectionPhotos(e.target.files)
-                    e.target.value = ''
-                  }}
-                />
-              </label>
-              <label className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 cursor-pointer hover:bg-slate-100">
+              </button>
+              <button
+                type="button"
+                disabled={atPhotoLimit}
+                onClick={() => uploadInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50 disabled:pointer-events-none"
+              >
                 <ImagePlus className="w-4 h-4 text-slate-700" />
                 Upload photos
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="sr-only"
-                  disabled={inspectionPhotos.length >= MAX_QA_INSPECTION_PHOTOS}
-                  onChange={(e) => {
-                    addInspectionPhotos(e.target.files)
-                    e.target.value = ''
-                  }}
-                />
-              </label>
+              </button>
             </div>
+
+            {inspectionPhotoError && (
+              <p className="text-xs text-red-600 font-medium">{inspectionPhotoError}</p>
+            )}
 
             <p className="text-[11px] text-slate-500">
               {inspectionPhotos.length} / {MAX_QA_INSPECTION_PHOTOS} photos added

@@ -5,14 +5,10 @@ import { fetchQaSiteGrid } from '@/lib/qa/queries'
 import { generateQaInspectionPdf, type QaPdfPhoto } from '@/lib/qa/generate-inspection-pdf'
 import { isQaStageKey, qaStageLabel, firesockRequirementMet, stageAllowsFiresockNa } from '@/lib/qa/stages'
 import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
-import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto } from '@/lib/qa/inspection-photos'
+import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto, isImageUploadFile } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 
 export const dynamic = 'force-dynamic'
-
-function validImageFile(file: File): boolean {
-  return file.size > 0 && (file.type.startsWith('image/') || file.name.length > 0)
-}
 
 export async function POST(request: NextRequest) {
   const auth = await verifyAdminApiAccess()
@@ -31,7 +27,7 @@ export async function POST(request: NextRequest) {
     const firesockPhoto  = formData.get('firesockPhoto') as File | null
     const signature      = formData.get('signature') as File | null
     const inspectionPhotoFiles = (formData.getAll('inspectionPhotos') as File[])
-      .filter(validImageFile)
+      .filter(isImageUploadFile)
 
     if (!siteId || !plotNumber || !stage || !inspectorName || !inspectionDate) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
