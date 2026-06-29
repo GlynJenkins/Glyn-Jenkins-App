@@ -1,5 +1,7 @@
 'use client'
 
+import { isHeifBytes, looksLikeJpeg } from './photo-bytes'
+
 const HEIC_RE = /\.(heic|heif)$/i
 
 export function isHeicFile(file: File): boolean {
@@ -8,7 +10,12 @@ export function isHeicFile(file: File): boolean {
 }
 
 function jpegName(name: string): string {
-  return name.replace(/\.(heic|heif|png|webp|gif|bmp)$/i, '.jpg').replace(/\.[^.]+$/, '.jpg')
+  const base = name.replace(/\.[^.]+$/i, '') || 'photo'
+  return `${base}.jpg`
+}
+
+async function fileHead(file: File, bytes = 64): Promise<Uint8Array> {
+  return new Uint8Array(await file.slice(0, bytes).arrayBuffer())
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -55,24 +62,39 @@ async function convertHeic(file: File): Promise<File> {
   return new File([blob], jpegName(file.name), { type: 'image/jpeg' })
 }
 
+async function assertJpegFile(file: File): Promise<File> {
+  const head = await fileHead(file)
+  if (looksLikeJpeg(head)) return file
+  throw new Error('Photo conversion did not produce a JPEG.')
+}
+
+const HEIC_HELP =
+  'Could not convert iPhone photo. Try Settings → Camera → Formats → Most Compatible, then retake the photo.'
+
 /** Convert phone/gallery photos to JPEG in the browser so the server can always process them. */
 export async function preparePhotoForUpload(file: File): Promise<File> {
-  if (isHeicFile(file)) {
+  const head = await fileHead(file)
+  const needsHeicConversion = isHeicFile(file) || isHeifBytes(head)
+
+  if (needsHeicConversion) {
     try {
-      return await convertHeic(file)
+      return await assertJpegFile(await convertHeic(file))
     } catch {
-      // Some devices report HEIC incorrectly — try canvas, then rethrow.
       try {
-        return await convertViaCanvas(file)
+        return await assertJpegFile(await convertViaCanvas(file))
       } catch {
-        throw new Error('Could not convert iPhone photo. Try Settings → Camera → Formats → Most Compatible.')
+        throw new Error(HEIC_HELP)
       }
     }
   }
 
-  if (file.type === 'image/jpeg' || file.type === 'image/jpg' || /\.jpe?g$/i.test(file.name)) {
+  if (looksLikeJpeg(head)) {
     return file
   }
 
-  return convertViaCanvas(file)
+  try {
+    return await assertJpegFile(await convertViaCanvas(file))
+  } catch {
+    throw new Error(HEIC_HELP)
+  }
 }

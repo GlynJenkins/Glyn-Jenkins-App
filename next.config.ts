@@ -27,7 +27,7 @@ const withPWA = withPWAInit({
 });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['xlsx', 'sharp'],
+  serverExternalPackages: ['xlsx', 'sharp', 'heic-convert'],
 };
 
 export default withPWA(nextConfig);
