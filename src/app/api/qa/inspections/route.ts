@@ -9,6 +9,7 @@ import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto, i
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   const auth = await verifyAdminApiAccess()

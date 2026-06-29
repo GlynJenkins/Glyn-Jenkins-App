@@ -12,6 +12,7 @@ import {
   type QaStageKey,
 } from '@/lib/qa/stages'
 import { MAX_QA_INSPECTION_PHOTOS, isImageUploadFile } from '@/lib/qa/inspection-photos'
+import { preparePhotoForUpload } from '@/lib/qa/prepare-photo-upload'
 import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 
 type Props = {
@@ -70,6 +71,7 @@ function InspectionFormModal({
   const [confirmRemove,  setConfirmRemove]  = useState(false)
   const [removing,       setRemoving]       = useState(false)
   const [inspectionPhotoError, setInspectionPhotoError] = useState<string | null>(null)
+  const [processingPhotos, setProcessingPhotos] = useState(false)
 
   const firesockInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -84,17 +86,25 @@ function InspectionFormModal({
     hasPhoto: !!firesockPhoto,
   })
 
-  const handleFiresockPhoto = (file: File | null) => {
+  const handleFiresockPhoto = async (file: File | null) => {
     if (firesockPreview) URL.revokeObjectURL(firesockPreview)
     if (!file) {
       setFiresockPhoto(null)
       setFiresockPreview(null)
       return
     }
-    setFiresockNa(false)
-    setFiresockPhoto(file)
-    setFiresockPreview(URL.createObjectURL(file))
     setFiresockError(null)
+    setProcessingPhotos(true)
+    try {
+      const prepared = await preparePhotoForUpload(file)
+      setFiresockNa(false)
+      setFiresockPhoto(prepared)
+      setFiresockPreview(URL.createObjectURL(prepared))
+    } catch (err) {
+      setFiresockError(err instanceof Error ? err.message : 'Could not use that photo.')
+    } finally {
+      setProcessingPhotos(false)
+    }
   }
 
   const toggleFiresockNa = () => {
@@ -107,7 +117,7 @@ function InspectionFormModal({
     setFiresockError(null)
   }
 
-  const addInspectionPhotos = (files: FileList | File[] | null) => {
+  const addInspectionPhotos = async (files: FileList | File[] | null) => {
     if (!files?.length) return
     const valid = Array.from(files).filter(isImageUploadFile)
     if (valid.length === 0) {
@@ -115,17 +125,29 @@ function InspectionFormModal({
       return
     }
 
+    const remaining = MAX_QA_INSPECTION_PHOTOS - inspectionPhotos.length
+    if (remaining <= 0) return
+
     setInspectionPhotoError(null)
-    setInspectionPhotos((prev) => {
-      const remaining = MAX_QA_INSPECTION_PHOTOS - prev.length
-      if (remaining <= 0) return prev
-      const toAdd = valid.slice(0, remaining).map((file) => ({
-        id:      newPhotoId(),
-        file,
-        preview: URL.createObjectURL(file),
-      }))
-      return [...prev, ...toAdd]
-    })
+    setProcessingPhotos(true)
+    try {
+      const batch = valid.slice(0, remaining)
+      const prepared = await Promise.all(batch.map((file) => preparePhotoForUpload(file)))
+      setInspectionPhotos((prev) => [
+        ...prev,
+        ...prepared.map((file) => ({
+          id:      newPhotoId(),
+          file,
+          preview: URL.createObjectURL(file),
+        })),
+      ])
+    } catch (err) {
+      setInspectionPhotoError(
+        err instanceof Error ? err.message : 'Could not prepare photos. Try JPEG from your gallery.',
+      )
+    } finally {
+      setProcessingPhotos(false)
+    }
   }
 
   const clearFileInput = (input: HTMLInputElement | null) => {
@@ -159,6 +181,13 @@ function InspectionFormModal({
 
     setSubmitting(true)
     try {
+      const preparedInspection = await Promise.all(
+        inspectionPhotos.map((p) => preparePhotoForUpload(p.file)),
+      )
+      const preparedFiresock = firesockPhoto
+        ? await preparePhotoForUpload(firesockPhoto)
+        : null
+
       const fd = new FormData()
       fd.append('siteId', siteId)
       fd.append('plotNumber', cell.plotNumber)
@@ -168,8 +197,8 @@ function InspectionFormModal({
       fd.append('observations', observations)
       fd.append('result', result)
       fd.append('firesockNa', firesockNa ? 'true' : 'false')
-      if (firesockPhoto) fd.append('firesockPhoto', firesockPhoto)
-      inspectionPhotos.forEach((p) => fd.append('inspectionPhotos', p.file))
+      if (preparedFiresock) fd.append('firesockPhoto', preparedFiresock)
+      preparedInspection.forEach((file) => fd.append('inspectionPhotos', file))
       fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
 
       const res  = await fetch('/api/qa/inspections', { method: 'POST', body: fd })
@@ -180,8 +209,8 @@ function InspectionFormModal({
       }
       onSaved(json.grid)
       onClose()
-    } catch {
-      setError('Network error — please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error — please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -375,11 +404,12 @@ function InspectionFormModal({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  disabled={processingPhotos}
                   onClick={() => firesockInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-orange-300 bg-white text-sm font-semibold text-slate-800 hover:bg-orange-100"
+                  className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-orange-300 bg-white text-sm font-semibold text-slate-800 hover:bg-orange-100 disabled:opacity-50"
                 >
                   <ImagePlus className="w-4 h-4 text-orange-600" />
-                  {firesockPhoto ? 'Change photo' : 'Upload photo'}
+                  {processingPhotos ? 'Processing…' : firesockPhoto ? 'Change photo' : 'Upload photo'}
                 </button>
                 {allowsFiresockNa && (
                   <button
@@ -488,16 +518,16 @@ function InspectionFormModal({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={atPhotoLimit}
+                disabled={atPhotoLimit || processingPhotos}
                 onClick={() => cameraInputRef.current?.click()}
                 className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50 disabled:pointer-events-none"
               >
                 <Camera className="w-4 h-4 text-slate-700" />
-                Take photo
+                {processingPhotos ? 'Processing…' : 'Take photo'}
               </button>
               <button
                 type="button"
-                disabled={atPhotoLimit}
+                disabled={atPhotoLimit || processingPhotos}
                 onClick={() => uploadInputRef.current?.click()}
                 className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50 disabled:pointer-events-none"
               >
