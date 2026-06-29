@@ -40,6 +40,17 @@ export const QA_STAGE_CHECKLISTS: Partial<Record<QaStageKey, QaChecklistItem[]>>
     { key: 'cullen_bracket',        label: 'Cullen bracket installed under wall plate at 1200mm centre (900mm DWH)?' },
     { key: 'wall_ties_spandrel',    label: 'Correct wall ties spacing of 450mm below spandrel panel?' },
   ],
+  pre_plaster: [
+    { key: 'plot_clean',            label: 'Has the plot been cleaned and is presentable?' },
+    { key: 'perimeter_floorboard',  label: 'Perimeter floor board removed of mortar and has a 10mm gap?' },
+    { key: 'blockwork_filled',      label: 'All blockwork fully filled with mortar?' },
+    { key: 'lintel_product',        label: 'Product under lintel is correct?' },
+    { key: 'joists_flushed',        label: 'All joists have been fully flushed in between?' },
+    { key: 'gable_pointing',        label: 'Gable blockwork checked for pointing if required?' },
+    { key: 'blockwork_plumb',       label: 'Blockwork on 4–6 elevations downstairs and upstairs checked for plumb?' },
+    { key: 'window_cills',          label: 'All window cills are bricked and blocked up ready for window board?' },
+    { key: 'full_snag',             label: 'Full snag of downstairs and upstairs?' },
+  ],
 }
 
 const VALID_VALUES = new Set<QaChecklistValue>(['yes', 'no', 'na'])
