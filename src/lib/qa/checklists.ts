@@ -51,6 +51,18 @@ export const QA_STAGE_CHECKLISTS: Partial<Record<QaStageKey, QaChecklistItem[]>>
     { key: 'window_cills',          label: 'All window cills are bricked and blocked up ready for window board?' },
     { key: 'full_snag',             label: 'Full snag of downstairs and upstairs?' },
   ],
+  cml: [
+    { key: 'jetwashed_clean',       label: 'Has the plot been fully jetwashed and clean?' },
+    { key: 'requires_reclean',      label: 'Does the plot require a re-clean?' },
+    { key: 'elevations_inspected',  label: 'Full inspection of all elevations carried out?' },
+    { key: 'doors_windows_lintels', label: 'All doors and windows — lintels and components installed?' },
+    { key: 'external_skin',         label: 'Material used on the external skin built correctly?' },
+    { key: 'mortar_pointed',        label: 'All mortar work pointed and finished correctly?' },
+    { key: 'homeowner_ready',       label: 'Is the plot homeowner ready?' },
+    { key: 'garages_snagged',       label: 'Have garages been fully snagged and clean?' },
+    { key: 'screen_walls',          label: 'Screen walls built correctly and clean?' },
+    { key: 'cleaning_in_notes',     label: 'Any further cleaning requirements listed in observations?' },
+  ],
 }
 
 const VALID_VALUES = new Set<QaChecklistValue>(['yes', 'no', 'na'])
