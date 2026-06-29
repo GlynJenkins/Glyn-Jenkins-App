@@ -7,6 +7,12 @@ import { isQaStageKey, qaStageLabel, firesockRequirementMet, stageAllowsFiresock
 import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
 import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto, isImageUploadFile } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
+import {
+  checklistComplete,
+  checklistForStage,
+  parseChecklistAnswers,
+  type QaChecklistAnswers,
+} from '@/lib/qa/checklists'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,6 +33,7 @@ export async function POST(request: NextRequest) {
     const firesockNa     = formData.get('firesockNa') === 'true'
     const firesockPhoto  = formData.get('firesockPhoto') as File | null
     const signature      = formData.get('signature') as File | null
+    const checklistRaw   = formData.get('checklist') as string | null
     const inspectionPhotoFiles = (formData.getAll('inspectionPhotos') as File[])
       .filter(isImageUploadFile)
 
@@ -36,6 +43,24 @@ export async function POST(request: NextRequest) {
     if (!isQaStageKey(stage)) {
       return NextResponse.json({ error: 'Invalid inspection stage.' }, { status: 400 })
     }
+
+    let checklistAnswers: QaChecklistAnswers = {}
+    if (checklistRaw) {
+      try {
+        checklistAnswers = parseChecklistAnswers(JSON.parse(checklistRaw))
+      } catch {
+        return NextResponse.json({ error: 'Invalid checklist data.' }, { status: 400 })
+      }
+    }
+
+    const stageChecklist = checklistForStage(stage)
+    if (stageChecklist.length > 0 && !checklistComplete(stage, checklistAnswers)) {
+      return NextResponse.json(
+        { error: 'Tick every item on the inspection checklist before completing.' },
+        { status: 400 },
+      )
+    }
+
     if (!signature) {
       return NextResponse.json({ error: 'Signature is required.' }, { status: 400 })
     }
@@ -110,6 +135,11 @@ export async function POST(request: NextRequest) {
       })
     })
 
+    const pdfChecklist = stageChecklist.map((item) => ({
+      label:   item.label,
+      checked: checklistAnswers[item.key] === true,
+    }))
+
     const pdfBuffer = await generateQaInspectionPdf({
       siteName:       site.name,
       plotNumber,
@@ -123,6 +153,7 @@ export async function POST(request: NextRequest) {
       plotDetails,
       firesockNa:     firesockNa && stageAllowsFiresockNa(stage),
       photos:         pdfPhotos,
+      checklist:      pdfChecklist.length ? pdfChecklist : undefined,
     })
 
     const signaturePath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-signature.png`
@@ -186,6 +217,7 @@ export async function POST(request: NextRequest) {
         firesock_na: firesockNa && stageAllowsFiresockNa(stage),
         firesock_photo_path: firesockPhotoPath ?? null,
         inspection_photo_paths: storedInspectionPhotos.map((p) => p.path),
+        checklist: checklistAnswers,
       },
       notes:          observations,
       signature_path: signaturePath,

@@ -58,6 +58,7 @@ export type QaInspectionPdfInput = {
   plotDetails?:   { label: string; value: string }[]
   firesockNa?:    boolean
   photos?:        QaPdfPhoto[]
+  checklist?:     { label: string; checked: boolean }[]
 }
 
 export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Promise<Buffer> {
@@ -153,6 +154,17 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
     drawLines(['Plot details'], { bold: true, size: 12 })
     for (const d of input.plotDetails) {
       const wrapped = wrapText(`${d.label}: ${d.value}`, maxWidth, font, BODY_SIZE)
+      drawLines(wrapped)
+    }
+    y -= 8
+  }
+
+  if (input.checklist?.length) {
+    drawLines(['Inspection checklist'], { bold: true, size: 12 })
+    y -= 4
+    for (const item of input.checklist) {
+      const mark = item.checked ? '[X]' : '[ ]'
+      const wrapped = wrapText(`${mark} ${item.label}`, maxWidth, font, BODY_SIZE)
       drawLines(wrapped)
     }
     y -= 8

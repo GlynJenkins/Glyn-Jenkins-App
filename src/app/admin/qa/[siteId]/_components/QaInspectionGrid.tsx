@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useRef, useState, useTransition, useMemo } from 'react'
 import { Check, Camera, Download, ImagePlus, Trash2, X } from 'lucide-react'
 import SignaturePad from '@/components/SignaturePad'
 import {
@@ -13,6 +13,14 @@ import {
 } from '@/lib/qa/stages'
 import { MAX_QA_INSPECTION_PHOTOS, isImageUploadFile } from '@/lib/qa/inspection-photos'
 import { preparePhotoForUpload } from '@/lib/qa/prepare-photo-upload'
+import {
+  checklistForStage,
+  emptyChecklistAnswers,
+  parseChecklistAnswers,
+  stageHasChecklist,
+  checklistComplete,
+  type QaChecklistAnswers,
+} from '@/lib/qa/checklists'
 import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 
 type Props = {
@@ -72,6 +80,16 @@ function InspectionFormModal({
   const [removing,       setRemoving]       = useState(false)
   const [inspectionPhotoError, setInspectionPhotoError] = useState<string | null>(null)
   const [processingPhotos, setProcessingPhotos] = useState(false)
+  const [checklistError, setChecklistError] = useState<string | null>(null)
+
+  const checklistItems = useMemo(() => checklistForStage(cell.stage), [cell.stage])
+  const [checklist, setChecklist] = useState<QaChecklistAnswers>(() => {
+    const saved = cell.existing?.form_data
+      ? parseChecklistAnswers((cell.existing.form_data as { checklist?: unknown }).checklist)
+      : {}
+    const base = emptyChecklistAnswers(cell.stage)
+    return { ...base, ...saved }
+  })
 
   const firesockInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -81,6 +99,7 @@ function InspectionFormModal({
 
   const needsFiresock = stageRequiresFiresock(cell.stage)
   const allowsFiresockNa = stageAllowsFiresockNa(cell.stage)
+  const hasChecklist = stageHasChecklist(cell.stage)
   const firesockOk = firesockRequirementMet(cell.stage, {
     firesockNa,
     hasPhoto: !!firesockPhoto,
@@ -168,7 +187,12 @@ function InspectionFormModal({
     setError(null)
     setSigError(null)
     setFiresockError(null)
+    setChecklistError(null)
     if (!inspectorName.trim()) { setError('Inspector name is required.'); return }
+    if (hasChecklist && !checklistComplete(cell.stage, checklist)) {
+      setChecklistError('Tick every item on the checklist before completing.')
+      return
+    }
     if (needsFiresock && !firesockOk) {
       setFiresockError(
         allowsFiresockNa
@@ -196,6 +220,7 @@ function InspectionFormModal({
       fd.append('inspectionDate', inspectionDate)
       fd.append('observations', observations)
       fd.append('result', result)
+      fd.append('checklist', JSON.stringify(checklist))
       fd.append('firesockNa', firesockNa ? 'true' : 'false')
       if (preparedFiresock) fd.append('firesockPhoto', preparedFiresock)
       preparedInspection.forEach((file) => fd.append('inspectionPhotos', file))
@@ -469,6 +494,36 @@ function InspectionFormModal({
               <option value="Fail">Fail</option>
             </select>
           </div>
+
+          {hasChecklist && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Inspection checklist</p>
+                <p className="text-xs text-slate-600 mt-0.5">Tick every item before completing — included on the PDF.</p>
+              </div>
+              <ul className="space-y-2">
+                {checklistItems.map((item) => (
+                  <li key={item.key}>
+                    <label className="flex items-start gap-2.5 cursor-pointer text-sm text-slate-800 leading-snug">
+                      <input
+                        type="checkbox"
+                        checked={checklist[item.key] === true}
+                        onChange={(e) => {
+                          setChecklist((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                          setChecklistError(null)
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-400 shrink-0"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              {checklistError && (
+                <p className="text-xs text-red-600 font-medium">{checklistError}</p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="text-xs text-slate-500 mb-1 block">Observations</label>
