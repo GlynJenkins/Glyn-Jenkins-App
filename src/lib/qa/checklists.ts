@@ -23,6 +23,25 @@ export const QA_STAGE_CHECKLISTS: Partial<Record<QaStageKey, QaChecklistItem[]>>
     { key: 'internal_plumb',      label: 'Internal block work checked for plumb on each elevation?' },
     { key: 'external_plumb',      label: 'External elevation checked for plumb?' },
   ],
+  plate_roof: [
+    ...([
+      { key: 'wall_ties_correct',   label: 'Are wall ties installed correctly?' },
+      { key: 'wall_ties_spacing',   label: 'Wall ties correct spacing from window/door max 225mm?' },
+      { key: 'dpc_trays',           label: 'DPC trays clean and have correct 75mm turn up?' },
+      { key: 'weep_vents',          label: 'Weep vents installed at 450mm spacing?' },
+      { key: 'lintels_bedded',      label: 'Lintels bedded correctly?' },
+      { key: 'joist_height',        label: 'Correct joist height been achieved?' },
+      { key: 'cavity_clean',        label: 'Cavity presenting well and is clean?' },
+      { key: 'firesocks_installed', label: 'Firesocks installed and correct ones used?' },
+      { key: 'mj_ties',             label: 'Ties to MJ within 225mm of joint and installed every 225mm?' },
+      { key: 'internal_plumb',      label: 'Internal block work checked for plumb on each elevation?' },
+      { key: 'external_plumb',      label: 'External elevation checked for plumb?' },
+    ] as QaChecklistItem[]),
+    { key: 'firesock_compressed',   label: 'Firesock installed and compressed?' },
+    { key: 'insulation_above_sock', label: 'Insulation installed above sock if required?' },
+    { key: 'cullen_bracket',        label: 'Cullen bracket installed under wall plate at 1200mm centre (900mm DWH)?' },
+    { key: 'wall_ties_spandrel',    label: 'Correct wall ties spacing of 450mm below spandrel panel?' },
+  ],
 }
 
 const VALID_VALUES = new Set<QaChecklistValue>(['yes', 'no', 'na'])
