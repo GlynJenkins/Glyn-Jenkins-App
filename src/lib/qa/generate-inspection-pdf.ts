@@ -7,9 +7,12 @@ const MARGIN      = 50
 const LINE_HEIGHT = 14
 const BODY_SIZE   = 10
 const TITLE_SIZE  = 14
-/** Max draw area per photo on the PDF page (points) — fit inside, preserve aspect ratio. */
-const MAX_PHOTO_DRAW_W = PAGE_WIDTH - 2 * MARGIN
-const MAX_PHOTO_DRAW_H = 360
+/** 2×2 photo grid — four photos per page when printing. */
+const PHOTOS_PER_PAGE = 4
+const PHOTO_COLS      = 2
+const PHOTO_GAP       = 10
+const PHOTO_LABEL_SIZE = 9
+const PHOTO_CELL_H    = 300
 
 export type QaPdfPhoto = {
   label:  string
@@ -78,25 +81,60 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
     }
   }
 
-  const drawPhoto = async (photo: QaPdfPhoto) => {
-    drawLines([photo.label], { bold: true, size: 11 })
-    y -= 4
-    const image = await embedPhotoImage(pdf, photo.buffer, photo.mime)
-    const scale = Math.min(MAX_PHOTO_DRAW_W / image.width, MAX_PHOTO_DRAW_H / image.height)
-    const drawW = image.width * scale
-    const drawH = image.height * scale
-    if (y - drawH < MARGIN) {
-      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-      y = PAGE_HEIGHT - MARGIN
+  const drawPhotoGrid = async (photos: QaPdfPhoto[]) => {
+    if (!photos.length) return
+
+    const cellW = (maxWidth - PHOTO_GAP) / PHOTO_COLS
+    const rowH  = PHOTO_LABEL_SIZE + 4 + PHOTO_CELL_H + PHOTO_GAP
+
+    for (let i = 0; i < photos.length; i += PHOTOS_PER_PAGE) {
+      const batch = photos.slice(i, i + PHOTOS_PER_PAGE)
+      const rows  = Math.ceil(batch.length / PHOTO_COLS)
+      const gridH = rows * rowH
+
+      if (y - gridH < MARGIN) {
+        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+        y = PAGE_HEIGHT - MARGIN
+        if (i > 0) {
+          drawLines(['PHOTOS (continued)'], { bold: true, size: 12 })
+          y -= 8
+        }
+      }
+
+      const gridTop = y
+
+      for (let j = 0; j < batch.length; j++) {
+        const photo = batch[j]!
+        const col   = j % PHOTO_COLS
+        const row   = Math.floor(j / PHOTO_COLS)
+        const cellX = MARGIN + col * (cellW + PHOTO_GAP)
+        const cellTop = gridTop - row * rowH
+
+        page.drawText(photo.label, {
+          x: cellX,
+          y: cellTop - PHOTO_LABEL_SIZE,
+          size: PHOTO_LABEL_SIZE,
+          font: fontBold,
+          color: rgb(0.12, 0.12, 0.12),
+        })
+
+        const image = await embedPhotoImage(pdf, photo.buffer, photo.mime)
+        const scale = Math.min(cellW / image.width, PHOTO_CELL_H / image.height)
+        const drawW = image.width * scale
+        const drawH = image.height * scale
+        const imgX  = cellX + (cellW - drawW) / 2
+        const imgY  = cellTop - PHOTO_LABEL_SIZE - 4 - drawH
+
+        page.drawImage(image, {
+          x: imgX,
+          y: imgY,
+          width: drawW,
+          height: drawH,
+        })
+      }
+
+      y = gridTop - gridH - 8
     }
-    const x = MARGIN + (MAX_PHOTO_DRAW_W - drawW) / 2
-    page.drawImage(image, {
-      x,
-      y: y - drawH,
-      width: drawW,
-      height: drawH,
-    })
-    y -= drawH + 16
   }
 
   drawLines(['QUALITY INSPECTION — GLYN JENKINS LTD'], { bold: true, size: TITLE_SIZE })
@@ -152,10 +190,15 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
 
   const hasPhotos = (input.photos?.length ?? 0) > 0
   if (input.firesockNa || hasPhotos) {
-    if (y - 40 < MARGIN) {
+    const firstBatchRows = Math.ceil(Math.min(input.photos?.length ?? 0, PHOTOS_PER_PAGE) / PHOTO_COLS)
+    const firstGridH = firstBatchRows * (PHOTO_LABEL_SIZE + 4 + PHOTO_CELL_H + PHOTO_GAP)
+    const headerH = 40 + (input.firesockNa ? LINE_HEIGHT + 8 : 0)
+
+    if (y - headerH - firstGridH < MARGIN) {
       page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
       y = PAGE_HEIGHT - MARGIN
     }
+
     drawLines(['PHOTOS'], { bold: true, size: 12 })
     y -= 8
 
@@ -164,9 +207,7 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
       y -= 8
     }
 
-    for (const photo of input.photos ?? []) {
-      await drawPhoto(photo)
-    }
+    await drawPhotoGrid(input.photos ?? [])
   }
 
   return Buffer.from(await pdf.save())
