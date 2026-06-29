@@ -18,8 +18,10 @@ import {
   emptyChecklistAnswers,
   parseChecklistAnswers,
   stageHasChecklist,
-  checklistComplete,
+  checklistAllAnswered,
+  checklistValidForResult,
   type QaChecklistAnswers,
+  type QaChecklistValue,
 } from '@/lib/qa/checklists'
 import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 
@@ -189,8 +191,12 @@ function InspectionFormModal({
     setFiresockError(null)
     setChecklistError(null)
     if (!inspectorName.trim()) { setError('Inspector name is required.'); return }
-    if (hasChecklist && !checklistComplete(cell.stage, checklist)) {
-      setChecklistError('Tick every item on the checklist before completing.')
+    if (hasChecklist && !checklistAllAnswered(cell.stage, checklist)) {
+      setChecklistError('Select Yes, No, or N/A for every checklist item.')
+      return
+    }
+    if (hasChecklist && !checklistValidForResult(cell.stage, checklist, result)) {
+      setChecklistError('Pass results require Yes or N/A on every item (change result to Fail if any No).')
       return
     }
     if (needsFiresock && !firesockOk) {
@@ -496,28 +502,49 @@ function InspectionFormModal({
           </div>
 
           {hasChecklist && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
               <div>
                 <p className="text-sm font-semibold text-slate-900">Inspection checklist</p>
-                <p className="text-xs text-slate-600 mt-0.5">Tick every item before completing — included on the PDF.</p>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Select Yes, No, or N/A for each item — included on the PDF.
+                </p>
               </div>
-              <ul className="space-y-2">
-                {checklistItems.map((item) => (
-                  <li key={item.key}>
-                    <label className="flex items-start gap-2.5 cursor-pointer text-sm text-slate-800 leading-snug">
-                      <input
-                        type="checkbox"
-                        checked={checklist[item.key] === true}
-                        onChange={(e) => {
-                          setChecklist((prev) => ({ ...prev, [item.key]: e.target.checked }))
-                          setChecklistError(null)
-                        }}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-400 shrink-0"
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  </li>
-                ))}
+              <ul className="space-y-3">
+                {checklistItems.map((item) => {
+                  const selected = checklist[item.key]
+                  return (
+                    <li key={item.key} className="border-b border-slate-200/80 pb-3 last:border-0 last:pb-0">
+                      <p className="text-sm text-slate-800 leading-snug">{item.label}</p>
+                      <div className="flex gap-1.5 mt-2">
+                        {(['yes', 'no', 'na'] as const).map((value) => {
+                          const label = value === 'yes' ? 'Yes' : value === 'no' ? 'No' : 'N/A'
+                          const active = selected === value
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => {
+                                setChecklist((prev) => ({ ...prev, [item.key]: value as QaChecklistValue }))
+                                setChecklistError(null)
+                              }}
+                              className={`flex-1 py-2 px-2 rounded-lg border text-xs font-semibold transition-colors ${
+                                active
+                                  ? value === 'yes'
+                                    ? 'bg-green-600 border-green-600 text-white'
+                                    : value === 'no'
+                                      ? 'bg-red-600 border-red-600 text-white'
+                                      : 'bg-slate-700 border-slate-700 text-white'
+                                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
               {checklistError && (
                 <p className="text-xs text-red-600 font-medium">{checklistError}</p>

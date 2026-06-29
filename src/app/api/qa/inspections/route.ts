@@ -8,8 +8,9 @@ import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
 import { MAX_QA_INSPECTION_PHOTOS, photoExtension, type StoredInspectionPhoto, isImageUploadFile } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import {
-  checklistComplete,
+  checklistAllAnswered,
   checklistForStage,
+  checklistValidForResult,
   parseChecklistAnswers,
   type QaChecklistAnswers,
 } from '@/lib/qa/checklists'
@@ -54,9 +55,15 @@ export async function POST(request: NextRequest) {
     }
 
     const stageChecklist = checklistForStage(stage)
-    if (stageChecklist.length > 0 && !checklistComplete(stage, checklistAnswers)) {
+    if (stageChecklist.length > 0 && !checklistAllAnswered(stage, checklistAnswers)) {
       return NextResponse.json(
-        { error: 'Tick every item on the inspection checklist before completing.' },
+        { error: 'Select Yes, No, or N/A for every checklist item.' },
+        { status: 400 },
+      )
+    }
+    if (stageChecklist.length > 0 && !checklistValidForResult(stage, checklistAnswers, result)) {
+      return NextResponse.json(
+        { error: 'Pass results require Yes or N/A on every checklist item (no No answers).' },
         { status: 400 },
       )
     }
@@ -136,8 +143,8 @@ export async function POST(request: NextRequest) {
     })
 
     const pdfChecklist = stageChecklist.map((item) => ({
-      label:   item.label,
-      checked: checklistAnswers[item.key] === true,
+      label:  item.label,
+      answer: checklistAnswers[item.key] as 'yes' | 'no' | 'na',
     }))
 
     const pdfBuffer = await generateQaInspectionPdf({
