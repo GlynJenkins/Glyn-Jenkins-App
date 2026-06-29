@@ -14,6 +14,18 @@ const PHOTO_GAP       = 10
 const PHOTO_LABEL_SIZE = 9
 const PHOTO_CELL_H    = 300
 
+const CHECKLIST_OPTION_H   = 20
+const CHECKLIST_OPTION_GAP = 6
+const CHECKLIST_ITEM_GAP   = 14
+const CHECKLIST_OPTION_SIZE = 9
+
+const COLOR_YES     = rgb(0.086, 0.396, 0.204) // green-600
+const COLOR_NO      = rgb(0.863, 0.149, 0.149) // red-600
+const COLOR_NA      = rgb(0.176, 0.216, 0.282) // slate-700
+const COLOR_WHITE   = rgb(1, 1, 1)
+const COLOR_MUTED   = rgb(0.45, 0.45, 0.45)
+const COLOR_BORDER  = rgb(0.75, 0.78, 0.82)
+
 export type QaPdfPhoto = {
   label:  string
   buffer: Buffer
@@ -80,6 +92,81 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
       page.drawText(line, { x: MARGIN, y, size, font: f, color: rgb(0.12, 0.12, 0.12) })
       y -= LINE_HEIGHT
     }
+  }
+
+  const drawChecklistItem = (item: { label: string; answer: 'yes' | 'no' | 'na' }) => {
+    const questionLines = wrapText(item.label, maxWidth, font, BODY_SIZE)
+    const blockH =
+      questionLines.length * LINE_HEIGHT + 4 + CHECKLIST_OPTION_H + CHECKLIST_ITEM_GAP
+
+    if (y - blockH < MARGIN) {
+      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      y = PAGE_HEIGHT - MARGIN
+    }
+
+    for (const line of questionLines) {
+      page.drawText(line, {
+        x: MARGIN,
+        y,
+        size: BODY_SIZE,
+        font,
+        color: rgb(0.12, 0.12, 0.12),
+      })
+      y -= LINE_HEIGHT
+    }
+
+    y -= 4
+    const optionY = y - CHECKLIST_OPTION_H
+    const optionW = (maxWidth - 2 * CHECKLIST_OPTION_GAP) / 3
+    const options: { key: 'yes' | 'no' | 'na'; label: string; fill: ReturnType<typeof rgb> }[] = [
+      { key: 'yes', label: 'Yes', fill: COLOR_YES },
+      { key: 'no',  label: 'No',  fill: COLOR_NO },
+      { key: 'na',  label: 'N/A', fill: COLOR_NA },
+    ]
+
+    options.forEach((opt, index) => {
+      const x = MARGIN + index * (optionW + CHECKLIST_OPTION_GAP)
+      const selected = item.answer === opt.key
+      const textW = fontBold.widthOfTextAtSize(opt.label, CHECKLIST_OPTION_SIZE)
+      const textX = x + (optionW - textW) / 2
+      const textY = optionY + (CHECKLIST_OPTION_H - CHECKLIST_OPTION_SIZE) / 2 + 1
+
+      if (selected) {
+        page.drawRectangle({
+          x,
+          y: optionY,
+          width: optionW,
+          height: CHECKLIST_OPTION_H,
+          color: opt.fill,
+          borderWidth: 0,
+        })
+        page.drawText(opt.label, {
+          x: textX,
+          y: textY,
+          size: CHECKLIST_OPTION_SIZE,
+          font: fontBold,
+          color: COLOR_WHITE,
+        })
+      } else {
+        page.drawRectangle({
+          x,
+          y: optionY,
+          width: optionW,
+          height: CHECKLIST_OPTION_H,
+          borderColor: COLOR_BORDER,
+          borderWidth: 1,
+        })
+        page.drawText(opt.label, {
+          x: textX,
+          y: textY,
+          size: CHECKLIST_OPTION_SIZE,
+          font: fontBold,
+          color: COLOR_MUTED,
+        })
+      }
+    })
+
+    y = optionY - CHECKLIST_ITEM_GAP
   }
 
   const drawPhotoGrid = async (photos: QaPdfPhoto[]) => {
@@ -163,9 +250,7 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
     drawLines(['Inspection checklist'], { bold: true, size: 12 })
     y -= 4
     for (const item of input.checklist) {
-      const answer = item.answer === 'yes' ? 'Yes' : item.answer === 'no' ? 'No' : 'N/A'
-      const wrapped = wrapText(`${answer} — ${item.label}`, maxWidth, font, BODY_SIZE)
-      drawLines(wrapped)
+      drawChecklistItem(item)
     }
     y -= 8
   }
