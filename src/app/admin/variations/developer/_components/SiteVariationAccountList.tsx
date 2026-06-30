@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronRight, Download } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import type { SiteVariationAccountSummary } from '@/lib/variations/site-variation-accounts'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
 
@@ -31,16 +31,6 @@ export default function SiteVariationAccountList({ accounts }: { accounts: SiteV
             Each site has a code (e.g. 001). Variations are numbered V01, V02… and shown as 001-V01.
           </p>
         </div>
-        {accounts.length > 0 && (
-          <button
-            type="button"
-            onClick={() => { window.location.href = '/api/admin/variations/developer/export' }}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Excel
-          </button>
-        )}
       </div>
 
       {accounts.length === 0 ? (

@@ -3,8 +3,10 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import PendingForemanQueue from './_components/PendingForemanQueue'
 import SiteVariationAccountList from './_components/SiteVariationAccountList'
+import DeveloperVariationRegisterTable from './_components/DeveloperVariationRegisterTable'
 import { buildPendingForemanGroups } from '@/lib/variations/pending-foreman-groups'
 import { loadSiteVariationAccountSummaries } from '@/lib/variations/site-variation-accounts'
+import { loadDeveloperRegisterRows } from '@/lib/variations/submission-totals'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 
 export const dynamic = 'force-dynamic'
@@ -41,11 +43,12 @@ export default async function DeveloperVariationsPage() {
   )
 
   const siteAccounts = await loadSiteVariationAccountSummaries()
+  const registerRows = await loadDeveloperRegisterRows()
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-slate-900 px-5 pt-12 pb-6">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
               Glyn Jenkins LTD
@@ -62,9 +65,10 @@ export default async function DeveloperVariationsPage() {
         </div>
       </header>
 
-      <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
+      <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-2">
         <PendingForemanQueue groups={pendingForemanGroups} />
         <SiteVariationAccountList accounts={siteAccounts} />
+        <DeveloperVariationRegisterTable rows={registerRows} />
       </div>
     </div>
   )
