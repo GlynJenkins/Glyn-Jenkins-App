@@ -25,7 +25,7 @@ export default async function AdminVariationsPage() {
 
   const supabase = createServiceClient()
 
-  const { data: variations } = await supabase
+  const { data: variations, error: variationsError } = await supabase
     .from('variation_claims')
     .select(`
       id, hours, rate_per_hour, total_amount, description,
@@ -37,10 +37,27 @@ export default async function AdminVariationsPage() {
     `)
     .order('created_at', { ascending: false })
 
+  type VariationRow = NonNullable<typeof variations>[number]
+  let variationRows: VariationRow[] = variations ?? []
+  if (variationsError) {
+    const { data: legacy } = await supabase
+      .from('variation_claims')
+      .select(`
+        id, hours, rate_per_hour, total_amount, description,
+        photo_urls, status, admin_rejection_reason, created_at,
+        developer_submission_id,
+        sites   ( id, name ),
+        workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
+        foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )
+      `)
+      .order('created_at', { ascending: false })
+    variationRows = (legacy ?? []) as VariationRow[]
+  }
+
   // Generate signed URLs for photos
   const supabaseClient = createServiceClient()
   const variationsWithUrls = await Promise.all(
-    (variations ?? []).map(async (v) => {
+    variationRows.map(async (v) => {
       const urls: string[] = []
       for (const path of v.photo_urls ?? []) {
         const { data } = await supabaseClient.storage

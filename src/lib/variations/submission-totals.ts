@@ -75,26 +75,48 @@ export type DeveloperRegisterRow = {
 export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[]> {
   const supabase = createServiceClient()
 
-  const { data: submissions } = await supabase
-    .from('variation_developer_submissions')
-    .select(`
+  const fullSelect = `
       id, description, status, payment_status, site_id,
       foreman_total, developer_total, vo_number,
       submitted_to_developer_at, foreman_id, assigned_foreman_id, source, claim_mode,
       sites ( name, site_code )
-    `)
+    `
+  const legacySelect = `
+      id, description, status, payment_status, site_id,
+      foreman_total, developer_total, vo_number,
+      submitted_to_developer_at, foreman_id,
+      sites ( name, site_code )
+    `
+
+  let submissions: Record<string, unknown>[] | null = null
+
+  const full = await supabase
+    .from('variation_developer_submissions')
+    .select(fullSelect)
     .neq('status', 'draft')
     .order('submitted_to_developer_at', { ascending: false, nullsFirst: false })
+
+  submissions = full.data
+  if (full.error) {
+    const legacy = await supabase
+      .from('variation_developer_submissions')
+      .select(legacySelect)
+      .neq('status', 'draft')
+      .order('submitted_to_developer_at', { ascending: false, nullsFirst: false })
+    submissions = legacy.data
+  }
 
   const rows: DeveloperRegisterRow[] = []
 
   for (const s of submissions ?? []) {
     const site = Array.isArray(s.sites) ? s.sites[0] : s.sites
     const foremanId = (s.assigned_foreman_id ?? s.foreman_id) as string | null
+    const source = s.source as string | undefined
+    const claimMode = s.claim_mode as string | undefined
     let foremanName = 'Unknown'
-    if (s.source === 'management' && s.claim_mode === 'company_profit') {
+    if (source === 'management' && claimMode === 'company_profit') {
       foremanName = 'Company profit'
-    } else if (s.source === 'management' && !foremanId) {
+    } else if (source === 'management' && !foremanId) {
       foremanName = 'Any foreman'
     } else if (foremanId) {
       const { data: foreman } = await supabase
@@ -106,18 +128,18 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
     }
 
     rows.push({
-      id:              s.id,
-      reference:       formatVariationReference(site?.site_code, s.vo_number),
+      id:              s.id as string,
+      reference:       formatVariationReference(site?.site_code, s.vo_number as number | null),
       siteId:          s.site_id as string,
       siteCode:        site?.site_code ?? null,
       siteName:        site?.name ?? 'Unknown site',
-      description:     s.description,
+      description:     s.description as string,
       foremanTotal:    Number(s.foreman_total),
       developerTotal:  Number(s.developer_total),
       profit:          variationProfit(Number(s.developer_total), Number(s.foreman_total)),
-      paymentStatus:   s.payment_status,
-      status:          s.status,
-      submittedAt:     s.submitted_to_developer_at,
+      paymentStatus:   s.payment_status as string,
+      status:          s.status as string,
+      submittedAt:     s.submitted_to_developer_at as string | null,
       foremanName,
     })
   }
@@ -141,26 +163,48 @@ export type DeveloperInProgressRow = {
 export async function loadDeveloperInProgressRows(): Promise<DeveloperInProgressRow[]> {
   const supabase = createServiceClient()
 
-  const { data: submissions } = await supabase
-    .from('variation_developer_submissions')
-    .select(`
+  const fullSelect = `
       id, description, status,
       foreman_total, developer_total, vo_number,
       updated_at, foreman_id, assigned_foreman_id, source, claim_mode,
       sites ( name, site_code )
-    `)
+    `
+  const legacySelect = `
+      id, description, status,
+      foreman_total, developer_total, vo_number,
+      updated_at, foreman_id,
+      sites ( name, site_code )
+    `
+
+  let submissions: Record<string, unknown>[] | null = null
+
+  const full = await supabase
+    .from('variation_developer_submissions')
+    .select(fullSelect)
     .in('status', ['draft', 'submitted', 'agreed'])
     .order('updated_at', { ascending: false })
+
+  submissions = full.data
+  if (full.error) {
+    const legacy = await supabase
+      .from('variation_developer_submissions')
+      .select(legacySelect)
+      .in('status', ['draft', 'submitted', 'agreed'])
+      .order('updated_at', { ascending: false })
+    submissions = legacy.data
+  }
 
   const rows: DeveloperInProgressRow[] = []
 
   for (const s of submissions ?? []) {
     const site = Array.isArray(s.sites) ? s.sites[0] : s.sites
     const foremanId = (s.assigned_foreman_id ?? s.foreman_id) as string | null
+    const source = s.source as string | undefined
+    const claimMode = s.claim_mode as string | undefined
     let foremanName = 'Unknown'
-    if (s.source === 'management' && s.claim_mode === 'company_profit') {
+    if (source === 'management' && claimMode === 'company_profit') {
       foremanName = 'Company profit'
-    } else if (s.source === 'management' && !foremanId) {
+    } else if (source === 'management' && !foremanId) {
       foremanName = 'Any foreman'
     } else if (foremanId) {
       const { data: foreman } = await supabase
@@ -172,15 +216,15 @@ export async function loadDeveloperInProgressRows(): Promise<DeveloperInProgress
     }
 
     rows.push({
-      id:             s.id,
-      reference:      formatVariationReference(site?.site_code, s.vo_number),
+      id:             s.id as string,
+      reference:      formatVariationReference(site?.site_code, s.vo_number as number | null),
       siteName:       site?.name ?? 'Unknown site',
-      description:    s.description,
-      status:         s.status,
+      description:    s.description as string,
+      status:         s.status as string,
       foremanTotal:   Number(s.foreman_total),
       developerTotal: Number(s.developer_total),
       foremanName,
-      updatedAt:      s.updated_at,
+      updatedAt:      s.updated_at as string,
     })
   }
 

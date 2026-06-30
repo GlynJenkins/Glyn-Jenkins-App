@@ -22,19 +22,70 @@ export type SiteSignOffSiteSummary = {
   signedCount:   number
 }
 
-async function foremanApprovedBySubmission(submissionIds: string[]): Promise<Map<string, boolean>> {
+type SignOffSubmissionRow = {
+  id:                         string
+  description:                string
+  status:                     string
+  developer_total:            number | null
+  vo_number:                  number | null
+  claim_mode?:                string | null
+  site_agent_name?:           string | null
+  site_agent_signed_at?:      string | null
+  site_agent_signature_path?: string | null
+  sites:                      { site_code: string | null } | { site_code: string | null }[] | null
+}
+
+async function loadSignOffSubmissions(siteId: string): Promise<SignOffSubmissionRow[]> {
+  const supabase = createServiceClient()
+
+  const full = await supabase
+    .from('variation_developer_submissions')
+    .select(`
+      id, description, status, developer_total, vo_number, claim_mode,
+      site_agent_name, site_agent_signed_at, site_agent_signature_path,
+      sites ( site_code )
+    `)
+    .eq('site_id', siteId)
+    .in('status', ['draft', 'submitted', 'agreed', 'paid'])
+    .order('created_at', { ascending: false })
+
+  if (!full.error) return (full.data ?? []) as SignOffSubmissionRow[]
+
+  const legacy = await supabase
+    .from('variation_developer_submissions')
+    .select(`
+      id, description, status, developer_total, vo_number,
+      sites ( site_code )
+    `)
+    .eq('site_id', siteId)
+    .in('status', ['draft', 'submitted', 'agreed', 'paid'])
+    .order('created_at', { ascending: false })
+
+  if (legacy.error) return []
+  return (legacy.data ?? []) as SignOffSubmissionRow[]
+}
+
+async function foremanApprovedBySubmission(
+  submissionIds: string[],
+  hasClaimMode: boolean
+): Promise<Map<string, boolean>> {
   const map = new Map<string, boolean>()
   if (!submissionIds.length) return map
 
   const supabase = createServiceClient()
-  const { data: submissions } = await supabase
-    .from('variation_developer_submissions')
-    .select('id, claim_mode')
-    .in('id', submissionIds)
 
-  const companyProfit = new Set(
-    (submissions ?? []).filter((s) => s.claim_mode === 'company_profit').map((s) => s.id)
-  )
+  const companyProfit = new Set<string>()
+  if (hasClaimMode) {
+    const { data: submissions } = await supabase
+      .from('variation_developer_submissions')
+      .select('id, claim_mode')
+      .in('id', submissionIds)
+
+    for (const s of submissions ?? []) {
+      if (s.claim_mode === 'company_profit') companyProfit.add(s.id)
+    }
+  }
+
   for (const id of submissionIds) {
     if (companyProfit.has(id)) map.set(id, true)
   }
@@ -74,33 +125,24 @@ function blockedReasonForRow(
   if (status === 'paid') return null
   if (status !== 'agreed') return 'Not ready for sign-off.'
   if (claimMode === 'company_profit') return null
-  if (!foremanApproved) return 'Approve foreman lump sum first (authorise work).'
+  if (!foremanApproved) return 'Approve foreman pay first (authorise work).'
   return null
 }
 
 export async function loadSiteSignOffQueue(siteId: string): Promise<SiteSignOffRow[]> {
-  const supabase = createServiceClient()
+  const data = await loadSignOffSubmissions(siteId)
+  if (!data.length) return []
 
-  const { data, error } = await supabase
-    .from('variation_developer_submissions')
-    .select(`
-      id, description, status, developer_total, vo_number, claim_mode,
-      site_agent_name, site_agent_signed_at, site_agent_signature_path,
-      sites ( site_code )
-    `)
-    .eq('site_id', siteId)
-    .in('status', ['draft', 'submitted', 'agreed', 'paid'])
-    .order('created_at', { ascending: false })
+  const hasClaimMode = data.some((r) => r.claim_mode != null)
+  const hasSignOffColumns = data.some((r) => 'site_agent_signature_path' in r)
 
-  if (error) throw error
+  const ids = data.map((r) => r.id)
+  const foremanApproved = await foremanApprovedBySubmission(ids, hasClaimMode)
 
-  const ids = (data ?? []).map((r) => r.id)
-  const foremanApproved = await foremanApprovedBySubmission(ids)
-
-  return (data ?? []).map((row) => {
+  return data.map((row) => {
     const site = relationOne(row.sites)
     const reference = formatVariationReference(site?.site_code, row.vo_number)
-    const signed = !!row.site_agent_signature_path
+    const signed = hasSignOffColumns ? !!row.site_agent_signature_path : false
     const approved = foremanApproved.get(row.id) ?? false
     const claimMode = (row.claim_mode as string) ?? 'foreman_payable'
     const readyForSignOff = row.status === 'agreed' && approved && !signed
@@ -111,8 +153,8 @@ export async function loadSiteSignOffQueue(siteId: string): Promise<SiteSignOffR
       description:       row.description,
       status:            row.status,
       developerTotal:    row.developer_total ?? 0,
-      siteAgentName:     row.site_agent_name,
-      siteAgentSignedAt: row.site_agent_signed_at,
+      siteAgentName:     hasSignOffColumns ? (row.site_agent_name ?? null) : null,
+      siteAgentSignedAt: hasSignOffColumns ? (row.site_agent_signed_at ?? null) : null,
       signed,
       readyForSignOff,
       blockedReason:     blockedReasonForRow(row.status, signed, approved, claimMode),
@@ -134,7 +176,7 @@ export async function loadSiteSignOffSiteSummaries(): Promise<SiteSignOffSiteSum
     .eq('is_active', true)
     .order('name')
 
-  if (error) throw error
+  if (error) return []
 
   const summaries: SiteSignOffSiteSummary[] = []
 
