@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import PortalHeader from '@/components/PortalHeader'
 import { parseJsonResponse } from '@/lib/api/parse-json-response'
-import { preparePhotoForUpload } from '@/lib/qa/prepare-photo-upload'
+import { prepareVariationPhotoForUpload } from '@/lib/qa/prepare-photo-upload'
 import { VARIATION_RATES, ROLE_LABELS } from '@/lib/variations/rates'
 
 type SiteWorker = { id: string; first_name: string; surname: string; role: string }
@@ -67,7 +67,7 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
     setServerError(null)
     setErrors((prev) => { const next = { ...prev }; delete next.photo; return next })
     try {
-      const prepared = await preparePhotoForUpload(file)
+      const prepared = await prepareVariationPhotoForUpload(file)
       setPhoto(prepared)
     } catch (err) {
       setPhoto(null)
@@ -88,12 +88,9 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
         return { workerId: line.workerId, workerRole: worker.role, hours: parseFloat(line.hours) }
       })
 
-      let uploadPhoto = photo!
-      if (!uploadPhoto.type.includes('jpeg')) {
-        setProcessing(true)
-        uploadPhoto = await preparePhotoForUpload(uploadPhoto)
-        setProcessing(false)
-      }
+      setProcessing(true)
+      const uploadPhoto = await prepareVariationPhotoForUpload(photo!)
+      setProcessing(false)
 
       const fd = new FormData()
       fd.append('siteId',      site.id)
