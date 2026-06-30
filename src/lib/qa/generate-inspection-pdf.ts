@@ -21,9 +21,9 @@ const CHECKLIST_OPTION_GAP = 6
 const CHECKLIST_ITEM_GAP   = 14
 const CHECKLIST_OPTION_SIZE = 9
 
-const COLOR_YES     = rgb(0.086, 0.396, 0.204) // green-600
+const COLOR_YES     = rgb(0.086, 0.639, 0.290) // green-600
 const COLOR_NO      = rgb(0.863, 0.149, 0.149) // red-600
-const COLOR_NA      = rgb(0.176, 0.216, 0.282) // slate-700
+const COLOR_NA      = rgb(0.200, 0.255, 0.333) // slate-700
 const COLOR_WHITE   = rgb(1, 1, 1)
 const COLOR_MUTED   = rgb(0.45, 0.45, 0.45)
 const COLOR_BORDER  = rgb(0.75, 0.78, 0.82)

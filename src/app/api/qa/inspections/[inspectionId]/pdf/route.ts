@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
-import { createServiceClient } from '@/lib/supabase/server'
-import { getQaInspectionForDownload } from '@/lib/qa/queries'
+import { generateQaInspectionPdf } from '@/lib/qa/generate-inspection-pdf'
+import { loadQaInspectionPdfData } from '@/lib/qa/load-qa-inspection-pdf'
 import { qaStageLabel } from '@/lib/qa/stages'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 export async function GET(
   _request: NextRequest,
@@ -15,34 +16,26 @@ export async function GET(
 
   try {
     const { inspectionId } = await params
-    const inspection = await getQaInspectionForDownload(inspectionId)
+    const data = await loadQaInspectionPdfData(inspectionId)
 
-    if (!inspection?.pdf_path) {
+    if (!data) {
       return NextResponse.json({ error: 'Inspection PDF not found.' }, { status: 404 })
     }
 
-    const supabase = createServiceClient()
-    const { data, error } = await supabase.storage
-      .from('worker-documents')
-      .download(inspection.pdf_path)
+    const pdf = await generateQaInspectionPdf(data)
+    const filename = `QA-${data.siteName.replace(/\s+/g, '-')}-plot-${data.plotNumber}-${qaStageLabel(data.stage)}.pdf`
 
-    if (error || !data) {
-      return NextResponse.json({ error: 'Could not download PDF.' }, { status: 500 })
-    }
-
-    const site = Array.isArray(inspection.sites) ? inspection.sites[0] : inspection.sites
-    const siteName = (site as { name?: string } | null)?.name ?? 'site'
-    const filename = `QA-${siteName.replace(/\s+/g, '-')}-plot-${inspection.plot_number}-${qaStageLabel(inspection.stage)}.pdf`
-
-    return new NextResponse(await data.arrayBuffer(), {
+    return new NextResponse(new Uint8Array(pdf), {
+      status: 200,
       headers: {
         'Content-Type':        'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control':       'no-store',
       },
     })
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
+      { error: err instanceof Error ? err.message : 'Could not generate PDF.' },
       { status: 500 },
     )
   }
