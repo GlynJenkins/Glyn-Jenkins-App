@@ -12,7 +12,7 @@ import PortalHeader from '@/components/PortalHeader'
 
 type SelectedLift    = { id: string; plotNumber: string; stageName: string; contractValue: number; fullValue: number; pct: number }
 type VariationLine   = { id: string; workerName: string; amount: number }
-type VariationGroup  = { groupKey: string; description: string; lines: VariationLine[]; total: number }
+type VariationGroup  = { groupKey: string; description: string; isFixedPay?: boolean; lines: VariationLine[]; total: number }
 type Worker          = { id: string; first_name: string; surname: string; role: string }
 type Period          = { label: string; payLabel: string; isLocked: boolean; isGracePeriod?: boolean; lockTime: string; start: string; end: string }
 
@@ -168,7 +168,9 @@ export default function ClaimBuilder({
         fullValue: l.fullValue,
       })),
       ...variationGroups.filter((g) => selectedGroups.has(g.groupKey)).map((g) => ({
-        type: 'variation', id: g.groupKey, label: `Valuation — ${g.description}`, amount: g.total,
+        type: 'variation', id: g.groupKey,
+        label: g.isFixedPay ? g.description : `Valuation — ${g.description}`,
+        amount: g.total,
       })),
       ...workers.filter((w) => w.role === 'apprentice').flatMap((w) => {
         const e = apprenticeDays[w.id]
@@ -374,15 +376,17 @@ export default function ClaimBuilder({
                       {/* Label + total */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">
-                          Valuation — {g.description}
+                          {g.isFixedPay ? g.description : `Valuation — ${g.description}`}
                         </p>
-                        <p className="text-xs text-slate-400">
-                          {g.lines.length} worker{g.lines.length !== 1 ? 's' : ''}
-                        </p>
+                        {!g.isFixedPay && (
+                          <p className="text-xs text-slate-400">
+                            {g.lines.length} worker{g.lines.length !== 1 ? 's' : ''}
+                          </p>
+                        )}
                       </div>
                       <span className="font-bold text-slate-800 text-sm shrink-0">{fmt(g.total)}</span>
 
-                      {/* Expand/collapse */}
+                      {!g.isFixedPay && (
                       <button
                         onClick={() => {
                           const next = new Set(expandedGroups)
@@ -397,10 +401,10 @@ export default function ClaimBuilder({
                           : <ChevronDown className="w-4 h-4" />
                         }
                       </button>
+                      )}
                     </div>
 
-                    {/* Expanded individual lines */}
-                    {expanded && (
+                    {!g.isFixedPay && expanded && (
                       <div className="bg-amber-50 border-t border-amber-100 divide-y divide-amber-100">
                         {g.lines.map((line) => (
                           <div key={line.id}

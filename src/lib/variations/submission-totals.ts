@@ -9,6 +9,21 @@ export function variationProfit(developerTotal: number, foremanTotal: number): n
 export async function refreshForemanSubmissionTotal(submissionId: string): Promise<number> {
   const supabase = createServiceClient()
 
+  const { data: submission } = await supabase
+    .from('variation_developer_submissions')
+    .select('foreman_lump_sum, source')
+    .eq('id', submissionId)
+    .maybeSingle()
+
+  if (submission?.source === 'management' && submission.foreman_lump_sum != null) {
+    const foremanTotal = Number(submission.foreman_lump_sum)
+    await supabase
+      .from('variation_developer_submissions')
+      .update({ foreman_total: foremanTotal, updated_at: new Date().toISOString() })
+      .eq('id', submissionId)
+    return foremanTotal
+  }
+
   const { data: claimLines } = await supabase
     .from('variation_claims')
     .select('hours, rate_per_hour, total_amount')
@@ -65,7 +80,7 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
     .select(`
       id, description, status, payment_status, site_id,
       foreman_total, developer_total, vo_number,
-      submitted_to_developer_at, foreman_id,
+      submitted_to_developer_at, foreman_id, assigned_foreman_id, source, claim_mode,
       sites ( name, site_code )
     `)
     .neq('status', 'draft')
@@ -75,11 +90,20 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
 
   for (const s of submissions ?? []) {
     const site = Array.isArray(s.sites) ? s.sites[0] : s.sites
-    const { data: foreman } = await supabase
-      .from('workers')
-      .select('first_name, surname')
-      .eq('id', s.foreman_id)
-      .maybeSingle()
+    const foremanId = (s.assigned_foreman_id ?? s.foreman_id) as string | null
+    let foremanName = 'Unknown'
+    if (s.source === 'management' && s.claim_mode === 'company_profit') {
+      foremanName = 'Company profit'
+    } else if (s.source === 'management' && !foremanId) {
+      foremanName = 'Any foreman'
+    } else if (foremanId) {
+      const { data: foreman } = await supabase
+        .from('workers')
+        .select('first_name, surname')
+        .eq('id', foremanId)
+        .maybeSingle()
+      foremanName = foreman ? `${foreman.first_name} ${foreman.surname}` : 'Unknown'
+    }
 
     rows.push({
       id:              s.id,
@@ -94,7 +118,7 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
       paymentStatus:   s.payment_status,
       status:          s.status,
       submittedAt:     s.submitted_to_developer_at,
-      foremanName:     foreman ? `${foreman.first_name} ${foreman.surname}` : 'Unknown',
+      foremanName,
     })
   }
 
@@ -122,7 +146,7 @@ export async function loadDeveloperInProgressRows(): Promise<DeveloperInProgress
     .select(`
       id, description, status,
       foreman_total, developer_total, vo_number,
-      updated_at, foreman_id,
+      updated_at, foreman_id, assigned_foreman_id, source, claim_mode,
       sites ( name, site_code )
     `)
     .in('status', ['draft', 'submitted', 'agreed'])
@@ -132,11 +156,20 @@ export async function loadDeveloperInProgressRows(): Promise<DeveloperInProgress
 
   for (const s of submissions ?? []) {
     const site = Array.isArray(s.sites) ? s.sites[0] : s.sites
-    const { data: foreman } = await supabase
-      .from('workers')
-      .select('first_name, surname')
-      .eq('id', s.foreman_id)
-      .maybeSingle()
+    const foremanId = (s.assigned_foreman_id ?? s.foreman_id) as string | null
+    let foremanName = 'Unknown'
+    if (s.source === 'management' && s.claim_mode === 'company_profit') {
+      foremanName = 'Company profit'
+    } else if (s.source === 'management' && !foremanId) {
+      foremanName = 'Any foreman'
+    } else if (foremanId) {
+      const { data: foreman } = await supabase
+        .from('workers')
+        .select('first_name, surname')
+        .eq('id', foremanId)
+        .maybeSingle()
+      foremanName = foreman ? `${foreman.first_name} ${foreman.surname}` : 'Unknown'
+    }
 
     rows.push({
       id:             s.id,
@@ -146,7 +179,7 @@ export async function loadDeveloperInProgressRows(): Promise<DeveloperInProgress
       status:         s.status,
       foremanTotal:   Number(s.foreman_total),
       developerTotal: Number(s.developer_total),
-      foremanName:    foreman ? `${foreman.first_name} ${foreman.surname}` : 'Unknown',
+      foremanName,
       updatedAt:      s.updated_at,
     })
   }

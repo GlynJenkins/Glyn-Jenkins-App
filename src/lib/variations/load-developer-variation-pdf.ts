@@ -32,6 +32,11 @@ export type DeveloperVariationPdfData = {
   workersSubtotal: number
   materialUpliftAmount: number
   developerTotal: number
+  siteAgent?: {
+    name: string
+    signedAt: Date
+    signaturePng: Buffer
+  } | null
 }
 
 function roleLabel(workerRole: string | null, workerJoinRole: string | null) {
@@ -50,6 +55,7 @@ export async function loadDeveloperVariationPdfData(
     .select(`
       id, description, status, material_uplift_enabled, vo_number,
       created_at, submitted_to_developer_at,
+      site_agent_name, site_agent_signed_at, site_agent_signature_path,
       sites (
         name, site_code,
         document_address, developer_name, developer_contact,
@@ -112,6 +118,22 @@ export async function loadDeveloperVariationPdfData(
 
   const reference = formatVariationReference(site?.site_code, submission.vo_number)
 
+  let siteAgent: DeveloperVariationPdfData['siteAgent'] = null
+  if (submission.site_agent_signature_path && submission.site_agent_name) {
+    const { data: sigBlob } = await supabase.storage
+      .from('worker-documents')
+      .download(submission.site_agent_signature_path)
+    if (sigBlob) {
+      siteAgent = {
+        name:         submission.site_agent_name,
+        signedAt:     submission.site_agent_signed_at
+          ? new Date(submission.site_agent_signed_at)
+          : new Date(),
+        signaturePng: Buffer.from(await sigBlob.arrayBuffer()),
+      }
+    }
+  }
+
   return {
     reference:             reference !== '—' ? reference : submission.id.slice(0, 8).toUpperCase(),
     siteName:              site?.name ?? 'Unknown site',
@@ -129,5 +151,6 @@ export async function loadDeveloperVariationPdfData(
     workersSubtotal:       totals.workersSubtotal,
     materialUpliftAmount:  totals.materialUpliftAmount,
     developerTotal:        totals.developerTotal,
+    siteAgent,
   }
 }

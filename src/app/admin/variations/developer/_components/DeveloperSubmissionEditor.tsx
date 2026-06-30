@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ChevronDown, ChevronUp, Loader2, Send, CheckCircle, XCircle, ExternalLink, Lock, Trash2, Plus, Download,
+  ChevronDown, ChevronUp, Loader2, Send, CheckCircle, XCircle, ExternalLink, Lock, Trash2, Plus, Download, PenLine,
 } from 'lucide-react'
 import { computeDeveloperTotals, lineTotal } from '@/lib/variations/developer'
 import {
@@ -19,6 +19,9 @@ type Line = {
   worker_role: string | null
   developer_hours: number | null
   developer_rate_per_hour: number | null
+  is_lump_sum?: boolean
+  lump_sum_label?: string | null
+  description?: string
   workers: { first_name: string; surname: string; role: string } | null
 }
 
@@ -40,8 +43,15 @@ type Submission = {
   material_uplift_enabled: boolean
   submitted_to_developer_at: string | null
   paid_at: string | null
+  site_agent_name: string | null
+  site_agent_signed_at: string | null
+  siteAgentSigned: boolean
   photo_urls: string[]
   signedPhotoUrls: string[]
+  source?: string
+  claim_mode?: string
+  plot_numbers?: string[]
+  foreman_lump_sum?: number | null
   sites: { id: string; name: string; site_code: string | null } | null
   foremen: { first_name: string; surname: string } | null
   lines: Line[]
@@ -124,6 +134,8 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
   const isPaid = submission.status === 'paid' || submission.payment_status === 'paid'
   const isEditable = isDraft || isAwaitingAgreement
   const isLocked = !isEditable
+  const isManagement = submission.source === 'management'
+  const isCompanyProfit = submission.claim_mode === 'company_profit'
 
   const [lines, setLines] = useState(
     submission.lines.map((l) => ({
@@ -147,11 +159,16 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
   )
 
   const totals = computeDeveloperTotals(lines, extraLines, materialUpliftEnabled)
+  const displayDeveloperTotal = isManagement
+    ? submission.developer_total
+    : totals.developerTotal
 
-  const foremanTotal = submission.lines.reduce(
-    (sum, l) => sum + (l.total_amount ?? lineTotal(l.hours, l.rate_per_hour)),
-    0
-  )
+  const foremanTotal = isManagement
+    ? (submission.foreman_lump_sum ?? submission.foreman_total ?? 0)
+    : submission.lines.reduce(
+        (sum, l) => sum + (l.total_amount ?? lineTotal(l.hours, l.rate_per_hour)),
+        0
+      )
 
   const buildPayload = () => ({
     lines,
@@ -200,7 +217,7 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
     setMessage(null)
     startTransition(async () => {
       try {
-        await savePayload()
+        if (!isManagement) await savePayload()
         const res = await fetch(`/api/admin/variations/developer/${submission.id}/submit`, {
           method: 'POST',
         })
@@ -224,7 +241,9 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
       })
       const json = await res.json()
       if (!res.ok) { setError(json.error ?? 'Update failed.'); return }
-      setMessage('Developer agreed — you can now approve the foreman variation on the Pending tab.')
+      setMessage(isCompanyProfit
+        ? 'Developer agreed — no foreman pay on this variation. Capture site sign-off when work is done.'
+        : 'Developer agreed — you can now approve the foreman lump sum on the Pending tab.')
       router.refresh()
     })
   }
@@ -285,9 +304,22 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-sm font-bold text-orange-600">{submission.reference}</p>
-              <p className="font-semibold text-slate-900">
-                {submission.foremen?.first_name} {submission.foremen?.surname}
-              </p>
+              {isManagement ? (
+                <>
+                  <p className="font-semibold text-slate-900">Management variation</p>
+                  <p className="text-xs text-slate-500">
+                    {isCompanyProfit
+                      ? 'Company profit — no foreman pay'
+                      : submission.foremen
+                        ? `Foreman: ${submission.foremen.first_name} ${submission.foremen.surname}`
+                        : 'Any foreman on site can claim'}
+                  </p>
+                </>
+              ) : (
+                <p className="font-semibold text-slate-900">
+                  {submission.foremen?.first_name} {submission.foremen?.surname}
+                </p>
+              )}
               {submission.sites?.id ? (
                 <Link
                   href={`/admin/variations/developer/sites/${submission.sites.id}`}
@@ -314,6 +346,11 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             </div>
           </div>
           <p className="text-sm text-slate-700 bg-gray-50 rounded-xl p-3">{submission.description}</p>
+          {isManagement && (submission.plot_numbers?.length ?? 0) > 0 && (
+            <p className="text-xs text-orange-700 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2">
+              Plots: {submission.plot_numbers!.join(', ')}
+            </p>
+          )}
           {submission.signedPhotoUrls[0] && (
             <a
               href={submission.signedPhotoUrls[0]}
@@ -324,6 +361,37 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
               <ExternalLink className="w-3.5 h-3.5" /> View photo
             </a>
           )}
+
+          {submission.siteAgentSigned ? (
+            <div className="flex items-start gap-2 text-xs text-green-800 bg-green-50 border border-green-100 rounded-xl px-3 py-2.5">
+              <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Site agent signed off</p>
+                <p className="mt-0.5">
+                  {submission.site_agent_name}
+                  {submission.site_agent_signed_at
+                    ? ` · ${new Date(submission.site_agent_signed_at).toLocaleDateString('en-GB', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                      })}`
+                    : ''}
+                </p>
+              </div>
+            </div>
+          ) : submission.sites?.id && !isPaid && isAgreed ? (
+            <div className="flex items-start gap-2 text-xs text-orange-800 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2.5">
+              <PenLine className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Awaiting site agent sign-off</p>
+                <p className="mt-0.5 leading-relaxed">
+                  Once work is complete, open{' '}
+                  <Link href="/admin/variations/sign-off" className="font-semibold underline">
+                    Site agent sign-off
+                  </Link>
+                  {' '}on site (management). Required before marking paid.
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="p-5 space-y-3">
@@ -332,14 +400,36 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             {isLocked && <Lock className="w-4 h-4 text-slate-400" />}
           </div>
           <p className="text-xs text-slate-500">
-            Trade roles only — no worker names. Add extra lines or a 10% material uplift before the developer agrees.
+            {isManagement
+              ? 'Office-created variation — developer charge set at creation. Send for agreement when ready.'
+              : 'Trade roles only — no worker names. Add extra lines or a 10% material uplift before the developer agrees.'}
           </p>
-          {isAwaitingAgreement && (
+          {isAwaitingAgreement && !isManagement && (
             <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
               Sent to developer — you can still add workers or toggle material uplift until you mark developer agreed.
             </p>
           )}
 
+          {isManagement ? (
+            <div className="p-4 bg-gray-50 border border-gray-100 rounded-xl space-y-2 text-sm">
+              <div className="flex justify-between text-slate-600">
+                <span>Developer charge</span>
+                <span className="font-bold text-orange-600">{fmt(displayDeveloperTotal)}</span>
+              </div>
+              {materialUpliftEnabled && (
+                <p className="text-xs text-slate-500">
+                  Includes {MATERIAL_UPLIFT_PERCENT}% material uplift
+                </p>
+              )}
+              {!isCompanyProfit && (
+                <div className="flex justify-between text-slate-600 pt-2 border-t border-gray-200">
+                  <span>Foreman pay</span>
+                  <span>{fmt(foremanTotal)}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+          <>
           <div className="divide-y divide-gray-50 border border-gray-100 rounded-xl overflow-hidden">
             {submission.lines.map((line, index) => {
               const edit = lines[index]
@@ -457,9 +547,11 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             )}
             <div className="flex justify-between items-center pt-1">
               <span className="font-semibold text-slate-700">Developer total</span>
-              <span className="text-xl font-bold text-orange-600">{fmt(totals.developerTotal)}</span>
+              <span className="text-xl font-bold text-orange-600">{fmt(displayDeveloperTotal)}</span>
             </div>
           </div>
+          </>
+          )}
 
           <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl space-y-1.5 text-sm">
             <p className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wide">
@@ -471,12 +563,12 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
             </div>
             <div className="flex justify-between text-slate-600">
               <span>Developer charge</span>
-              <span>{fmt(totals.developerTotal)}</span>
+              <span>{fmt(displayDeveloperTotal)}</span>
             </div>
             <div className="flex justify-between font-semibold pt-1 border-t border-emerald-100">
               <span className="text-emerald-900">Profit</span>
-              <span className={totals.developerTotal - foremanTotal >= 0 ? 'text-emerald-700' : 'text-red-600'}>
-                {fmt(totals.developerTotal - foremanTotal)}
+              <span className={displayDeveloperTotal - foremanTotal >= 0 ? 'text-emerald-700' : 'text-red-600'}>
+                {fmt(displayDeveloperTotal - foremanTotal)}
               </span>
             </div>
           </div>
@@ -497,7 +589,9 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
               {submission.lines.map((line) => (
                 <div key={line.id} className="flex justify-between text-sm text-slate-600">
                   <span>
-                    {line.workers?.first_name} {line.workers?.surname} — {line.hours}hrs @ {fmt(line.rate_per_hour)}/hr
+                    {line.is_lump_sum
+                      ? (line.description ?? submission.description)
+                      : `${line.workers?.first_name} ${line.workers?.surname} — ${line.hours}hrs @ ${fmt(line.rate_per_hour)}/hr`}
                   </span>
                   <span>{fmt(line.total_amount ?? lineTotal(line.hours, line.rate_per_hour))}</span>
                 </div>
@@ -532,6 +626,7 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
 
       {isDraft && (
         <div className="space-y-2">
+          {!isManagement && (
           <div className="flex gap-2">
             <button
               disabled={busy}
@@ -549,6 +644,17 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
               Send to developer
             </button>
           </div>
+          )}
+          {isManagement && (
+            <button
+              disabled={busy}
+              onClick={submitToDeveloper}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Send to developer
+            </button>
+          )}
           <button
             disabled={busy}
             onClick={deleteDraft}
@@ -594,7 +700,9 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
       {isAgreed && !isPaid && (
         <div className="space-y-2">
           <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-center">
-            Developer agreed — approve the foreman variation on the Pending tab, then record payment here when received.
+            {isCompanyProfit
+              ? 'Developer agreed — capture site agent sign-off when work is done, then download the PDF to submit for payment.'
+              : 'Developer agreed — approve the foreman lump sum on the Pending tab. After work is complete, capture site agent sign-off, then download the PDF to submit for payment.'}
           </p>
           <button
             disabled={busy}

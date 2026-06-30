@@ -12,7 +12,7 @@ import PortalHeader from '@/components/PortalHeader'
 
 type SelectedLift   = { id: string; plotNumber: string; stageName: string; contractValue: number; fullValue: number; pct: number; siteId: string }
 type VariationLine  = { id: string; workerName: string; amount: number }
-type VariationGroup = { groupKey: string; description: string; lines: VariationLine[]; total: number }
+type VariationGroup = { groupKey: string; description: string; isFixedPay?: boolean; lines: VariationLine[]; total: number }
 type Worker         = { id: string; first_name: string; surname: string; role: string }
 type Period         = { label: string; payLabel: string; isLocked: boolean; isGracePeriod?: boolean; lockTime: string; start: string; end: string }
 
@@ -172,7 +172,9 @@ export default function MultiSiteClaimBuilder({
         fullValue: l.fullValue,
       })),
       ...variationGroups.filter((g) => selectedGroups.has(g.groupKey)).map((g) => ({
-        type: 'variation', id: g.groupKey, label: `Valuation — ${g.description}`, amount: g.total,
+        type: 'variation', id: g.groupKey,
+        label: g.isFixedPay ? g.description : `Valuation — ${g.description}`,
+        amount: g.total,
       })),
       ...workers.filter((w) => w.role === 'apprentice').flatMap((w) => {
         const e = apprenticeDays[w.id]
@@ -351,10 +353,19 @@ export default function MultiSiteClaimBuilder({
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-800 truncate">
-                        Valuation — {g.description}
+                        {g.isFixedPay ? g.description : `Valuation — ${g.description}`}
                       </p>
-                      <p className="text-xs text-slate-400">{fmt(g.total)}</p>
+                      {!g.isFixedPay && (
+                        <p className="text-xs text-slate-400">{fmt(g.total)} · {g.lines.length} worker{g.lines.length === 1 ? '' : 's'}</p>
+                      )}
+                      {g.isFixedPay && (
+                        <p className="text-xs text-slate-400">{fmt(g.total)}</p>
+                      )}
                     </div>
+                    {g.isFixedPay && (
+                      <span className="font-bold text-slate-800 text-sm shrink-0">{fmt(g.total)}</span>
+                    )}
+                    {!g.isFixedPay && (
                     <button
                       type="button"
                       onClick={() => setExpandedGroups((prev) => {
@@ -367,8 +378,9 @@ export default function MultiSiteClaimBuilder({
                     >
                       {expandedGroups.has(g.groupKey) ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
+                    )}
                   </div>
-                  {expandedGroups.has(g.groupKey) && (
+                  {!g.isFixedPay && expandedGroups.has(g.groupKey) && (
                     <div className="px-5 pb-3 space-y-1">
                       {g.lines.map((l) => (
                         <div key={l.id} className="flex justify-between text-xs text-slate-500 bg-gray-50 rounded-lg px-3 py-1.5">

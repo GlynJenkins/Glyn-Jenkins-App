@@ -1,13 +1,15 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
-import { Building2, ChevronRight } from 'lucide-react'
+import { Building2, ChevronRight, PenLine } from 'lucide-react'
 import PendingForemanQueue from './_components/PendingForemanQueue'
 import DeveloperInProgressQueue from './_components/DeveloperInProgressQueue'
 import DeveloperVariationRegisterTable from './_components/DeveloperVariationRegisterTable'
+import NewManagementVariationForm from './_components/NewManagementVariationForm'
 import { buildPendingForemanGroups } from '@/lib/variations/pending-foreman-groups'
 import { loadDeveloperRegisterRows, loadDeveloperInProgressRows } from '@/lib/variations/submission-totals'
 import { loadSiteVariationAccountSummaries } from '@/lib/variations/site-variation-accounts'
+import { loadSiteSignOffSiteSummaries } from '@/lib/variations/load-site-signoff-queue'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 
 export const dynamic = 'force-dynamic'
@@ -46,7 +48,22 @@ export default async function DeveloperVariationsPage() {
   const registerRows = await loadDeveloperRegisterRows()
   const inProgressRows = await loadDeveloperInProgressRows()
   const siteAccounts = await loadSiteVariationAccountSummaries()
+  const signOffSites = await loadSiteSignOffSiteSummaries()
+  const signOffPending = signOffSites.reduce((n, s) => n + s.pendingCount, 0)
   const siteCount = siteAccounts.length
+
+  const { data: activeSites } = await supabase
+    .from('sites')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('name')
+
+  const { data: foremen } = await supabase
+    .from('workers')
+    .select('id, first_name, surname')
+    .eq('role', 'foreman')
+    .eq('status', 'active')
+    .order('surname')
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -69,8 +86,32 @@ export default async function DeveloperVariationsPage() {
       </header>
 
       <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-4">
+        <NewManagementVariationForm
+          sites={activeSites ?? []}
+          foremen={foremen ?? []}
+        />
         <PendingForemanQueue groups={pendingForemanGroups} />
         <DeveloperInProgressQueue rows={inProgressRows} />
+
+        <Link
+          href="/admin/variations/sign-off"
+          className="flex items-center justify-between bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-orange-200 transition-colors"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center shrink-0">
+              <PenLine className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-900">Site agent sign-off</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {signOffPending > 0
+                  ? `${signOffPending} variation${signOffPending === 1 ? '' : 's'} ready — work complete, capture signature on site`
+                  : 'After work is done — management signs on site before payment'}
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-slate-300 shrink-0" />
+        </Link>
 
         <Link
           href="/admin/variations/developer/sites"

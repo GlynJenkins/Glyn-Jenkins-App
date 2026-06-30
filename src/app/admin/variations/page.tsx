@@ -30,7 +30,7 @@ export default async function AdminVariationsPage() {
     .select(`
       id, hours, rate_per_hour, total_amount, description,
       photo_urls, status, admin_rejection_reason, created_at,
-      developer_submission_id,
+      developer_submission_id, is_lump_sum, lump_sum_label,
       sites   ( id, name ),
       workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
       foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )

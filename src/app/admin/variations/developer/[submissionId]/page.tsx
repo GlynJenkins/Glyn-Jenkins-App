@@ -24,6 +24,8 @@ export default async function DeveloperVariationDetailPage({
       id, description, status, payment_status, foreman_id, site_id,
       foreman_total, developer_total, material_uplift_enabled, vo_number,
       submitted_to_developer_at, paid_at, photo_urls,
+      site_agent_name, site_agent_signed_at, site_agent_signature_path,
+      source, claim_mode, plot_numbers, foreman_lump_sum, assigned_foreman_id,
       sites ( id, name, site_code )
     `)
     .eq('id', submissionId)
@@ -31,17 +33,20 @@ export default async function DeveloperVariationDetailPage({
 
   if (!submission) notFound()
 
-  const { data: foreman } = await supabase
-    .from('workers')
-    .select('first_name, surname')
-    .eq('id', submission.foreman_id)
-    .maybeSingle()
+  const foremanWorkerId = submission.assigned_foreman_id ?? submission.foreman_id
+  const { data: foreman } = foremanWorkerId
+    ? await supabase
+        .from('workers')
+        .select('first_name, surname')
+        .eq('id', foremanWorkerId)
+        .maybeSingle()
+    : { data: null }
 
   const { data: lines } = await supabase
     .from('variation_claims')
     .select(`
       id, hours, rate_per_hour, total_amount, worker_role,
-      developer_hours, developer_rate_per_hour,
+      developer_hours, developer_rate_per_hour, is_lump_sum, lump_sum_label,
       workers!variation_claims_worker_id_fkey ( first_name, surname, role )
     `)
     .eq('developer_submission_id', submissionId)
@@ -72,6 +77,7 @@ export default async function DeveloperVariationDetailPage({
   const payload = {
     ...submission,
     reference: reference !== '—' ? reference : submission.id.slice(0, 8).toUpperCase(),
+    siteAgentSigned: !!submission.site_agent_signature_path,
     sites:   site ? { ...site, id: submission.site_id } : null,
     foremen: foreman,
     signedPhotoUrls,

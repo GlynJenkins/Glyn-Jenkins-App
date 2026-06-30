@@ -3,6 +3,7 @@ import { requireForemanAccess }  from '@/lib/auth/portal-access'
 import { notFound }    from 'next/navigation'
 import { getCurrentFortnight }   from '@/lib/fortnight'
 import ClaimBuilder              from './_components/ClaimBuilder'
+import { loadForemanClaimableVariations } from '@/lib/variations/load-foreman-claimable-variations'
 import { relationOne }           from '@/lib/supabase/normalize-relations'
 
 export const dynamic = 'force-dynamic'
@@ -80,49 +81,8 @@ export default async function ClaimPage({
     })
   }
 
-  // ── Approved variations not yet in a claim — grouped by submission ────
-  const { data: rawVariations } = await supabase
-    .from('variation_claims')
-    .select(`
-      id, description, total_amount, photo_urls,
-      workers!variation_claims_worker_id_fkey(first_name, surname, role)
-    `)
-    .eq('site_id', siteId)
-    .eq('status', 'approved')
-    .is('claimed_in_period_id', null)
-    .order('created_at', { ascending: true })
-
-  // Group by shared photo path (unique fingerprint per daywork submission)
-  type VariationLine = { id: string; workerName: string; amount: number }
-  type VariationGroup = {
-    groupKey:    string
-    description: string
-    lines:       VariationLine[]
-    total:       number
-  }
-
-  const groupMap = new Map<string, VariationGroup>()
-  for (const v of rawVariations ?? []) {
-    const key = (v.photo_urls ?? [])[0] ?? v.id
-    const w   = relationOne(v.workers as { first_name: string; surname: string; role: string } | { first_name: string; surname: string; role: string }[] | null)
-    if (!groupMap.has(key)) {
-      groupMap.set(key, {
-        groupKey:    key,
-        description: v.description ?? 'Variation',
-        lines:       [],
-        total:       0,
-      })
-    }
-    const g = groupMap.get(key)!
-    g.lines.push({
-      id:         v.id,
-      workerName: w ? `${w.first_name} ${w.surname}` : 'Worker',
-      amount:     v.total_amount ?? 0,
-    })
-    g.total += v.total_amount ?? 0
-  }
-
-  const variationGroups = Array.from(groupMap.values())
+  // ── Approved variations not yet in a claim ────────────────────────────
+  const variationGroups = await loadForemanClaimableVariations(foreman.id, [siteId])
 
   // ── Day rates from admin settings ────────────────────────────────────
   const { data: adminSettings } = await supabase

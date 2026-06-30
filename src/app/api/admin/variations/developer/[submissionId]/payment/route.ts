@@ -32,6 +32,21 @@ export async function PATCH(
       return NextResponse.json({ error: 'Developer must agree before recording payment.' }, { status: 400 })
     }
 
+    if (payment_status === 'paid') {
+      const { data: full } = await supabase
+        .from('variation_developer_submissions')
+        .select('site_agent_signature_path')
+        .eq('id', submissionId)
+        .maybeSingle()
+
+      if (!full?.site_agent_signature_path) {
+        return NextResponse.json(
+          { error: 'Site agent sign-off is required before marking paid. Capture signature on site first.' },
+          { status: 400 }
+        )
+      }
+    }
+
     const now = new Date().toISOString()
     const { error } = await supabase
       .from('variation_developer_submissions')

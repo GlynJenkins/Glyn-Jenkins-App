@@ -34,7 +34,7 @@ export async function generateDeveloperVariationPdf(
   const pdf      = await PDFDocument.create()
   const font     = await pdf.embedFont(StandardFonts.Helvetica)
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
-  const page     = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
 
   let y = PAGE_HEIGHT - MARGIN
 
@@ -124,7 +124,40 @@ export async function generateDeveloperVariationPdf(
   y -= 4
   totalRow('Total due', fmtMoney(data.developerTotal), true)
 
-  y -= 16
+  if (data.siteAgent) {
+    y -= 20
+    const sigWidth = 180
+    const pngImage = await pdf.embedPng(data.siteAgent.signaturePng)
+    const sigHeight = (pngImage.height / pngImage.width) * sigWidth
+    const blockH = LINE_HEIGHT * 3 + 12 + sigHeight + 16
+
+    if (y - blockH < MARGIN) {
+      page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      y = PAGE_HEIGHT - MARGIN
+    }
+
+    drawText(page, 'Site agent sign-off', MARGIN, y, fontBold, 11)
+    y -= LINE_HEIGHT + 4
+    drawText(page, `Signed by: ${data.siteAgent.name}`, MARGIN, y, font, 10)
+    y -= LINE_HEIGHT
+    drawText(
+      page,
+      `Signed at: ${data.siteAgent.signedAt.toLocaleString('en-GB', {
+        day: 'numeric', month: 'long', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      })}`,
+      MARGIN,
+      y,
+      font,
+      10,
+      rgb(0.45, 0.45, 0.45)
+    )
+    y -= 12
+    page.drawImage(pngImage, { x: MARGIN, y: y - sigHeight, width: sigWidth, height: sigHeight })
+    y -= sigHeight + 16
+  }
+
+  y -= 8
   drawText(
     page,
     'This document shows trade roles and developer rates only. Operative names and internal foreman charges are not included.',

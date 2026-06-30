@@ -76,9 +76,13 @@ export async function refreshDeveloperSubmissionTotal(submissionId: string) {
 
   const { data: submission } = await supabase
     .from('variation_developer_submissions')
-    .select('material_uplift_enabled')
+    .select('material_uplift_enabled, source, developer_total')
     .eq('id', submissionId)
     .maybeSingle()
+
+  if (submission?.source === 'management') {
+    return Number(submission.developer_total)
+  }
 
   const { data: claimLines } = await supabase
     .from('variation_claims')
