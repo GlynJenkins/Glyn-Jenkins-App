@@ -103,18 +103,20 @@ export async function generateDeveloperVariationPdf(
     y -= LINE_HEIGHT
   }
 
-  y -= 8
+  y -= 10
   page.drawLine({
-    start: { x: MARGIN, y: y + 6 },
-    end:   { x: PAGE_WIDTH - MARGIN, y: y + 6 },
+    start: { x: MARGIN, y },
+    end:   { x: PAGE_WIDTH - MARGIN, y },
     thickness: 0.5,
     color: rgb(0.75, 0.75, 0.75),
   })
+  y -= 16
 
   const totalRow = (label: string, amount: string, bold = false) => {
-    drawText(page, label, colRate - 40, y, bold ? fontBold : font, bold ? 12 : 10)
-    drawText(page, amount, colTotal, y, bold ? fontBold : font, bold ? 12 : 10)
-    y -= LINE_HEIGHT
+    const size = bold ? 12 : 10
+    drawText(page, label, colRate - 40, y, bold ? fontBold : font, size)
+    drawText(page, amount, colTotal, y, bold ? fontBold : font, size)
+    y -= LINE_HEIGHT + (bold ? 2 : 0)
   }
 
   totalRow('Labour subtotal', fmtMoney(data.workersSubtotal))
