@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { drawPdfLetterhead } from '@/lib/documents/pdf-letterhead'
 import { MATERIAL_UPLIFT_PERCENT } from '@/lib/variations/rates'
 import type { DeveloperVariationPdfData } from '@/lib/variations/load-developer-variation-pdf'
 
@@ -37,17 +38,22 @@ export async function generateDeveloperVariationPdf(
 
   let y = PAGE_HEIGHT - MARGIN
 
+  y = await drawPdfLetterhead(pdf, page, font, fontBold, y, {
+    documentTitle: 'Variation claim — for developer approval',
+    company:         data.company,
+    site: {
+      ...data.siteDocuments,
+      siteName: data.siteName,
+      siteCode: data.siteCode,
+    },
+    reference: data.reference,
+  })
+
   const row = (text: string, opts?: { bold?: boolean; size?: number; x?: number }) => {
     drawText(page, text, opts?.x ?? MARGIN, y, opts?.bold ? fontBold : font, opts?.size ?? 10)
     y -= LINE_HEIGHT
   }
 
-  row('GLYN JENKINS LTD', { bold: true, size: 16 })
-  row('Variation claim — for developer approval', { size: 11, bold: true })
-  y -= 8
-
-  row(`Reference: ${data.reference}`)
-  row(`Site: ${data.siteName}`)
   row(`Prepared: ${fmtDate(data.preparedAt)}`)
   if (data.submittedAt) {
     row(`Submitted: ${fmtDate(data.submittedAt)}`)

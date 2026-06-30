@@ -6,6 +6,7 @@ import SiteGrid from './_components/SiteGrid'
 import ExcelImporter from './_components/ExcelImporter'
 import ForemanAssignments from './_components/ForemanAssignments'
 import ClearGridButton from './_components/ClearGridButton'
+import SiteDocumentDetailsForm from './_components/SiteDocumentDetailsForm'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +23,11 @@ export default async function AdminSitePage({
 
   const { data: site } = await supabase
     .from('sites')
-    .select('id, name, address, is_active, site_code')
+    .select(`
+      id, name, address, is_active, site_code,
+      document_address, developer_name, developer_contact,
+      surveyor_name, document_reference
+    `)
     .eq('id', siteId)
     .maybeSingle()
 
@@ -122,6 +127,17 @@ export default async function AdminSitePage({
           siteId={siteId}
           assignedForemen={assignedForemen ?? []}
           availableForemen={availableForemen}
+        />
+
+        <SiteDocumentDetailsForm
+          siteId={siteId}
+          initial={{
+            document_address:   site.document_address ?? '',
+            developer_name:     site.developer_name ?? '',
+            developer_contact:  site.developer_contact ?? '',
+            surveyor_name:      site.surveyor_name ?? '',
+            document_reference: site.document_reference ?? '',
+          }}
         />
 
         {hasData && (

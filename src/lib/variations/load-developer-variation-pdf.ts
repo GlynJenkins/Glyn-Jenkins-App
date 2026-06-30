@@ -1,5 +1,11 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { relationOne } from '@/lib/supabase/normalize-relations'
+import {
+  loadCompanyBranding,
+  parseSiteDocumentDetails,
+  type CompanyBranding,
+  type SiteDocumentDetails,
+} from '@/lib/documents/company-branding'
 import { computeDeveloperTotals, lineTotal } from '@/lib/variations/developer'
 import { ROLE_LABELS } from '@/lib/variations/rates'
 import { formatVariationReference } from '@/lib/variations/vo-reference'
@@ -14,6 +20,9 @@ export type DeveloperVariationPdfLine = {
 export type DeveloperVariationPdfData = {
   reference: string
   siteName: string
+  siteCode: string | null
+  siteDocuments: SiteDocumentDetails
+  company: CompanyBranding
   description: string
   preparedAt: Date
   submittedAt: Date | null
@@ -34,13 +43,18 @@ export async function loadDeveloperVariationPdfData(
   submissionId: string
 ): Promise<DeveloperVariationPdfData | null> {
   const supabase = createServiceClient()
+  const company = await loadCompanyBranding()
 
   const { data: submission } = await supabase
     .from('variation_developer_submissions')
     .select(`
       id, description, status, material_uplift_enabled, vo_number,
       created_at, submitted_to_developer_at,
-      sites ( name, site_code )
+      sites (
+        name, site_code,
+        document_address, developer_name, developer_contact,
+        surveyor_name, document_reference
+      )
     `)
     .eq('id', submissionId)
     .maybeSingle()
@@ -101,6 +115,9 @@ export async function loadDeveloperVariationPdfData(
   return {
     reference:             reference !== '—' ? reference : submission.id.slice(0, 8).toUpperCase(),
     siteName:              site?.name ?? 'Unknown site',
+    siteCode:              site?.site_code ?? null,
+    siteDocuments:         parseSiteDocumentDetails(site),
+    company,
     description:           submission.description,
     preparedAt:            new Date(submission.created_at),
     submittedAt:           submission.submitted_to_developer_at

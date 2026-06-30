@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid } from '@/lib/qa/queries'
+import { loadCompanyBranding, parseSiteDocumentDetails } from '@/lib/documents/company-branding'
 import { generateQaInspectionPdf, type QaPdfPhoto } from '@/lib/qa/generate-inspection-pdf'
 import { isQaStageKey, qaStageLabel, firesockRequirementMet, stageAllowsFiresockNa } from '@/lib/qa/stages'
 import { fetchPlotDetailsBySite } from '@/lib/jetwash/plot-descriptions'
@@ -87,11 +88,18 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    const { data: site } = await supabase
-      .from('sites')
-      .select('id, name')
-      .eq('id', siteId)
-      .maybeSingle()
+    const [company, { data: site }] = await Promise.all([
+      loadCompanyBranding(),
+      supabase
+        .from('sites')
+        .select(`
+          id, name,
+          document_address, developer_name, developer_contact,
+          surveyor_name, document_reference
+        `)
+        .eq('id', siteId)
+        .maybeSingle(),
+    ])
 
     if (!site) {
       return NextResponse.json({ error: 'Site not found.' }, { status: 404 })
@@ -142,6 +150,8 @@ export async function POST(request: NextRequest) {
 
     const pdfBuffer = await generateQaInspectionPdf({
       siteName:       site.name,
+      siteDocuments:  parseSiteDocumentDetails(site),
+      company,
       plotNumber,
       stage,
       inspectorName,

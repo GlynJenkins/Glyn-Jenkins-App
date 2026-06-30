@@ -1,4 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { drawPdfLetterhead } from '@/lib/documents/pdf-letterhead'
+import type { CompanyBranding, SiteDocumentDetails } from '@/lib/documents/company-branding'
 import { qaStageLabel } from './stages'
 
 const PAGE_WIDTH  = 595.28
@@ -59,6 +61,8 @@ async function embedPhotoImage(pdf: PDFDocument, buffer: Buffer, mime: string) {
 
 export type QaInspectionPdfInput = {
   siteName:       string
+  siteDocuments?: SiteDocumentDetails
+  company?:       CompanyBranding
   plotNumber:     string
   stage:          string
   inspectorName:  string
@@ -225,10 +229,27 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
     }
   }
 
-  drawLines(['QUALITY INSPECTION — GLYN JENKINS LTD'], { bold: true, size: TITLE_SIZE })
-  y -= 6
+  if (input.company) {
+    y = await drawPdfLetterhead(pdf, page, font, fontBold, y, {
+      documentTitle: 'Quality inspection report',
+      company:       input.company,
+      site: {
+        documentAddress:   input.siteDocuments?.documentAddress ?? null,
+        developerName:     input.siteDocuments?.developerName ?? null,
+        developerContact:  input.siteDocuments?.developerContact ?? null,
+        surveyorName:      input.siteDocuments?.surveyorName ?? null,
+        documentReference: input.siteDocuments?.documentReference ?? null,
+        siteName: input.siteName,
+      },
+    })
+    y -= 4
+  } else {
+    drawLines(['QUALITY INSPECTION — GLYN JENKINS LTD'], { bold: true, size: TITLE_SIZE })
+    y -= 6
+    drawLines([`Site: ${input.siteName}`])
+  }
+
   drawLines([
-    `Site: ${input.siteName}`,
     `Plot: ${input.plotNumber}`,
     `Stage: ${qaStageLabel(input.stage)}`,
     `Inspector: ${input.inspectorName}`,

@@ -43,7 +43,22 @@ export default async function AdminSettingsPage() {
         </div>
       </header>
 
-      <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
+      <div className="px-4 pt-5 pb-16 max-w-lg mx-auto space-y-4">
+        <Link
+          href="/admin/settings/company"
+          className="flex items-center justify-between bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-orange-200 transition-colors"
+        >
+          <div>
+            <p className="font-semibold text-slate-900">Company & document branding</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Logo, address, VAT — plus per-site details on each site page
+            </p>
+          </div>
+          <span className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl shrink-0">
+            Edit
+          </span>
+        </Link>
+
         <SettingsForm
           initialAdminFee={adminFee}
           initialInsuranceFee={insuranceFee}
