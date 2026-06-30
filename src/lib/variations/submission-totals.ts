@@ -44,6 +44,8 @@ export async function refreshSubmissionTotals(submissionId: string) {
 export type DeveloperRegisterRow = {
   id: string
   reference: string
+  siteId: string
+  siteCode: string | null
   siteName: string
   description: string
   foremanTotal: number
@@ -61,7 +63,7 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
   const { data: submissions } = await supabase
     .from('variation_developer_submissions')
     .select(`
-      id, description, status, payment_status,
+      id, description, status, payment_status, site_id,
       foreman_total, developer_total, vo_number,
       submitted_to_developer_at, foreman_id,
       sites ( name, site_code )
@@ -82,6 +84,8 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
     rows.push({
       id:              s.id,
       reference:       formatVariationReference(site?.site_code, s.vo_number),
+      siteId:          s.site_id as string,
+      siteCode:        site?.site_code ?? null,
       siteName:        site?.name ?? 'Unknown site',
       description:     s.description,
       foremanTotal:    Number(s.foreman_total),

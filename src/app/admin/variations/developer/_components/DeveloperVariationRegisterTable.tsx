@@ -1,8 +1,10 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Download } from 'lucide-react'
 import type { DeveloperRegisterRow } from '@/lib/variations/submission-totals'
+import { formatSiteCode } from '@/lib/variations/vo-reference'
 
 function fmt(n: number) {
   return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2 })
@@ -29,8 +31,8 @@ function statusLabel(status: string) {
   }
 }
 
-export default function DeveloperVariationRegisterTable({ rows }: { rows: DeveloperRegisterRow[] }) {
-  const totals = rows.reduce(
+function sumRows(rows: DeveloperRegisterRow[]) {
+  return rows.reduce(
     (acc, r) => ({
       foreman:   acc.foreman + r.foremanTotal,
       developer: acc.developer + r.developerTotal,
@@ -39,6 +41,54 @@ export default function DeveloperVariationRegisterTable({ rows }: { rows: Develo
     }),
     { foreman: 0, developer: 0, profit: 0, unpaid: 0 }
   )
+}
+
+const selectClass =
+  'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-orange-400'
+
+export default function DeveloperVariationRegisterTable({ rows }: { rows: DeveloperRegisterRow[] }) {
+  const [siteFilter, setSiteFilter] = useState('all')
+  const [referenceFilter, setReferenceFilter] = useState('all')
+
+  const siteOptions = useMemo(() => {
+    const map = new Map<string, { siteId: string; siteName: string; siteCode: string | null }>()
+    for (const r of rows) {
+      if (!map.has(r.siteId)) {
+        map.set(r.siteId, { siteId: r.siteId, siteName: r.siteName, siteCode: r.siteCode })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      const codeA = a.siteCode ?? ''
+      const codeB = b.siteCode ?? ''
+      if (codeA !== codeB) return codeA.localeCompare(codeB, undefined, { numeric: true })
+      return a.siteName.localeCompare(b.siteName)
+    })
+  }, [rows])
+
+  const referenceOptions = useMemo(() => {
+    const pool = siteFilter === 'all'
+      ? rows
+      : rows.filter((r) => r.siteId === siteFilter)
+    return pool.map((r) => ({ id: r.id, reference: r.reference }))
+  }, [rows, siteFilter])
+
+  const filteredRows = useMemo(() => {
+    let result = rows
+    if (siteFilter !== 'all') {
+      result = result.filter((r) => r.siteId === siteFilter)
+    }
+    if (referenceFilter !== 'all') {
+      result = result.filter((r) => r.id === referenceFilter)
+    }
+    return result
+  }, [rows, siteFilter, referenceFilter])
+
+  const totals = sumRows(filteredRows)
+
+  const handleSiteChange = (value: string) => {
+    setSiteFilter(value)
+    setReferenceFilter('all')
+  }
 
   return (
     <div className="space-y-3 mb-8">
@@ -48,7 +98,7 @@ export default function DeveloperVariationRegisterTable({ rows }: { rows: Develo
             VO register
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            All variations sent to the developer. Same data as the Excel export.
+            Filter by site or reference. Same data as the Excel export.
           </p>
         </div>
         {rows.length > 0 && (
@@ -69,6 +119,45 @@ export default function DeveloperVariationRegisterTable({ rows }: { rows: Develo
         </p>
       ) : (
         <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
+                Site
+              </span>
+              <select
+                value={siteFilter}
+                onChange={(e) => handleSiteChange(e.target.value)}
+                className={selectClass}
+              >
+                <option value="all">All sites</option>
+                {siteOptions.map((s) => (
+                  <option key={s.siteId} value={s.siteId}>
+                    {formatSiteCode(s.siteCode)} — {s.siteName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
+                Reference
+              </span>
+              <select
+                value={referenceFilter}
+                onChange={(e) => setReferenceFilter(e.target.value)}
+                className={selectClass}
+              >
+                <option value="all">
+                  {siteFilter === 'all' ? 'All references' : 'All on this site'}
+                </option>
+                {referenceOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.reference}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-white rounded-xl border border-gray-100 p-3">
               <p className="text-[10px] uppercase tracking-wide text-slate-400">Foreman cost</p>
@@ -88,110 +177,116 @@ export default function DeveloperVariationRegisterTable({ rows }: { rows: Develo
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-gray-100 text-left">
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
-                      Reference
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      Site
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 min-w-[140px]">
-                      Reason for VO
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right whitespace-nowrap">
-                      Foreman cost
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right whitespace-nowrap">
-                      Developer
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right whitespace-nowrap">
-                      Profit
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
-                      Paid
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
-                      Sent
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
-                      Submitted by
-                    </th>
-                    <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => {
-                    const paid = paymentLabel(r) === 'Paid'
-                    return (
-                      <tr
-                        key={r.id}
-                        className="border-b border-gray-50 last:border-0 hover:bg-gray-50/80"
-                      >
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <Link
-                            href={`/admin/variations/developer/${r.id}`}
-                            className="font-semibold text-orange-600 hover:text-orange-700"
-                          >
-                            {r.reference}
-                          </Link>
-                        </td>
-                        <td className="px-3 py-3 text-slate-700 max-w-[120px]">
-                          <span className="line-clamp-2">{r.siteName}</span>
-                        </td>
-                        <td className="px-3 py-3 text-slate-600 max-w-[160px]">
-                          <span className="line-clamp-2">{r.description}</span>
-                        </td>
-                        <td className="px-3 py-3 text-right text-slate-700 whitespace-nowrap tabular-nums">
-                          {fmt(r.foremanTotal)}
-                        </td>
-                        <td className="px-3 py-3 text-right text-orange-600 font-medium whitespace-nowrap tabular-nums">
-                          {fmt(r.developerTotal)}
-                        </td>
-                        <td className={`px-3 py-3 text-right font-semibold whitespace-nowrap tabular-nums ${
-                          r.profit >= 0 ? 'text-emerald-600' : 'text-red-600'
-                        }`}>
-                          {fmt(r.profit)}
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+          {filteredRows.length === 0 ? (
+            <p className="text-xs text-slate-400 py-6 text-center bg-white rounded-2xl border border-gray-100">
+              No variations match the selected filters.
+            </p>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-gray-100 text-left">
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                        Reference
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Site
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 min-w-[140px]">
+                        Reason for VO
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right whitespace-nowrap">
+                        Foreman cost
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right whitespace-nowrap">
+                        Developer
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 text-right whitespace-nowrap">
+                        Profit
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                        Paid
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                        Sent
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                        Submitted by
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((r) => {
+                      const paid = paymentLabel(r) === 'Paid'
+                      return (
+                        <tr
+                          key={r.id}
+                          className="border-b border-gray-50 last:border-0 hover:bg-gray-50/80"
+                        >
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <Link
+                              href={`/admin/variations/developer/${r.id}`}
+                              className="font-semibold text-orange-600 hover:text-orange-700"
+                            >
+                              {r.reference}
+                            </Link>
+                          </td>
+                          <td className="px-3 py-3 text-slate-700 max-w-[120px]">
+                            <span className="line-clamp-2">{r.siteName}</span>
+                          </td>
+                          <td className="px-3 py-3 text-slate-600 max-w-[160px]">
+                            <span className="line-clamp-2">{r.description}</span>
+                          </td>
+                          <td className="px-3 py-3 text-right text-slate-700 whitespace-nowrap tabular-nums">
+                            {fmt(r.foremanTotal)}
+                          </td>
+                          <td className="px-3 py-3 text-right text-orange-600 font-medium whitespace-nowrap tabular-nums">
+                            {fmt(r.developerTotal)}
+                          </td>
+                          <td className={`px-3 py-3 text-right font-semibold whitespace-nowrap tabular-nums ${
+                            r.profit >= 0 ? 'text-emerald-600' : 'text-red-600'
                           }`}>
-                            {paymentLabel(r)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">
-                          {formatDate(r.submittedAt)}
-                        </td>
-                        <td className="px-3 py-3 text-xs text-slate-600 whitespace-nowrap">
-                          {r.foremanName}
-                        </td>
-                        <td className="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">
-                          {statusLabel(r.status)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-50 border-t border-gray-200 font-semibold">
-                    <td className="px-3 py-3 text-slate-700" colSpan={3}>
-                      Totals ({rows.length} VO{rows.length === 1 ? '' : 's'})
-                    </td>
-                    <td className="px-3 py-3 text-right text-slate-700 tabular-nums">{fmt(totals.foreman)}</td>
-                    <td className="px-3 py-3 text-right text-orange-600 tabular-nums">{fmt(totals.developer)}</td>
-                    <td className="px-3 py-3 text-right text-emerald-600 tabular-nums">{fmt(totals.profit)}</td>
-                    <td className="px-3 py-3" colSpan={4} />
-                  </tr>
-                </tfoot>
-              </table>
+                            {fmt(r.profit)}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                              paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {paymentLabel(r)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">
+                            {formatDate(r.submittedAt)}
+                          </td>
+                          <td className="px-3 py-3 text-xs text-slate-600 whitespace-nowrap">
+                            {r.foremanName}
+                          </td>
+                          <td className="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">
+                            {statusLabel(r.status)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t border-gray-200 font-semibold">
+                      <td className="px-3 py-3 text-slate-700" colSpan={3}>
+                        Totals ({filteredRows.length} VO{filteredRows.length === 1 ? '' : 's'})
+                      </td>
+                      <td className="px-3 py-3 text-right text-slate-700 tabular-nums">{fmt(totals.foreman)}</td>
+                      <td className="px-3 py-3 text-right text-orange-600 tabular-nums">{fmt(totals.developer)}</td>
+                      <td className="px-3 py-3 text-right text-emerald-600 tabular-nums">{fmt(totals.profit)}</td>
+                      <td className="px-3 py-3" colSpan={4} />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>
