@@ -43,16 +43,22 @@ export default async function ForemanPage() {
     .maybeSingle()
   if (claimRow) currentClaim = { status: claimRow.status, claimId: claimRow.id }
 
-  // ── Pending variation count per site ──────────────────────────────
+  // ── Pending variation count per site (one submission = one count, not per worker line) ──
   const variationCountMap: Record<string, number> = {}
   if (siteIds.length > 0) {
     const { data: variations } = await supabase
       .from('variation_claims')
-      .select('site_id, status')
+      .select('site_id, status, photo_urls, id')
       .in('site_id', siteIds)
       .eq('status', 'pending')
+    const seenBySite = new Map<string, Set<string>>()
     for (const v of variations ?? []) {
-      variationCountMap[v.site_id] = (variationCountMap[v.site_id] ?? 0) + 1
+      const key = (v.photo_urls ?? [])[0] ?? v.id
+      if (!seenBySite.has(v.site_id)) seenBySite.set(v.site_id, new Set())
+      seenBySite.get(v.site_id)!.add(key)
+    }
+    for (const [siteId, keys] of seenBySite) {
+      variationCountMap[siteId] = keys.size
     }
   }
 

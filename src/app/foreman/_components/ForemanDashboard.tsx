@@ -131,7 +131,7 @@ function SiteCard({ site, variationCount }: { site: Site; variationCount: number
         {variationCount > 0 && (
           <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            {variationCount} variation{variationCount > 1 ? 's' : ''} pending admin approval
+            {variationCount} daywork sheet{variationCount > 1 ? 's' : ''} pending admin approval
           </div>
         )}
       </div>
