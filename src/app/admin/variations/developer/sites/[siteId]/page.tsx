@@ -29,10 +29,10 @@ export default async function SiteVariationAccountPage({
       <header className="bg-slate-900 px-5 pt-12 pb-6">
         <div className="max-w-lg mx-auto">
           <Link
-            href="/admin/variations/developer"
+            href="/admin/variations/developer/sites"
             className="text-orange-400 text-xs font-semibold tracking-widest uppercase hover:text-orange-300"
           >
-            ← Developer Variations
+            ← Site accounts
           </Link>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-sm font-bold text-orange-300 bg-orange-900/50 px-2.5 py-1 rounded-lg">

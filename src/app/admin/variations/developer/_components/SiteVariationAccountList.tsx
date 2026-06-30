@@ -25,10 +25,10 @@ export default function SiteVariationAccountList({ accounts }: { accounts: SiteV
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-            Variation accounts by site
+            Sites with variations
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Each site has a code (e.g. 001). Variations are numbered V01, V02… and shown as 001-V01.
+            Tap a site to view its VOs, mark payments, and see account totals.
           </p>
         </div>
       </div>
