@@ -95,14 +95,14 @@ export async function createManagementDeveloperSubmission(
   }
 
   if (input.claimMode === 'foreman_payable' && foremanTotal > 0) {
+    // total_amount is a generated column (hours × rate) — do not insert it directly.
     const { error: claimErr } = await supabase.from('variation_claims').insert({
       site_id:                 input.siteId,
       foreman_id:              input.assignedForemanId,
       worker_id:               null,
       worker_role:             'labourer',
-      hours:                   0,
-      rate_per_hour:           0,
-      total_amount:            foremanTotal,
+      hours:                   1,
+      rate_per_hour:           foremanTotal,
       description:             input.description.trim(),
       photo_urls:              input.photoPaths,
       status:                  'pending',
