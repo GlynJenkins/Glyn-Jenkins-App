@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { computeDeveloperTotals } from '@/lib/variations/developer'
+import { allocateNextVoNumber } from '@/lib/variations/vo-reference'
 
 type ClaimRow = {
   id: string
@@ -32,6 +33,7 @@ export async function createDeveloperSubmissionForClaims(ids: string[]): Promise
   const first = rows[0]
   const submissionKey = (first.photo_urls ?? [])[0] ?? first.id
   const foremanTotal = rows.reduce((sum, c) => sum + (c.total_amount ?? c.hours * c.rate_per_hour), 0)
+  const voNumber = await allocateNextVoNumber(supabase, first.site_id)
 
   const { data: submission, error: subErr } = await supabase
     .from('variation_developer_submissions')
@@ -45,6 +47,7 @@ export async function createDeveloperSubmissionForClaims(ids: string[]): Promise
       foreman_total:  foremanTotal,
       developer_total: foremanTotal,
       payment_status: 'unpaid',
+      vo_number:      voNumber,
     })
     .select('id')
     .single()

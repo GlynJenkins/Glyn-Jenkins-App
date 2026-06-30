@@ -25,6 +25,7 @@ export async function GET() {
     const rows = await loadDeveloperRegisterRows()
 
     const sheetRows = rows.map((r) => ({
+      'Reference':               r.reference,
       'Site':                    r.siteName,
       'Reason for VO':           r.description,
       'Foreman variation cost':  r.foremanTotal,
@@ -38,7 +39,7 @@ export async function GET() {
 
     const ws = XLSX.utils.json_to_sheet(sheetRows)
     ws['!cols'] = [
-      { wch: 22 }, { wch: 36 }, { wch: 18 }, { wch: 16 }, { wch: 10 },
+      { wch: 12 }, { wch: 22 }, { wch: 36 }, { wch: 18 }, { wch: 16 }, { wch: 10 },
       { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
     ]
 

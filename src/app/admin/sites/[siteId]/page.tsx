@@ -6,6 +6,7 @@ import SiteGrid from './_components/SiteGrid'
 import ExcelImporter from './_components/ExcelImporter'
 import ForemanAssignments from './_components/ForemanAssignments'
 import ClearGridButton from './_components/ClearGridButton'
+import { formatSiteCode } from '@/lib/variations/vo-reference'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,7 @@ export default async function AdminSitePage({
 
   const { data: site } = await supabase
     .from('sites')
-    .select('id, name, address, is_active')
+    .select('id, name, address, is_active, site_code')
     .eq('id', siteId)
     .maybeSingle()
 
@@ -90,7 +91,10 @@ export default async function AdminSitePage({
               >
                 ← All Sites
               </Link>
-              <h1 className="text-xl font-bold text-white mt-1">{site.name}</h1>
+              <h1 className="text-xl font-bold text-white mt-1">
+                <span className="text-orange-400 mr-2">{formatSiteCode(site.site_code)}</span>
+                {site.name}
+              </h1>
               {site.address && (
                 <p className="text-slate-400 text-sm">{site.address}</p>
               )}

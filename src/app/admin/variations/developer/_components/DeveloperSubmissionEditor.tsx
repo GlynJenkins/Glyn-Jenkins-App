@@ -31,6 +31,7 @@ type ExtraLine = {
 
 type Submission = {
   id: string
+  reference: string
   description: string
   status: string
   payment_status: string
@@ -41,7 +42,7 @@ type Submission = {
   paid_at: string | null
   photo_urls: string[]
   signedPhotoUrls: string[]
-  sites: { name: string } | null
+  sites: { id: string; name: string; site_code: string | null } | null
   foremen: { first_name: string; surname: string } | null
   lines: Line[]
   extraLines: ExtraLine[]
@@ -283,10 +284,20 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
         <div className="p-5 space-y-2 border-b border-gray-100">
           <div className="flex items-start justify-between gap-2">
             <div>
+              <p className="text-sm font-bold text-orange-600">{submission.reference}</p>
               <p className="font-semibold text-slate-900">
                 {submission.foremen?.first_name} {submission.foremen?.surname}
               </p>
-              <p className="text-xs text-slate-500">{submission.sites?.name}</p>
+              {submission.sites?.id ? (
+                <Link
+                  href={`/admin/variations/developer/sites/${submission.sites.id}`}
+                  className="text-xs text-slate-500 hover:text-orange-600"
+                >
+                  {submission.sites.name}
+                </Link>
+              ) : (
+                <p className="text-xs text-slate-500">{submission.sites?.name}</p>
+              )}
             </div>
             <div className="flex flex-col items-end gap-1">
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${

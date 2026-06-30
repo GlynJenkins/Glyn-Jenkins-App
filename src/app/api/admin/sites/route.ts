@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { allocateNextSiteCode } from '@/lib/variations/vo-reference'
 
 export async function POST(request: NextRequest) {
   const auth = await verifyAdminApiAccess()
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceClient()
+    const siteCode = await allocateNextSiteCode(supabase)
     const { data, error } = await supabase
       .from('sites')
       .insert({
@@ -20,6 +22,7 @@ export async function POST(request: NextRequest) {
         name:      name.trim(),
         address:   address?.trim() || null,
         is_active: true,
+        site_code: siteCode,
       })
       .select('id')
       .single()

@@ -3,6 +3,7 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { relationOne } from '@/lib/supabase/normalize-relations'
+import { formatVariationReference } from '@/lib/variations/vo-reference'
 import DeveloperSubmissionEditor from '../_components/DeveloperSubmissionEditor'
 
 export const dynamic = 'force-dynamic'
@@ -20,10 +21,10 @@ export default async function DeveloperVariationDetailPage({
   const { data: submission } = await supabase
     .from('variation_developer_submissions')
     .select(`
-      id, description, status, payment_status, foreman_id,
-      foreman_total, developer_total, material_uplift_enabled,
+      id, description, status, payment_status, foreman_id, site_id,
+      foreman_total, developer_total, material_uplift_enabled, vo_number,
       submitted_to_developer_at, paid_at, photo_urls,
-      sites ( name )
+      sites ( id, name, site_code )
     `)
     .eq('id', submissionId)
     .maybeSingle()
@@ -65,9 +66,13 @@ export default async function DeveloperVariationDetailPage({
     if (data?.signedUrl) signedPhotoUrls.push(data.signedUrl)
   }
 
+  const site = relationOne(submission.sites)
+  const reference = formatVariationReference(site?.site_code, submission.vo_number)
+
   const payload = {
     ...submission,
-    sites:   relationOne(submission.sites),
+    reference: reference !== '—' ? reference : submission.id.slice(0, 8).toUpperCase(),
+    sites:   site ? { ...site, id: submission.site_id } : null,
     foremen: foreman,
     signedPhotoUrls,
     lines: (lines ?? []).map((l) => ({
@@ -85,7 +90,7 @@ export default async function DeveloperVariationDetailPage({
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
               Glyn Jenkins LTD
             </p>
-            <h1 className="text-xl font-bold text-white">Developer Variation</h1>
+            <h1 className="text-xl font-bold text-white">{reference !== '—' ? reference : 'Developer Variation'}</h1>
           </div>
           <Link
             href="/admin/variations/developer"

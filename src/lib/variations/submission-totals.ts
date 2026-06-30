@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { lineTotal } from '@/lib/variations/developer'
+import { formatVariationReference } from '@/lib/variations/vo-reference'
 
 export function variationProfit(developerTotal: number, foremanTotal: number): number {
   return Math.round((developerTotal - foremanTotal) * 100) / 100
@@ -42,6 +43,7 @@ export async function refreshSubmissionTotals(submissionId: string) {
 
 export type DeveloperRegisterRow = {
   id: string
+  reference: string
   siteName: string
   description: string
   foremanTotal: number
@@ -60,9 +62,9 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
     .from('variation_developer_submissions')
     .select(`
       id, description, status, payment_status,
-      foreman_total, developer_total,
+      foreman_total, developer_total, vo_number,
       submitted_to_developer_at, foreman_id,
-      sites ( name )
+      sites ( name, site_code )
     `)
     .neq('status', 'draft')
     .order('submitted_to_developer_at', { ascending: false, nullsFirst: false })
@@ -79,6 +81,7 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
 
     rows.push({
       id:              s.id,
+      reference:       formatVariationReference(site?.site_code, s.vo_number),
       siteName:        site?.name ?? 'Unknown site',
       description:     s.description,
       foremanTotal:    Number(s.foreman_total),

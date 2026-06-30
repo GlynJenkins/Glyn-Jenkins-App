@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 import { computeDeveloperTotals, lineTotal } from '@/lib/variations/developer'
 import { ROLE_LABELS } from '@/lib/variations/rates'
+import { formatVariationReference } from '@/lib/variations/vo-reference'
 
 export type DeveloperVariationPdfLine = {
   roleLabel: string
@@ -37,9 +38,9 @@ export async function loadDeveloperVariationPdfData(
   const { data: submission } = await supabase
     .from('variation_developer_submissions')
     .select(`
-      id, description, status, material_uplift_enabled,
+      id, description, status, material_uplift_enabled, vo_number,
       created_at, submitted_to_developer_at,
-      sites ( name )
+      sites ( name, site_code )
     `)
     .eq('id', submissionId)
     .maybeSingle()
@@ -95,8 +96,10 @@ export async function loadDeveloperVariationPdfData(
     submission.material_uplift_enabled ?? false
   )
 
+  const reference = formatVariationReference(site?.site_code, submission.vo_number)
+
   return {
-    reference:             submission.id.slice(0, 8).toUpperCase(),
+    reference:             reference !== '—' ? reference : submission.id.slice(0, 8).toUpperCase(),
     siteName:              site?.name ?? 'Unknown site',
     description:           submission.description,
     preparedAt:            new Date(submission.created_at),
