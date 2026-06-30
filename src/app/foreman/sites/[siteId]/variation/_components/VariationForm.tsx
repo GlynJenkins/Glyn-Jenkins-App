@@ -4,33 +4,24 @@ import { useState, useRef } from 'react'
 import Link from 'next/link'
 import {
   Camera, CheckCircle, AlertCircle, Loader2,
-  ArrowRight, Plus, Trash2, FileText
+  ArrowRight, Plus, Trash2, FileText, ImagePlus,
 } from 'lucide-react'
 import PortalHeader from '@/components/PortalHeader'
+import { parseJsonResponse } from '@/lib/api/parse-json-response'
+import { preparePhotoForUpload } from '@/lib/qa/prepare-photo-upload'
+import { VARIATION_RATES, ROLE_LABELS } from '@/lib/variations/rates'
 
-type Worker = { id: string; first_name: string; surname: string; role: string }
-type Site   = { id: string; name: string }
-
+type SiteWorker = { id: string; first_name: string; surname: string; role: string }
+type SiteInfo   = { id: string; name: string }
 type WorkerLine = { lineId: string; workerId: string; hours: string }
-
-const RATES: Record<string, number> = {
-  bricklayer: 30,
-  labourer:   15,
-  apprentice: 10,
-}
-const ROLE_LABELS: Record<string, string> = {
-  bricklayer: 'Bricklayer',
-  labourer:   'Labourer',
-  apprentice: 'Apprentice',
-}
 
 let lineCounter = 1
 const newLine = (): WorkerLine => ({ lineId: `line-${lineCounter++}`, workerId: '', hours: '' })
 
 interface Props {
-  site:      Site
+  site:      SiteInfo
   foremanId: string
-  workers:   Worker[]
+  workers:   SiteWorker[]
 }
 
 export default function VariationForm({ site, foremanId, workers }: Props) {
@@ -39,9 +30,11 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
   const [photo,       setPhoto]       = useState<File | null>(null)
   const [errors,      setErrors]      = useState<Record<string, string>>({})
   const [submitting,  setSubmitting]  = useState(false)
+  const [processing,  setProcessing]  = useState(false)
   const [submitted,   setSubmitted]   = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
-  const photoRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
 
   const addLine  = () => setLines((prev) => [...prev, newLine()])
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.lineId !== id))
@@ -51,7 +44,7 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
   // Grand total
   const grandTotal = lines.reduce((sum, line) => {
     const worker = workers.find((w) => w.id === line.workerId)
-    const rate   = worker ? (RATES[worker.role] ?? 0) : 0
+    const rate   = worker ? (VARIATION_RATES[worker.role] ?? 0) : 0
     return sum + rate * (parseFloat(line.hours) || 0)
   }, 0)
 
@@ -68,6 +61,22 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
     return Object.keys(e).length === 0
   }
 
+  const handlePhotoSelected = async (file: File | undefined) => {
+    if (!file) return
+    setProcessing(true)
+    setServerError(null)
+    setErrors((prev) => { const next = { ...prev }; delete next.photo; return next })
+    try {
+      const prepared = await preparePhotoForUpload(file)
+      setPhoto(prepared)
+    } catch (err) {
+      setPhoto(null)
+      setServerError(err instanceof Error ? err.message : 'Could not process photo.')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   const handleSubmit = async () => {
     if (!validate()) return
     setSubmitting(true)
@@ -79,21 +88,29 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
         return { workerId: line.workerId, workerRole: worker.role, hours: parseFloat(line.hours) }
       })
 
+      let uploadPhoto = photo!
+      if (!uploadPhoto.type.includes('jpeg')) {
+        setProcessing(true)
+        uploadPhoto = await preparePhotoForUpload(uploadPhoto)
+        setProcessing(false)
+      }
+
       const fd = new FormData()
       fd.append('siteId',      site.id)
       fd.append('foremanId',   foremanId)
       fd.append('description', description)
-      fd.append('photo',       photo!)
+      fd.append('photo',       uploadPhoto)
       fd.append('workers',     JSON.stringify(workerEntries))
 
-      const res  = await fetch('/api/variations', { method: 'POST', body: fd })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Submission failed')
+      const res = await fetch('/api/variations', { method: 'POST', body: fd })
+      const { ok, error } = await parseJsonResponse(res)
+      if (!ok) throw new Error(error ?? 'Submission failed')
       setSubmitted(true)
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setSubmitting(false)
+      setProcessing(false)
     }
   }
 
@@ -137,7 +154,7 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
 
           {lines.map((line, i) => {
             const selectedWorker = workers.find((w) => w.id === line.workerId)
-            const rate           = selectedWorker ? (RATES[selectedWorker.role] ?? 0) : 0
+            const rate           = selectedWorker ? (VARIATION_RATES[selectedWorker.role] ?? 0) : 0
             const lineTotal      = rate * (parseFloat(line.hours) || 0)
 
             return (
@@ -166,7 +183,7 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
                     <option value="">Select worker...</option>
                     {workers.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.first_name} {w.surname} — {ROLE_LABELS[w.role]} (£{RATES[w.role]}/hr)
+                        {w.first_name} {w.surname} — {ROLE_LABELS[w.role] ?? w.role} (£{VARIATION_RATES[w.role]}/hr)
                       </option>
                     ))}
                   </select>
@@ -249,21 +266,48 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Photo Proof <span className="text-red-500">*</span>
             </label>
-            <button
-              type="button"
-              onClick={() => photoRef.current?.click()}
-              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 border-dashed transition-all ${
-                photo ? 'border-green-400 bg-green-50' : errors.photo ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
-              }`}
-            >
-              {photo
-                ? <><CheckCircle className="w-5 h-5 text-green-500 shrink-0" /><span className="text-sm text-green-700 truncate">{photo.name}</span></>
-                : <><Camera className="w-5 h-5 text-gray-400 shrink-0" /><span className="text-sm text-gray-500">Tap to take photo of the works</span></>
-              }
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => cameraRef.current?.click()}
+                disabled={processing}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed transition-all ${
+                  photo ? 'border-green-400 bg-green-50' : errors.photo ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                {processing
+                  ? <Loader2 className="w-5 h-5 text-orange-500 animate-spin" />
+                  : photo
+                    ? <CheckCircle className="w-5 h-5 text-green-500" />
+                    : <Camera className="w-5 h-5 text-gray-400" />
+                }
+                <span className="text-xs font-medium text-slate-600">Take photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => galleryRef.current?.click()}
+                disabled={processing}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed transition-all ${
+                  photo ? 'border-green-400 bg-green-50' : errors.photo ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                {processing
+                  ? <Loader2 className="w-5 h-5 text-orange-500 animate-spin" />
+                  : photo
+                    ? <CheckCircle className="w-5 h-5 text-green-500" />
+                    : <ImagePlus className="w-5 h-5 text-gray-400" />
+                }
+                <span className="text-xs font-medium text-slate-600">From gallery</span>
+              </button>
+            </div>
+            {photo && !processing && (
+              <p className="text-xs text-green-700 truncate">{photo.name}</p>
+            )}
             {errors.photo && <p className="text-xs text-red-500 mt-1">{errors.photo}</p>}
-            <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden"
-              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={(e) => { void handlePhotoSelected(e.target.files?.[0]); e.target.value = '' }} />
+            <input ref={galleryRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { void handlePhotoSelected(e.target.files?.[0]); e.target.value = '' }} />
           </div>
         </div>
 
@@ -277,12 +321,12 @@ export default function VariationForm({ site, foremanId, workers }: Props) {
 
       {/* Sticky submit */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-xl px-4 py-4 safe-bottom-bar">
-        <button type="button" onClick={handleSubmit} disabled={submitting}
+        <button type="button" onClick={handleSubmit} disabled={submitting || processing}
           className="w-full max-w-lg mx-auto flex items-center justify-center gap-2 bg-orange-600
                      hover:bg-orange-700 disabled:bg-orange-300 text-white font-semibold py-4 rounded-xl transition-colors"
         >
-          {submitting
-            ? <><Loader2 className="w-5 h-5 animate-spin" /> Submitting…</>
+          {submitting || processing
+            ? <><Loader2 className="w-5 h-5 animate-spin" /> {processing ? 'Processing photo…' : 'Submitting…'}</>
             : <>Submit for Admin Approval <ArrowRight className="w-5 h-5" /></>
           }
         </button>
