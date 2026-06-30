@@ -3,9 +3,10 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
 import { Building2, ChevronRight } from 'lucide-react'
 import PendingForemanQueue from './_components/PendingForemanQueue'
+import DeveloperInProgressQueue from './_components/DeveloperInProgressQueue'
 import DeveloperVariationRegisterTable from './_components/DeveloperVariationRegisterTable'
 import { buildPendingForemanGroups } from '@/lib/variations/pending-foreman-groups'
-import { loadDeveloperRegisterRows } from '@/lib/variations/submission-totals'
+import { loadDeveloperRegisterRows, loadDeveloperInProgressRows } from '@/lib/variations/submission-totals'
 import { loadSiteVariationAccountSummaries } from '@/lib/variations/site-variation-accounts'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 
@@ -43,6 +44,7 @@ export default async function DeveloperVariationsPage() {
   )
 
   const registerRows = await loadDeveloperRegisterRows()
+  const inProgressRows = await loadDeveloperInProgressRows()
   const siteAccounts = await loadSiteVariationAccountSummaries()
   const siteCount = siteAccounts.length
 
@@ -68,6 +70,7 @@ export default async function DeveloperVariationsPage() {
 
       <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-4">
         <PendingForemanQueue groups={pendingForemanGroups} />
+        <DeveloperInProgressQueue rows={inProgressRows} />
 
         <Link
           href="/admin/variations/developer/sites"

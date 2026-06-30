@@ -100,3 +100,56 @@ export async function loadDeveloperRegisterRows(): Promise<DeveloperRegisterRow[
 
   return rows
 }
+
+export type DeveloperInProgressRow = {
+  id:             string
+  reference:      string
+  siteName:       string
+  description:    string
+  status:         string
+  foremanTotal:   number
+  developerTotal: number
+  foremanName:    string
+  updatedAt:      string
+}
+
+/** Drafts and pre-register submissions — hidden from VO register until sent to developer. */
+export async function loadDeveloperInProgressRows(): Promise<DeveloperInProgressRow[]> {
+  const supabase = createServiceClient()
+
+  const { data: submissions } = await supabase
+    .from('variation_developer_submissions')
+    .select(`
+      id, description, status,
+      foreman_total, developer_total, vo_number,
+      updated_at, foreman_id,
+      sites ( name, site_code )
+    `)
+    .in('status', ['draft', 'submitted', 'agreed'])
+    .order('updated_at', { ascending: false })
+
+  const rows: DeveloperInProgressRow[] = []
+
+  for (const s of submissions ?? []) {
+    const site = Array.isArray(s.sites) ? s.sites[0] : s.sites
+    const { data: foreman } = await supabase
+      .from('workers')
+      .select('first_name, surname')
+      .eq('id', s.foreman_id)
+      .maybeSingle()
+
+    rows.push({
+      id:             s.id,
+      reference:      formatVariationReference(site?.site_code, s.vo_number),
+      siteName:       site?.name ?? 'Unknown site',
+      description:    s.description,
+      status:         s.status,
+      foremanTotal:   Number(s.foreman_total),
+      developerTotal: Number(s.developer_total),
+      foremanName:    foreman ? `${foreman.first_name} ${foreman.surname}` : 'Unknown',
+      updatedAt:      s.updated_at,
+    })
+  }
+
+  return rows
+}
