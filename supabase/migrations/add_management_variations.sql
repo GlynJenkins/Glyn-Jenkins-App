@@ -34,3 +34,7 @@ ALTER TABLE variation_claims
 -- Lump-sum lines have no worker breakdown.
 ALTER TABLE variation_claims
   ALTER COLUMN worker_id DROP NOT NULL;
+
+-- Open management pay (any foreman on site) may have no foreman yet.
+ALTER TABLE variation_claims
+  ALTER COLUMN foreman_id DROP NOT NULL;
