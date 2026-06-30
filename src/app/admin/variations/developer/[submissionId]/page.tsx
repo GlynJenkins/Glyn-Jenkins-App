@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 import { formatVariationReference } from '@/lib/variations/vo-reference'
+import { signOffBlockedReason } from '@/lib/variations/site-signoff-eligibility'
 import DeveloperSubmissionEditor from '../_components/DeveloperSubmissionEditor'
 
 export const dynamic = 'force-dynamic'
@@ -74,10 +75,17 @@ export default async function DeveloperVariationDetailPage({
   const site = relationOne(submission.sites)
   const reference = formatVariationReference(site?.site_code, submission.vo_number)
 
+  const siteAgentSigned = !!submission.site_agent_signature_path
+  const signOffBlock = submission.status === 'agreed' && !siteAgentSigned
+    ? await signOffBlockedReason(submissionId)
+    : null
+
   const payload = {
     ...submission,
     reference: reference !== '—' ? reference : submission.id.slice(0, 8).toUpperCase(),
-    siteAgentSigned: !!submission.site_agent_signature_path,
+    siteAgentSigned,
+    signOffReady: signOffBlock === null && submission.status === 'agreed' && !siteAgentSigned,
+    signOffBlockReason: signOffBlock,
     sites:   site ? { ...site, id: submission.site_id } : null,
     foremen: foreman,
     signedPhotoUrls,

@@ -10,6 +10,7 @@ export default async function DeveloperAgentSignOffIndexPage() {
 
   const sites = await loadSiteSignOffSiteSummaries()
   const totalPending = sites.reduce((n, s) => n + s.pendingCount, 0)
+  const totalWaiting = sites.reduce((n, s) => n + s.waitingCount, 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -48,6 +49,13 @@ export default async function DeveloperAgentSignOffIndexPage() {
           </div>
         )}
 
+        {totalWaiting > 0 && totalPending === 0 && (
+          <div className="flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+            <PenLine className="w-4 h-4 shrink-0" />
+            {totalWaiting} variation{totalWaiting === 1 ? '' : 's'} in the pipeline — open a site to see what is still blocking sign-off
+          </div>
+        )}
+
         {sites.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
             <p className="text-sm text-slate-600">Nothing awaiting sign-off right now.</p>
@@ -65,7 +73,9 @@ export default async function DeveloperAgentSignOffIndexPage() {
                   <p className="text-xs text-slate-500 mt-0.5">
                     {site.pendingCount > 0
                       ? `${site.pendingCount} ready to sign`
-                      : `${site.signedCount} signed`}
+                      : site.waitingCount > 0
+                        ? `${site.waitingCount} waiting — not ready yet`
+                        : `${site.signedCount} signed`}
                   </p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-300 shrink-0" />

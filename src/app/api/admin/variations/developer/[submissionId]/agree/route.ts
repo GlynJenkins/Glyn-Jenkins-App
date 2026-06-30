@@ -15,7 +15,7 @@ export async function POST(
 
     const { data: submission } = await supabase
       .from('variation_developer_submissions')
-      .select('id, status')
+      .select('id, status, source, claim_mode')
       .eq('id', submissionId)
       .maybeSingle()
 
@@ -40,6 +40,19 @@ export async function POST(
       .eq('id', submissionId)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Management already set foreman pay at creation — approve it once developer agrees.
+    if (submission.source === 'management' && submission.claim_mode === 'foreman_payable') {
+      await supabase
+        .from('variation_claims')
+        .update({
+          status:      'approved',
+          approved_at: now,
+          updated_at:  now,
+        })
+        .eq('developer_submission_id', submissionId)
+        .eq('status', 'pending')
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

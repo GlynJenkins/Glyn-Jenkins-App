@@ -19,6 +19,7 @@ export type SiteSignOffSiteSummary = {
   siteId:        string
   siteName:      string
   pendingCount:  number
+  waitingCount:  number
   signedCount:   number
 }
 
@@ -183,12 +184,14 @@ export async function loadSiteSignOffSiteSummaries(): Promise<SiteSignOffSiteSum
   for (const site of sites ?? []) {
     const rows = await loadSiteSignOffQueue(site.id)
     const pendingCount = rows.filter((r) => r.readyForSignOff).length
+    const waitingCount = rows.filter((r) => !r.signed && !r.readyForSignOff).length
     const signedCount  = rows.filter((r) => r.signed).length
-    if (pendingCount > 0 || signedCount > 0) {
+    if (pendingCount > 0 || signedCount > 0 || waitingCount > 0) {
       summaries.push({
         siteId:       site.id,
         siteName:     site.name,
         pendingCount,
+        waitingCount,
         signedCount,
       })
     }

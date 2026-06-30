@@ -46,6 +46,8 @@ type Submission = {
   site_agent_name: string | null
   site_agent_signed_at: string | null
   siteAgentSigned: boolean
+  signOffReady?: boolean
+  signOffBlockReason?: string | null
   photo_urls: string[]
   signedPhotoUrls: string[]
   source?: string
@@ -377,17 +379,40 @@ export default function DeveloperSubmissionEditor({ submission }: { submission: 
                 </p>
               </div>
             </div>
-          ) : submission.sites?.id && !isPaid && isAgreed ? (
+          ) : submission.sites?.id && !isPaid && isAgreed && submission.signOffReady ? (
             <div className="flex items-start gap-2 text-xs text-orange-800 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2.5">
               <PenLine className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold">Awaiting site agent sign-off</p>
+                <p className="font-semibold">Ready for site agent sign-off</p>
                 <p className="mt-0.5 leading-relaxed">
                   Once work is complete, open{' '}
-                  <Link href="/admin/variations/sign-off" className="font-semibold underline">
+                  <Link href={`/admin/variations/sign-off/${submission.sites.id}`} className="font-semibold underline">
                     Site agent sign-off
                   </Link>
                   {' '}on site (management). Required before marking paid.
+                </p>
+              </div>
+            </div>
+          ) : submission.sites?.id && !isPaid && isAgreed && submission.signOffBlockReason ? (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+              <PenLine className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Sign-off not ready yet</p>
+                <p className="mt-0.5 leading-relaxed">{submission.signOffBlockReason}</p>
+                {submission.signOffBlockReason.includes('foreman') && (
+                  <Link href="/admin/variations" className="font-semibold underline mt-1 inline-block">
+                    Open Pending tab to approve foreman pay →
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : submission.sites?.id && !isPaid && isAwaitingAgreement ? (
+            <div className="flex items-start gap-2 text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+              <PenLine className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Awaiting developer agreement</p>
+                <p className="mt-0.5 leading-relaxed">
+                  Mark developer agreed after they accept the cost. Sign-off comes after that.
                 </p>
               </div>
             </div>
