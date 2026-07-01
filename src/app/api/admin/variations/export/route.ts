@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
-import { loadDeveloperRegisterRows } from '@/lib/variations/submission-totals'
+import { loadVariationRegisterRows } from '@/lib/variations/load-variation-register-rows'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,42 +12,33 @@ function formatDate(iso: string | null) {
   })
 }
 
-function paymentLabel(paymentStatus: string, status: string) {
-  if (paymentStatus === 'paid' || status === 'paid') return 'Paid'
-  return 'Unpaid'
-}
-
 export async function GET() {
   const auth = await verifyAdminApiAccess()
   if (!auth.ok) return auth.response
 
   try {
-    const rows = await loadDeveloperRegisterRows()
+    const rows = await loadVariationRegisterRows()
 
     const sheetRows = rows.map((r) => ({
-      'Reference':               r.reference,
-      'Site':                    r.siteName,
-      'Reason for VO':           r.description,
-      'Foreman variation cost':  r.foremanTotal,
-      'Developer charge':        r.developerTotal,
-      'Profit':                  r.profit,
-      'Paid / Unpaid':           paymentLabel(r.paymentStatus, r.status),
-      'Sent to developer':       formatDate(r.submittedAt),
-      'Foreman':                 r.foremanName,
-      'Status':                  r.status,
+      'Reference':      r.reference,
+      'Site':           r.siteName,
+      'Reason for VO':  r.description,
+      'Foreman cost':   r.foremanTotal,
+      'Foreman':        r.foremanName,
+      'Approved':       formatDate(r.approvedAt),
+      'In wage claim':  r.claimed ? 'Yes' : 'No',
     }))
 
     const ws = XLSX.utils.json_to_sheet(sheetRows)
     ws['!cols'] = [
-      { wch: 12 }, { wch: 22 }, { wch: 36 }, { wch: 18 }, { wch: 16 }, { wch: 10 },
-      { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
+      { wch: 12 }, { wch: 22 }, { wch: 36 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 12 },
     ]
 
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Developer Variations')
+    XLSX.utils.book_append_sheet(wb, ws, 'Variations')
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
-    const filename = `developer-variations-${new Date().toISOString().slice(0, 10)}.xlsx`
+    const filename = `variations-${new Date().toISOString().slice(0, 10)}.xlsx`
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

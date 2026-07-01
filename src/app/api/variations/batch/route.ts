@@ -19,40 +19,6 @@ export async function PATCH(request: NextRequest) {
 
     const supabase = createServiceClient()
 
-    if (status === 'approved') {
-      const { data: claims } = await supabase
-        .from('variation_claims')
-        .select('id, developer_submission_id')
-        .in('id', ids)
-
-      const submissionIds = [
-        ...new Set((claims ?? []).map((c) => c.developer_submission_id).filter(Boolean)),
-      ] as string[]
-
-      if (submissionIds.length > 1) {
-        return NextResponse.json({ error: 'Invalid variation group.' }, { status: 400 })
-      }
-
-      if (submissionIds.length === 1) {
-        const { data: submission } = await supabase
-          .from('variation_developer_submissions')
-          .select('status')
-          .eq('id', submissionIds[0])
-          .maybeSingle()
-
-        if (!submission || submission.status !== 'agreed') {
-          return NextResponse.json(
-            {
-              error: submission?.status === 'submitted'
-                ? 'Developer must agree before you can approve the foreman variation.'
-                : 'Complete the developer variation (submit and mark agreed) before approving the foreman.',
-            },
-            { status: 400 }
-          )
-        }
-      }
-    }
-
     const { error } = await supabase
       .from('variation_claims')
       .update({

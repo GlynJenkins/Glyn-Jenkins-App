@@ -2,8 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, Send, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
 
 type Claim = {
   id:                     string
@@ -15,17 +14,12 @@ type Claim = {
   signedPhotoUrls:        string[]
   status:                 string
   admin_rejection_reason: string | null
-  developer_submission_id: string | null
-  developer_submission_status: string | null
-  is_lump_sum?:           boolean
-  lump_sum_label?:        string | null
   created_at:             string
   sites:   { id: string; name: string } | null
   workers: { id: string; first_name: string; surname: string; role: string } | null
   foremen: { id: string; first_name: string; surname: string } | null
 }
 
-// Group claims submitted at the same time (same photo path = same submission)
 type Group = {
   key:         string
   claims:      Claim[]
@@ -37,8 +31,6 @@ type Group = {
   photoUrls:   string[]
   date:        string
   rejectionReason: string | null
-  developerSubmissionId: string | null
-  developerSubmissionStatus: string | null
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -53,7 +45,6 @@ function fmt(n: number | null) {
 function buildGroups(claims: Claim[]): Group[] {
   const map = new Map<string, Group>()
   for (const c of claims) {
-    // Group key = shared photo path (unique per submission) OR fallback to id
     const key = (c.photo_urls ?? [])[0] ?? c.id
     if (!map.has(key)) {
       map.set(key, {
@@ -67,15 +58,12 @@ function buildGroups(claims: Claim[]): Group[] {
         photoUrls:   c.signedPhotoUrls ?? [],
         date:        c.created_at,
         rejectionReason: c.admin_rejection_reason ?? null,
-        developerSubmissionId: c.developer_submission_id ?? null,
-        developerSubmissionStatus: c.developer_submission_status ?? null,
       })
     }
     const g = map.get(key)!
     g.claims.push(c)
     g.total += c.total_amount ?? 0
   }
-  // Sort newest first
   return Array.from(map.values()).sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   )
@@ -84,12 +72,10 @@ function buildGroups(claims: Claim[]): Group[] {
 function GroupCard({
   group,
   onAction,
-  onCreateDeveloper,
   defaultExpanded = false,
 }: {
   group:     Group
   onAction?: (ids: string[], status: string, reason?: string) => void
-  onCreateDeveloper?: (ids: string[]) => void
   defaultExpanded?: boolean
 }) {
   const [expanded, setExpanded]       = useState(defaultExpanded)
@@ -103,10 +89,6 @@ function GroupCard({
 
   const ids = group.claims.map((c) => c.id)
   const workerCount = group.claims.length
-
-  const hasDeveloperDraft = !!group.developerSubmissionId
-  const developerAgreed = group.developerSubmissionStatus === 'agreed' || group.developerSubmissionStatus === 'paid'
-  const canApproveForeman = !hasDeveloperDraft || developerAgreed
 
   const statusBadge: Record<string, string> = {
     pending:  'bg-amber-100 text-amber-700',
@@ -129,11 +111,6 @@ function GroupCard({
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 capitalize ${statusBadge[group.status] ?? ''}`}>
               {group.status}
             </span>
-            {group.status === 'pending' && hasDeveloperDraft && !developerAgreed && (
-              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 shrink-0">
-                Dev draft
-              </span>
-            )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">
             {group.site?.name} · {submitted} · {workerCount} worker{workerCount === 1 ? '' : 's'}
@@ -163,14 +140,10 @@ function GroupCard({
                 <div key={c.id} className="flex items-center justify-between px-3 py-2.5">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">
-                      {c.is_lump_sum
-                        ? (c.description || 'Variation')
-                        : `${c.workers?.first_name ?? ''} ${c.workers?.surname ?? ''}`.trim() || 'Worker'}
+                      {`${c.workers?.first_name ?? ''} ${c.workers?.surname ?? ''}`.trim() || 'Worker'}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {c.is_lump_sum
-                        ? 'Agreed foreman pay'
-                        : `${ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} · ${c.hours}hrs @ £${c.rate_per_hour}/hr`}
+                      {`${ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} · ${c.hours}hrs @ £${c.rate_per_hour}/hr`}
                     </p>
                   </div>
                   <p className="font-semibold text-slate-800 text-sm shrink-0 ml-2">{fmt(c.total_amount)}</p>
@@ -196,59 +169,12 @@ function GroupCard({
             )}
           </div>
 
-          {group.status === 'approved' && group.developerSubmissionId && (
-            <div className="px-4 pb-3 border-t border-gray-50">
-              <Link
-                href={`/admin/variations/developer/${group.developerSubmissionId}`}
-                className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
-              >
-                <Send className="w-4 h-4" />
-                View developer variation
-              </Link>
-            </div>
-          )}
-
-          {group.status === 'pending' && (
-            <div className="px-4 pb-3 border-t border-gray-50 space-y-2">
-              {hasDeveloperDraft ? (
-                <>
-                  <Link
-                    href={`/admin/variations/developer/${group.developerSubmissionId}`}
-                    className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold rounded-xl transition-colors"
-                  >
-                    <Send className="w-4 h-4" />
-                    {developerAgreed ? 'Developer agreed — view record' : 'View / edit developer draft'}
-                  </Link>
-                  {!developerAgreed && (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-center">
-                      Foreman approval blocked until developer agrees (or delete the developer draft if not charging them).
-                    </p>
-                  )}
-                </>
-              ) : onCreateDeveloper ? (
-                <button
-                  disabled={busy}
-                  onClick={() => startTransition(() => onCreateDeveloper(ids))}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50"
-                >
-                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  Prepare developer variation
-                </button>
-              ) : null}
-              {!hasDeveloperDraft && (
-                <p className="text-xs text-slate-500 text-center">
-                  Not charging the developer? Approve the foreman directly below.
-                </p>
-              )}
-            </div>
-          )}
-
           {group.status === 'pending' && onAction && (
             <div className="px-4 pb-4 space-y-2 border-t border-gray-50 pt-3">
               {!rejectMode ? (
                 <div className="flex gap-2">
                   <button
-                    disabled={busy || !canApproveForeman}
+                    disabled={busy}
                     onClick={() => startTransition(() => onAction(ids, 'approved'))}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 hover:bg-green-700
                                text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
@@ -344,22 +270,6 @@ export default function VariationList({
     }
   }
 
-  const handleCreateDeveloper = async (ids: string[]) => {
-    setError(null)
-    try {
-      const res = await fetch('/api/admin/variations/developer/create', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ids }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Could not create developer draft.')
-      router.push(`/admin/variations/developer/${json.developerSubmissionId}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create developer draft.')
-    }
-  }
-
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'pending',  label: 'Pending',  count: buildGroups(allClaims.pending).length  },
     { key: 'approved', label: 'Approved', count: buildGroups(allClaims.approved).length },
@@ -396,7 +306,6 @@ export default function VariationList({
               key={g.key}
               group={g}
               onAction={tab === 'pending' ? handleAction : undefined}
-              onCreateDeveloper={tab === 'pending' ? handleCreateDeveloper : undefined}
             />
           ))}
         </div>

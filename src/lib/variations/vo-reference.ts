@@ -42,18 +42,3 @@ export async function allocateNextSiteCode(
   return String(max + 1).padStart(3, '0')
 }
 
-export async function allocateNextVoNumber(
-  supabase: Pick<ReturnType<typeof import('@/lib/supabase/server').createServiceClient>, 'from'>,
-  siteId: string
-): Promise<number> {
-  const { data } = await supabase
-    .from('variation_developer_submissions')
-    .select('vo_number')
-    .eq('site_id', siteId)
-    .not('vo_number', 'is', null)
-    .order('vo_number', { ascending: false })
-    .limit(1)
-
-  const max = (data?.[0] as { vo_number: number } | undefined)?.vo_number ?? 0
-  return max + 1
-}
