@@ -14,6 +14,7 @@ type Claim = {
   signedPhotoUrls:        string[]
   status:                 string
   admin_rejection_reason: string | null
+  is_lump_sum?:           boolean
   created_at:             string
   sites:   { id: string; name: string } | null
   workers: { id: string; first_name: string; surname: string; role: string } | null
@@ -140,10 +141,14 @@ function GroupCard({
                 <div key={c.id} className="flex items-center justify-between px-3 py-2.5">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">
-                      {`${c.workers?.first_name ?? ''} ${c.workers?.surname ?? ''}`.trim() || 'Worker'}
+                      {c.is_lump_sum
+                        ? (c.description || 'Variation')
+                        : `${c.workers?.first_name ?? ''} ${c.workers?.surname ?? ''}`.trim() || 'Worker'}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {`${ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} · ${c.hours}hrs @ £${c.rate_per_hour}/hr`}
+                      {c.is_lump_sum
+                        ? 'Agreed foreman pay'
+                        : `${ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} · ${c.hours}hrs @ £${c.rate_per_hour}/hr`}
                     </p>
                   </div>
                   <p className="font-semibold text-slate-800 text-sm shrink-0 ml-2">{fmt(c.total_amount)}</p>

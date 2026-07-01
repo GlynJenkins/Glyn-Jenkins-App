@@ -59,7 +59,7 @@ function buildGroups(claims: ClaimRow[]): Group[] {
     const foreman = relationOne(raw.foremen)
     const foremanName = foreman
       ? `${foreman.first_name} ${foreman.surname}`
-      : 'Unknown'
+      : 'Unassigned'
 
     if (!groupMap.has(key)) {
       groupMap.set(key, {

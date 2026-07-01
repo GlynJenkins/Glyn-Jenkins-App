@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
+import NewAdminVariationForm from './_components/NewAdminVariationForm'
 import VariationList from './_components/VariationList'
 import VariationRegisterTable from './_components/VariationRegisterTable'
 import { relationOne } from '@/lib/supabase/normalize-relations'
@@ -26,20 +27,60 @@ export default async function AdminVariationsPage() {
 
   const supabase = createServiceClient()
 
-  const { data: variations } = await supabase
+  const { data: variations, error: variationsError } = await supabase
     .from('variation_claims')
     .select(`
       id, hours, rate_per_hour, total_amount, description,
-      photo_urls, status, admin_rejection_reason, created_at,
+      photo_urls, status, admin_rejection_reason, created_at, is_lump_sum,
       sites   ( id, name ),
       workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
       foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )
     `)
     .order('created_at', { ascending: false })
 
+  type VariationRow = NonNullable<typeof variations>[number]
+  let variationRows: VariationRow[] = variations ?? []
+  if (variationsError) {
+    const { data: legacy } = await supabase
+      .from('variation_claims')
+      .select(`
+        id, hours, rate_per_hour, total_amount, description,
+        photo_urls, status, admin_rejection_reason, created_at,
+        sites   ( id, name ),
+        workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
+        foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )
+      `)
+      .order('created_at', { ascending: false })
+    variationRows = (legacy ?? []) as VariationRow[]
+  }
+
+  const { data: activeSites } = await supabase
+    .from('sites')
+    .select('id, name')
+    .eq('is_active', true)
+    .order('name')
+
+  const { data: foremen } = await supabase
+    .from('workers')
+    .select('id, first_name, surname')
+    .eq('role', 'foreman')
+    .eq('status', 'active')
+    .order('surname')
+
+  const { data: siteWorkers } = await supabase
+    .from('workers')
+    .select('id, first_name, surname, role')
+    .in('role', ['bricklayer', 'labourer', 'apprentice'])
+    .eq('status', 'active')
+    .order('surname')
+
+  const { data: siteForemanAssignments } = await supabase
+    .from('foreman_site_assignments')
+    .select('site_id, foreman_id')
+
   const supabaseClient = createServiceClient()
   const variationsWithUrls = await Promise.all(
-    (variations ?? []).map(async (v) => {
+    variationRows.map(async (v) => {
       const urls: string[] = []
       for (const path of v.photo_urls ?? []) {
         const { data } = await supabaseClient.storage
@@ -77,7 +118,7 @@ export default async function AdminVariationsPage() {
             </p>
             <h1 className="text-xl font-bold text-white">Variations</h1>
             <p className="text-slate-400 text-xs mt-1">
-              Approve foreman submissions · VO register
+              Create · approve · VO register
             </p>
           </div>
           <Link
@@ -90,6 +131,13 @@ export default async function AdminVariationsPage() {
       </header>
 
       <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-6">
+
+        <NewAdminVariationForm
+          sites={activeSites ?? []}
+          foremen={foremen ?? []}
+          workers={siteWorkers ?? []}
+          siteForemanAssignments={siteForemanAssignments ?? []}
+        />
 
         {pendingCount > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
