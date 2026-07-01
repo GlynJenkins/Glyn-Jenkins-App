@@ -41,7 +41,7 @@ export async function POST(
       (claimBase.claim_allocations ?? []).map(async (alloc) => {
         const { data: worker } = await supabase
           .from('workers')
-          .select('id, first_name, surname, tax_type, has_personal_insurance')
+          .select('id, first_name, surname, tax_type, role, has_personal_insurance')
           .eq('id', alloc.worker_id)
           .maybeSingle()
         return { ...alloc, worker }
@@ -66,7 +66,16 @@ export async function POST(
       if (!worker) continue
 
       const gross = alloc.gross_amount ?? 0
-      const pay = calculatePayLine(gross, worker, fees)
+      const pay = calculatePayLine(
+        gross,
+        {
+          id: worker.id,
+          tax_type: worker.tax_type,
+          has_personal_insurance: worker.has_personal_insurance,
+          role: worker.role,
+        },
+        fees,
+      )
 
       const { error } = await supabase.from('worker_cis_ledger').insert({
         worker_id:             worker.id,

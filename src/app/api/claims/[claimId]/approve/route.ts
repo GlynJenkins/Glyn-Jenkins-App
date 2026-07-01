@@ -34,7 +34,7 @@ export async function POST(
       (claimBase?.claim_allocations ?? []).map(async (alloc) => {
         const { data: worker } = await supabase
           .from('workers')
-          .select('id, first_name, surname, phone, email, tax_type, has_personal_insurance')
+          .select('id, first_name, surname, phone, email, tax_type, role, has_personal_insurance')
           .eq('id', alloc.worker_id)
           .maybeSingle()
         return {
@@ -74,6 +74,7 @@ export async function POST(
         phone: string | null
         email: string | null
         tax_type: string
+        role: string
         has_own_insurance: boolean | null
       } | null
     }[]
@@ -89,7 +90,12 @@ export async function POST(
       const customReason  = workerDeductions[worker.id]?.reason   ?? null
       const pay = calculatePayLine(
         gross,
-        { id: worker.id, tax_type: worker.tax_type, has_personal_insurance: worker.has_own_insurance },
+        {
+          id: worker.id,
+          tax_type: worker.tax_type,
+          has_personal_insurance: worker.has_own_insurance,
+          role: worker.role,
+        },
         fees,
         customDed,
       )

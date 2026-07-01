@@ -27,6 +27,7 @@ type AllocationRow = {
 type WorkerRow = {
   id: string
   tax_type: string | null
+  role: string | null
   has_personal_insurance: boolean | null
 }
 
@@ -107,7 +108,7 @@ export async function syncMissingCisLedger(
     const chunk = workerIds.slice(i, i + 200)
     const { data: workers, error: workerErr } = await supabase
       .from('workers')
-      .select('id, tax_type, has_personal_insurance')
+      .select('id, tax_type, role, has_personal_insurance')
       .in('id', chunk)
 
     if (workerErr) {

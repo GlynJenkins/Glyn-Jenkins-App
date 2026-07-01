@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronUp, CheckCircle, XCircle,
   Loader2, Clock, PoundSterling, Mail, MessageSquare, AlertCircle,
 } from 'lucide-react'
+import { calculatePayLine } from '@/lib/cis/calculate-pay'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -73,15 +74,26 @@ function calcWorker(
   insuranceFee: number,
   customDed: number
 ) {
-  const w          = alloc.workers
-  const gross      = alloc.gross_amount ?? 0
-  const wAdminFee  = adminFee
-  const wInsFee    = w?.has_own_insurance ? 0 : insuranceFee
-  const taxable    = Math.max(0, gross - wAdminFee - wInsFee - customDed)
-  const cisTax     = w?.tax_type === 'cis_20'
-    ? Math.round(taxable * 0.20 * 100) / 100 : 0
-  const net        = Math.round((taxable - cisTax) * 100) / 100
-  return { gross, wAdminFee, wInsFee, taxable, cisTax, net }
+  const w = alloc.workers
+  const pay = calculatePayLine(
+    alloc.gross_amount ?? 0,
+    {
+      id:                     w?.id ?? '',
+      tax_type:               w?.tax_type ?? null,
+      has_personal_insurance: w?.has_own_insurance,
+      role:                   w?.role,
+    },
+    { adminFee, insuranceFee },
+    customDed,
+  )
+  return {
+    gross:     pay.gross,
+    wAdminFee: pay.adminFee,
+    wInsFee:   pay.insuranceFee,
+    taxable:   Math.max(0, pay.gross - pay.adminFee - pay.insuranceFee - pay.customDeduction),
+    cisTax:    pay.cisTax,
+    net:       pay.net,
+  }
 }
 
 function NotificationStatus({ n }: { n: RejectionNotifications }) {
@@ -659,7 +671,7 @@ export default function ClaimApprovalList({
       </button>
 
       <p className="text-xs text-slate-500 text-center -mt-2">
-        Fees applied: admin £{adminFee.toFixed(2)} · insurance £{insuranceFee.toFixed(2)} per worker
+        Fees applied to subcontractors: admin £{adminFee.toFixed(2)} · insurance £{insuranceFee.toFixed(2)} — not charged to management or apprentices
       </p>
 
       {lists[tab].length === 0 ? (
