@@ -3,7 +3,7 @@
 import { useState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle, AlertCircle, Loader2, PoundSterling, Shield, GraduationCap, Sun, Calendar } from 'lucide-react'
-import { computeFortnight } from '@/lib/fortnight'
+import { computeFortnight, referenceCycleForDate } from '@/lib/fortnight'
 
 interface Props {
   initialAdminFee:     number
@@ -33,8 +33,21 @@ export default function SettingsForm({
     if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(payDay)) {
       return null
     }
-    return computeFortnight(new Date(), { periodStartAnchor: periodStart, payDayAnchor: payDay })
+    const cfg = { periodStartAnchor: periodStart, payDayAnchor: payDay }
+    return computeFortnight(new Date(), cfg)
   }, [periodStart, payDay])
+
+  const suggestedReference = useMemo(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(payDay)) {
+      return null
+    }
+    return referenceCycleForDate({ periodStartAnchor: periodStart, payDayAnchor: payDay })
+  }, [periodStart, payDay])
+
+  const referenceNeedsUpdate = suggestedReference != null && (
+    suggestedReference.periodStartAnchor !== periodStart ||
+    suggestedReference.payDayAnchor !== payDay
+  )
 
   const handleSave = () => {
     setSuccess(false)
@@ -216,7 +229,7 @@ export default function SettingsForm({
               onChange={(e) => { setPeriodStart(e.target.value); setSuccess(false) }}
               className={inputCls}
             />
-            <p className="text-xs text-slate-400 mt-1">First day of a known 13-day work window</p>
+            <p className="text-xs text-slate-400 mt-1">First day of the work window (e.g. 15 Jun)</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -228,43 +241,65 @@ export default function SettingsForm({
               onChange={(e) => { setPayDay(e.target.value); setSuccess(false) }}
               className={inputCls}
             />
-            <p className="text-xs text-slate-400 mt-1">When that fortnight&apos;s work is paid</p>
+            <p className="text-xs text-slate-400 mt-1">Pay day for that reference window (e.g. 3 Jul)</p>
           </div>
         </div>
+
+        {referenceNeedsUpdate && suggestedReference && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-2">
+            <p>
+              Reference dates look out of date for the current cycle. Use{' '}
+              <strong>{suggestedReference.periodStartAnchor}</strong> and pay day{' '}
+              <strong>{suggestedReference.payDayAnchor}</strong>, then save.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodStart(suggestedReference.periodStartAnchor)
+                setPayDay(suggestedReference.payDayAnchor)
+                setSuccess(false)
+              }}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg"
+            >
+              Use current cycle dates
+            </button>
+          </div>
+        )}
 
         {cyclePreview && (
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-sm">
             <p className="font-semibold text-slate-800">Preview (today)</p>
             <div className="grid grid-cols-1 gap-2 text-xs text-slate-600">
               <p>
-                <span className="font-medium text-slate-700">Current booking window:</span>{' '}
+                <span className="font-medium text-slate-700">Work completed:</span>{' '}
                 {cyclePreview.label}
                 {cyclePreview.isLocked
                   ? <span className="text-red-600 font-medium"> · locked</span>
                   : cyclePreview.isGracePeriod
-                  ? <span className="text-amber-600 font-medium"> · grace</span>
+                  ? <span className="text-amber-600 font-medium"> · apply-by day</span>
                   : <span className="text-green-600 font-medium"> · open</span>}
               </p>
               <p>
-                <span className="font-medium text-slate-700">Submissions close:</span>{' '}
-                {cyclePreview.isLocked
-                  ? 'locked now'
-                  : cyclePreview.isGracePeriod
-                  ? 'apply-by day (day after last work day)'
-                  : `${Math.ceil((new Date(cyclePreview.lockTime).getTime() - Date.now()) / 3_600_000)}h remaining`}
+                <span className="font-medium text-slate-700">Apply by:</span>{' '}
+                {cyclePreview.applyByLabel}
+                {!cyclePreview.isLocked && !cyclePreview.isGracePeriod && (
+                  <span className="text-slate-500">
+                    {' '}({Math.ceil((new Date(cyclePreview.lockTime).getTime() - Date.now()) / 3_600_000)}h left)
+                  </span>
+                )}
               </p>
               <p>
-                <span className="font-medium text-slate-700">Pay date for this window:</span>{' '}
+                <span className="font-medium text-slate-700">Pay date:</span>{' '}
                 {cyclePreview.payLabel}
               </p>
               <p>
-                <span className="font-medium text-slate-700">Upcoming pay days:</span>{' '}
-                {cyclePreview.upcomingPays.slice(1).map((p) => p.label).join(', ')}
+                <span className="font-medium text-slate-700">Next pay dates:</span>{' '}
+                {cyclePreview.upcomingPays.map((p) => p.label).join(', ')}
               </p>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Each cycle is 13 work days plus one apply-by day (e.g. work 15–27 Jun, apply by 28 Jun, paid 3 Jul).
-              The next fortnight opens the day after apply-by closes — no overlapping claims.
+              13 work days, apply the next day, then paid six days after the last work day
+              (e.g. work 15–27 Jun, apply by 28 Jun, paid 3 Jul).
             </p>
           </div>
         )}

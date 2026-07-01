@@ -23,8 +23,8 @@ export async function GET() {
     insurance_fee:          3,
     holiday_day_rate:       50,
     college_day_rate:       50,
-    pay_cycle_period_start: '2025-06-15',
-    pay_cycle_pay_day:      '2025-07-03',
+    pay_cycle_period_start: '2026-06-15',
+    pay_cycle_pay_day:      '2026-07-03',
   })
 }
 

@@ -20,8 +20,8 @@ export default async function AdminSettingsPage() {
   const insuranceFee = settings?.insurance_fee    ?? 3
   const holidayRate  = settings?.holiday_day_rate ?? 50
   const collegeRate  = settings?.college_day_rate ?? 50
-  const periodStart  = settings?.pay_cycle_period_start?.slice(0, 10) ?? '2025-06-15'
-  const payDay       = settings?.pay_cycle_pay_day?.slice(0, 10)      ?? '2025-07-03'
+  const periodStart  = settings?.pay_cycle_period_start?.slice(0, 10) ?? '2026-06-15'
+  const payDay       = settings?.pay_cycle_pay_day?.slice(0, 10)      ?? '2026-07-03'
 
   return (
     <div className="min-h-screen bg-gray-50">
