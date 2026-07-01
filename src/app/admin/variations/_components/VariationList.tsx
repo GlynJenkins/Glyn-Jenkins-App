@@ -235,12 +235,14 @@ type Tab = 'pending' | 'approved' | 'rejected'
 
 export default function VariationList({
   pending, approved, rejected,
+  defaultTab = 'pending',
 }: {
   pending:  Claim[]
   approved: Claim[]
   rejected: Claim[]
+  defaultTab?: Tab
 }) {
-  const [tab,    setTab]    = useState<Tab>('pending')
+  const [tab,    setTab]    = useState<Tab>(defaultTab)
   const [allClaims, setAll] = useState({ pending, approved, rejected })
   const [error,  setError]  = useState<string | null>(null)
   const router = useRouter()

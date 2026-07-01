@@ -1,103 +1,46 @@
-import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
-import VariationList from './_components/VariationList'
+import { Plus, ClipboardList } from 'lucide-react'
 import VariationRegisterTable from './_components/VariationRegisterTable'
-import { relationOne } from '@/lib/supabase/normalize-relations'
 import { loadVariationRegisterRows } from '@/lib/variations/load-variation-register-rows'
+import { countPendingVariationGroups } from '@/lib/variations/load-admin-variation-claims'
 
 export const dynamic = 'force-dynamic'
-
-function normalizeVariation<T extends {
-  sites:   { id: string; name: string } | { id: string; name: string }[] | null
-  workers: { id: string; first_name: string; surname: string; role: string } | { id: string; first_name: string; surname: string; role: string }[] | null
-  foremen: { id: string; first_name: string; surname: string } | { id: string; first_name: string; surname: string }[] | null
-}>(v: T) {
-  return {
-    ...v,
-    sites:   relationOne(v.sites),
-    workers: relationOne(v.workers),
-    foremen: relationOne(v.foremen),
-  }
-}
 
 export default async function AdminVariationsPage() {
   await requireAdminAccess()
 
-  const supabase = createServiceClient()
+  const [registerRows, pendingCount] = await Promise.all([
+    loadVariationRegisterRows(),
+    countPendingVariationGroups(),
+  ])
 
-  const { data: variations, error: variationsError } = await supabase
-    .from('variation_claims')
-    .select(`
-      id, hours, rate_per_hour, total_amount, description,
-      photo_urls, status, admin_rejection_reason, created_at, is_lump_sum,
-      sites   ( id, name ),
-      workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
-      foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )
-    `)
-    .order('created_at', { ascending: false })
-
-  type VariationRow = NonNullable<typeof variations>[number]
-  let variationRows: VariationRow[] = variations ?? []
-  if (variationsError) {
-    const { data: legacy } = await supabase
-      .from('variation_claims')
-      .select(`
-        id, hours, rate_per_hour, total_amount, description,
-        photo_urls, status, admin_rejection_reason, created_at,
-        sites   ( id, name ),
-        workers!variation_claims_worker_id_fkey  ( id, first_name, surname, role ),
-        foremen:workers!variation_claims_foreman_id_fkey ( id, first_name, surname )
-      `)
-      .order('created_at', { ascending: false })
-    variationRows = (legacy ?? []) as VariationRow[]
-  }
-
-  const supabaseClient = createServiceClient()
-  const variationsWithUrls = await Promise.all(
-    variationRows.map(async (v) => {
-      const urls: string[] = []
-      for (const path of v.photo_urls ?? []) {
-        const { data } = await supabaseClient.storage
-          .from('worker-documents')
-          .createSignedUrl(path, 3600)
-        if (data?.signedUrl) urls.push(data.signedUrl)
-      }
-      return { ...v, signedPhotoUrls: urls }
-    })
-  )
-
-  const pending  = variationsWithUrls.filter((v) => v.status === 'pending').map(normalizeVariation)
-  const approved = variationsWithUrls.filter((v) => v.status === 'approved').map(normalizeVariation)
-  const rejected = variationsWithUrls.filter((v) => v.status === 'rejected').map(normalizeVariation)
-
-  const registerRows = await loadVariationRegisterRows()
-
-  const siteSpend = new Map<string, { name: string; total: number }>()
-  for (const v of approved) {
-    const site = v.sites
-    if (!site) continue
-    const existing = siteSpend.get(site.id) ?? { name: site.name, total: 0 }
-    siteSpend.set(site.id, { ...existing, total: existing.total + (v.total_amount ?? 0) })
-  }
-
-  const pendingCount = pending.length
+  const registerTotal = registerRows.reduce((sum, r) => sum + r.foremanTotal, 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-slate-900 px-5 pt-12 pb-6">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div>
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
               Glyn Jenkins LTD
             </p>
             <h1 className="text-xl font-bold text-white">Variations</h1>
-            <p className="text-slate-400 text-xs mt-1">
-              Approve foreman submissions · VO register
-            </p>
+            <p className="text-slate-400 text-xs mt-1">VO register</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/admin/variations/pending"
+              className="relative px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5"
+            >
+              <ClipboardList className="w-4 h-4" />
+              <span className="hidden sm:inline">Pending</span>
+              {pendingCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-[10px] font-bold">
+                  {pendingCount}
+                </span>
+              )}
+            </Link>
             <Link
               href="/admin/variations/create"
               className="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5"
@@ -115,48 +58,61 @@ export default async function AdminVariationsPage() {
         </div>
       </header>
 
-      <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-6">
+      <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-4">
 
-        <Link
-          href="/admin/variations/create"
-          className="sm:hidden flex items-center justify-center gap-2 w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold rounded-xl transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Create variation
-        </Link>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:hidden">
+          <Link
+            href="/admin/variations/pending"
+            className="relative flex items-center justify-center gap-2 py-3.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl transition-colors"
+          >
+            <ClipboardList className="w-4 h-4" />
+            Pending approvals
+            {pendingCount > 0 && (
+              <span className="ml-1 min-w-[1.25rem] h-5 px-1.5 inline-flex items-center justify-center rounded-full bg-red-500 text-[10px] font-bold">
+                {pendingCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            href="/admin/variations/create"
+            className="flex items-center justify-center gap-2 py-3.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold rounded-xl transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create variation
+          </Link>
+        </div>
 
         {pendingCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-amber-900">
-              {pendingCount} line{pendingCount === 1 ? '' : 's'} awaiting approval
-            </p>
-            <p className="text-xs text-amber-800 mt-1">
-              Review in the <strong>Pending</strong> tab below. Once approved, foremen can include them in their wage claim.
-            </p>
-          </div>
+          <Link
+            href="/admin/variations/pending"
+            className="hidden sm:flex items-center justify-between bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:border-amber-300 transition-colors"
+          >
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                {pendingCount} foreman submission{pendingCount === 1 ? '' : 's'} awaiting approval
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Tap to review — approved items appear in the register below.
+              </p>
+            </div>
+            <span className="text-amber-700 text-sm font-semibold shrink-0">Review →</span>
+          </Link>
         )}
 
-        {siteSpend.size > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
-            <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-              Approved Variation Spend by Site
-            </h2>
-            {Array.from(siteSpend.values()).map(({ name, total }) => (
-              <div key={name} className="flex items-center justify-between">
-                <span className="text-sm text-slate-700">{name}</span>
-                <span className="font-bold text-orange-600">
-                  £{total.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            ))}
+        {registerRows.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white rounded-xl border border-gray-100 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Approved VOs</p>
+              <p className="text-base font-bold text-slate-700">{registerRows.length}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Total foreman cost</p>
+              <p className="text-base font-bold text-orange-600">
+                £{registerTotal.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
           </div>
         )}
-
-        <VariationList
-          pending={pending}
-          approved={approved}
-          rejected={rejected}
-        />
 
         <VariationRegisterTable rows={registerRows} />
       </div>
