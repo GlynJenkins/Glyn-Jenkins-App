@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Download } from 'lucide-react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { Download, Loader2 } from 'lucide-react'
 import type { VariationRegisterRow } from '@/lib/variations/load-variation-register-rows'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
 
@@ -17,19 +18,34 @@ function formatDate(iso: string | null) {
 }
 
 function sumRows(rows: VariationRegisterRow[]) {
-  return rows.reduce((acc, r) => acc + r.foremanTotal, 0)
+  return rows.reduce(
+    (acc, r) => ({
+      total:   acc.total + r.foremanTotal,
+      unpaid:  acc.unpaid + (r.developerPaid ? 0 : r.foremanTotal),
+    }),
+    { total: 0, unpaid: 0 }
+  )
 }
 
 const selectClass =
   'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-orange-400'
 
 export default function VariationRegisterTable({ rows }: { rows: VariationRegisterRow[] }) {
+  const router = useRouter()
   const [siteFilter, setSiteFilter] = useState('all')
   const [referenceFilter, setReferenceFilter] = useState('all')
+  const [localRows, setLocalRows] = useState(rows)
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
+  useEffect(() => {
+    setLocalRows(rows)
+  }, [rows])
 
   const siteOptions = useMemo(() => {
     const map = new Map<string, { siteId: string; siteName: string; siteCode: string | null }>()
-    for (const r of rows) {
+    for (const r of localRows) {
       if (!map.has(r.siteId)) {
         map.set(r.siteId, { siteId: r.siteId, siteName: r.siteName, siteCode: r.siteCode })
       }
@@ -40,17 +56,17 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
       if (codeA !== codeB) return codeA.localeCompare(codeB, undefined, { numeric: true })
       return a.siteName.localeCompare(b.siteName)
     })
-  }, [rows])
+  }, [localRows])
 
   const referenceOptions = useMemo(() => {
     const pool = siteFilter === 'all'
-      ? rows
-      : rows.filter((r) => r.siteId === siteFilter)
+      ? localRows
+      : localRows.filter((r) => r.siteId === siteFilter)
     return pool.map((r) => ({ id: r.id, reference: r.reference }))
-  }, [rows, siteFilter])
+  }, [localRows, siteFilter])
 
   const filteredRows = useMemo(() => {
-    let result = rows
+    let result = localRows
     if (siteFilter !== 'all') {
       result = result.filter((r) => r.siteId === siteFilter)
     }
@@ -58,13 +74,48 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
       result = result.filter((r) => r.id === referenceFilter)
     }
     return result
-  }, [rows, siteFilter, referenceFilter])
+  }, [localRows, siteFilter, referenceFilter])
 
-  const total = sumRows(filteredRows)
+  const totals = sumRows(filteredRows)
 
   const handleSiteChange = (value: string) => {
     setSiteFilter(value)
     setReferenceFilter('all')
+  }
+
+  const handleDeveloperPaid = (row: VariationRegisterRow, paid: boolean) => {
+    setError(null)
+    setBusyId(row.id)
+
+    setLocalRows((prev) =>
+      prev.map((r) =>
+        r.id === row.id
+          ? {
+              ...r,
+              developerPaid:   paid,
+              developerPaidAt: paid ? new Date().toISOString() : null,
+            }
+          : r
+      )
+    )
+
+    startTransition(async () => {
+      try {
+        const res = await fetch('/api/admin/variations/register/payment', {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ claimIds: row.claimIds, paid }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? 'Could not update payment status.')
+        router.refresh()
+      } catch (err) {
+        setLocalRows(rows)
+        setError(err instanceof Error ? err.message : 'Could not update payment status.')
+      } finally {
+        setBusyId(null)
+      }
+    })
   }
 
   return (
@@ -75,10 +126,10 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
             VO register
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Approved variations. Filter by site or reference.
+            Approved variations. Tick when the developer has paid.
           </p>
         </div>
-        {rows.length > 0 && (
+        {localRows.length > 0 && (
           <button
             type="button"
             onClick={() => { window.location.href = '/api/admin/variations/export' }}
@@ -90,7 +141,13 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
         )}
       </div>
 
-      {rows.length === 0 ? (
+      {error && (
+        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      {localRows.length === 0 ? (
         <p className="text-xs text-slate-400 py-6 text-center bg-white rounded-2xl border border-gray-100">
           No approved variations yet.
         </p>
@@ -135,9 +192,15 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
             </label>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 p-3">
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">Total foreman cost</p>
-            <p className="text-base font-bold text-orange-600">{fmt(total)}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white rounded-xl border border-gray-100 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Total foreman cost</p>
+              <p className="text-base font-bold text-orange-600">{fmt(totals.total)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-100 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-400">Awaiting developer payment</p>
+              <p className="text-base font-bold text-amber-600">{fmt(totals.unpaid)}</p>
+            </div>
           </div>
 
           {filteredRows.length === 0 ? (
@@ -147,7 +210,7 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
           ) : (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[720px] text-sm">
                   <thead>
                     <tr className="bg-slate-50 border-b border-gray-100 text-left">
                       <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
@@ -170,6 +233,9 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
                       </th>
                       <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
                         In claim
+                      </th>
+                      <th className="px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap text-center">
+                        Dev paid
                       </th>
                     </tr>
                   </thead>
@@ -204,6 +270,21 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
                             {r.claimed ? 'Yes' : 'No'}
                           </span>
                         </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-center">
+                          <label className="inline-flex items-center justify-center gap-1.5 cursor-pointer">
+                            {busyId === r.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={r.developerPaid}
+                                onChange={(e) => handleDeveloperPaid(r, e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                aria-label={`Developer paid for ${r.reference}`}
+                              />
+                            )}
+                          </label>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -212,8 +293,8 @@ export default function VariationRegisterTable({ rows }: { rows: VariationRegist
                       <td className="px-3 py-3 text-slate-700" colSpan={3}>
                         Totals ({filteredRows.length} VO{filteredRows.length === 1 ? '' : 's'})
                       </td>
-                      <td className="px-3 py-3 text-right text-orange-600 tabular-nums">{fmt(total)}</td>
-                      <td className="px-3 py-3" colSpan={3} />
+                      <td className="px-3 py-3 text-right text-orange-600 tabular-nums">{fmt(totals.total)}</td>
+                      <td className="px-3 py-3" colSpan={4} />
                     </tr>
                   </tfoot>
                 </table>

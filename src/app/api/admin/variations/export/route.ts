@@ -20,18 +20,21 @@ export async function GET() {
     const rows = await loadVariationRegisterRows()
 
     const sheetRows = rows.map((r) => ({
-      'Reference':      r.reference,
-      'Site':           r.siteName,
-      'Reason for VO':  r.description,
-      'Foreman cost':   r.foremanTotal,
-      'Foreman':        r.foremanName,
-      'Approved':       formatDate(r.approvedAt),
-      'In wage claim':  r.claimed ? 'Yes' : 'No',
+      'Reference':         r.reference,
+      'Site':              r.siteName,
+      'Reason for VO':     r.description,
+      'Foreman cost':      r.foremanTotal,
+      'Foreman':           r.foremanName,
+      'Approved':          formatDate(r.approvedAt),
+      'In wage claim':     r.claimed ? 'Yes' : 'No',
+      'Developer paid':    r.developerPaid ? 'Yes' : 'No',
+      'Developer paid on': formatDate(r.developerPaidAt),
     }))
 
     const ws = XLSX.utils.json_to_sheet(sheetRows)
     ws['!cols'] = [
-      { wch: 12 }, { wch: 22 }, { wch: 36 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 12 },
+      { wch: 12 }, { wch: 22 }, { wch: 36 }, { wch: 14 }, { wch: 18 },
+      { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
     ]
 
     const wb = XLSX.utils.book_new()
