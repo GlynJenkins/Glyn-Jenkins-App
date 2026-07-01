@@ -21,7 +21,7 @@ export default async function PendingClaimsPage() {
       sites ( id, name ),
       claim_allocations ( id, worker_id, gross_amount )
     `)
-    .in('status', ['pending', 'rejected'])
+    .in('status', ['pending', 'approved', 'rejected'])
     .order('submitted_at', { ascending: false })
 
   const claims = await Promise.all((rawClaims ?? []).map(async (claim) => {
@@ -54,6 +54,7 @@ export default async function PendingClaimsPage() {
   const deduped = dedupeClaimsByForemanPeriod(claims ?? [])
 
   const pending  = deduped.filter((c) => c.status === 'pending')
+  const approved = deduped.filter((c) => c.status === 'approved')
   const rejected = deduped.filter((c) => c.status === 'rejected')
 
   return (
@@ -65,7 +66,7 @@ export default async function PendingClaimsPage() {
               Glyn Jenkins LTD
             </p>
             <h1 className="text-xl font-bold text-white">Pending claims</h1>
-            <p className="text-slate-400 text-xs mt-1">Approve or reject booking in</p>
+            <p className="text-slate-400 text-xs mt-1">Review, approve, or browse past claims</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Link
@@ -87,6 +88,7 @@ export default async function PendingClaimsPage() {
       <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
         <ClaimApprovalList
           pending={pending as never}
+          approved={approved as never}
           rejected={rejected as never}
           adminFee={adminFee}
           insuranceFee={insuranceFee}

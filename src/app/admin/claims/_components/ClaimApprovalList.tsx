@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown, ChevronUp, CheckCircle, XCircle,
-  Loader2, Clock, PoundSterling, Mail, MessageSquare, AlertCircle,
+  Loader2, Clock, PoundSterling, RefreshCw, Mail, MessageSquare, AlertCircle,
 } from 'lucide-react'
 import { calculatePayLine } from '@/lib/cis/calculate-pay'
 
@@ -58,6 +58,7 @@ type Claim = {
 
 interface Props {
   pending:      Claim[]
+  approved:     Claim[]
   rejected:     Claim[]
   adminFee:     number
   insuranceFee: number
@@ -150,6 +151,7 @@ function ClaimCard({
   const [poolOpen,      setPoolOpen]      = useState(false)
   const [rejectMode,    setRejectMode]    = useState(false)
   const [reason,        setReason]        = useState('')
+  const [regenMsg,      setRegenMsg]      = useState<string | null>(null)
   const [busy,          startTransition]  = useTransition()
 
   // Custom deductions per worker: { workerId → { amount, reason } }
@@ -166,6 +168,11 @@ function ClaimCard({
   const period   = `${new Date(claim.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${new Date(claim.period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
   const submittedLabel = claim.submitted_at
     ? new Date(claim.submitted_at).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      })
+    : null
+  const approvedLabel = claim.approved_at
+    ? new Date(claim.approved_at).toLocaleDateString('en-GB', {
         day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
       })
     : null
@@ -229,7 +236,11 @@ function ClaimCard({
           <p className="text-xs text-slate-500 mt-0.5 truncate">
             {siteLabel} · {period}
             {allocations.length > 0 && ` · ${allocations.length} worker${allocations.length === 1 ? '' : 's'}`}
-            {submittedLabel && ` · Submitted ${submittedLabel}`}
+            {claim.status === 'approved' && approvedLabel
+              ? ` · Approved ${approvedLabel}`
+              : submittedLabel
+                ? ` · Submitted ${submittedLabel}`
+                : ''}
           </p>
         </div>
         <div className="text-right shrink-0">
@@ -428,6 +439,33 @@ function ClaimCard({
         <NotificationStatus n={claim.rejection_notifications} />
       )}
 
+      {/* Re-generate ledger — approved claims only */}
+      {claim.status === 'approved' && (
+        <div className="px-4 pb-3">
+          {regenMsg && (
+            <p className="text-xs text-green-600 mb-2">{regenMsg}</p>
+          )}
+          <button
+            disabled={busy}
+            onClick={() => {
+              startTransition(async () => {
+                setRegenMsg(null)
+                const res = await fetch(`/api/claims/${claim.id}/regenerate-ledger`, { method: 'POST' })
+                const json = await res.json()
+                if (res.ok) setRegenMsg(`✓ Ledger updated — ${json.count} worker record(s) written.`)
+                else setRegenMsg(`Error: ${json.error}`)
+              })
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5
+                       bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium
+                       rounded-xl transition-colors disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Re-generate CIS Ledger
+          </button>
+        </div>
+      )}
+
       {/* Actions — pending only */}
       {claim.status === 'pending' && onAction && (
         <div className="p-4 space-y-2 border-t border-gray-100">
@@ -503,13 +541,13 @@ function ClaimCard({
 
 // ── List with tabs ────────────────────────────────────────────────────────────
 
-type Tab = 'pending' | 'rejected'
+type Tab = 'pending' | 'approved' | 'rejected'
 
 export default function ClaimApprovalList({
-  pending, rejected, adminFee: initialAdminFee, insuranceFee: initialInsuranceFee,
+  pending, approved, rejected, adminFee: initialAdminFee, insuranceFee: initialInsuranceFee,
 }: Props) {
   const [tab,  setTab]  = useState<Tab>('pending')
-  const [data, setData] = useState({ pending, rejected })
+  const [data, setData] = useState({ pending, approved, rejected })
   const [approveNotice, setApproveNotice] = useState<string | null>(null)
   const [adminFee, setAdminFee] = useState(initialAdminFee)
   const [insuranceFee, setInsuranceFee] = useState(initialInsuranceFee)
@@ -530,8 +568,8 @@ export default function ClaimApprovalList({
   }, [])
 
   useEffect(() => {
-    setData({ pending, rejected })
-  }, [pending, rejected])
+    setData({ pending, approved, rejected })
+  }, [pending, approved, rejected])
 
   useEffect(() => {
     setAdminFee(initialAdminFee)
@@ -582,12 +620,14 @@ export default function ClaimApprovalList({
         }
         return {
           pending:  prev.pending.filter((c) => c.id !== claimId),
+          approved: action === 'approve' ? [updated, ...prev.approved] : prev.approved,
           rejected: action === 'reject' ? [updated, ...prev.rejected] : prev.rejected,
         }
       })
 
       if (action === 'approve') {
         setApproveNotice('Claim approved — workers added to the wages register.')
+        setTab('approved')
       }
 
       if (action === 'reject' && json.notifications) {
@@ -615,6 +655,7 @@ export default function ClaimApprovalList({
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'pending',  label: `Pending (${data.pending.length})`  },
+    { key: 'approved', label: `Approved (${data.approved.length})` },
     { key: 'rejected', label: `Rejected (${data.rejected.length})` },
   ]
 
