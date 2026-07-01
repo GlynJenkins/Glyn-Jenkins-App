@@ -41,8 +41,8 @@ function buildSections(counts: AdminNavCounts): NavSection[] {
         {
           href:        '/admin/claims',
           icon:        ClipboardCheck,
-          label:       'Claims',
-          description: 'Approve fortnightly booking in',
+          label:       'Booking in',
+          description: 'Wages register & pay',
           badge:       counts.pendingClaims,
           accent:      counts.pendingClaims > 0,
         },

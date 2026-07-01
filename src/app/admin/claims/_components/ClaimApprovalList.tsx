@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown, ChevronUp, CheckCircle, XCircle,
-  Loader2, Clock, PoundSterling, RefreshCw, Mail, MessageSquare, AlertCircle,
+  Loader2, Clock, PoundSterling, Mail, MessageSquare, AlertCircle,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -57,7 +57,6 @@ type Claim = {
 
 interface Props {
   pending:      Claim[]
-  approved:     Claim[]
   rejected:     Claim[]
   adminFee:     number
   insuranceFee: number
@@ -139,7 +138,6 @@ function ClaimCard({
   const [poolOpen,      setPoolOpen]      = useState(false)
   const [rejectMode,    setRejectMode]    = useState(false)
   const [reason,        setReason]        = useState('')
-  const [regenMsg,      setRegenMsg]      = useState<string | null>(null)
   const [busy,          startTransition]  = useTransition()
 
   // Custom deductions per worker: { workerId → { amount, reason } }
@@ -418,33 +416,6 @@ function ClaimCard({
         <NotificationStatus n={claim.rejection_notifications} />
       )}
 
-      {/* Re-generate ledger — approved claims only */}
-      {claim.status === 'approved' && (
-        <div className="px-4 pb-3">
-          {regenMsg && (
-            <p className="text-xs text-green-600 mb-2">{regenMsg}</p>
-          )}
-          <button
-            disabled={busy}
-            onClick={() => {
-              startTransition(async () => {
-                setRegenMsg(null)
-                const res = await fetch(`/api/claims/${claim.id}/regenerate-ledger`, { method: 'POST' })
-                const json = await res.json()
-                if (res.ok) setRegenMsg(`✓ Ledger updated — ${json.count} worker record(s) written.`)
-                else setRegenMsg(`Error: ${json.error}`)
-              })
-            }}
-            className="w-full flex items-center justify-center gap-2 py-2.5
-                       bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium
-                       rounded-xl transition-colors disabled:opacity-50"
-          >
-            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Re-generate CIS Ledger
-          </button>
-        </div>
-      )}
-
       {/* Actions — pending only */}
       {claim.status === 'pending' && onAction && (
         <div className="p-4 space-y-2 border-t border-gray-100">
@@ -520,13 +491,14 @@ function ClaimCard({
 
 // ── List with tabs ────────────────────────────────────────────────────────────
 
-type Tab = 'pending' | 'approved' | 'rejected'
+type Tab = 'pending' | 'rejected'
 
 export default function ClaimApprovalList({
-  pending, approved, rejected, adminFee: initialAdminFee, insuranceFee: initialInsuranceFee,
+  pending, rejected, adminFee: initialAdminFee, insuranceFee: initialInsuranceFee,
 }: Props) {
   const [tab,  setTab]  = useState<Tab>('pending')
-  const [data, setData] = useState({ pending, approved, rejected })
+  const [data, setData] = useState({ pending, rejected })
+  const [approveNotice, setApproveNotice] = useState<string | null>(null)
   const [adminFee, setAdminFee] = useState(initialAdminFee)
   const [insuranceFee, setInsuranceFee] = useState(initialInsuranceFee)
   const [error, setError] = useState<string | null>(null)
@@ -546,8 +518,8 @@ export default function ClaimApprovalList({
   }, [])
 
   useEffect(() => {
-    setData({ pending, approved, rejected })
-  }, [pending, approved, rejected])
+    setData({ pending, rejected })
+  }, [pending, rejected])
 
   useEffect(() => {
     setAdminFee(initialAdminFee)
@@ -570,6 +542,7 @@ export default function ClaimApprovalList({
   ) => {
     setError(null)
     setRejectNotice(null)
+    setApproveNotice(null)
     try {
       const res = await fetch(`/api/claims/${claimId}/${action}`, {
         method:  'POST',
@@ -597,10 +570,13 @@ export default function ClaimApprovalList({
         }
         return {
           pending:  prev.pending.filter((c) => c.id !== claimId),
-          approved: action === 'approve' ? [updated, ...prev.approved] : prev.approved,
-          rejected: action === 'reject'  ? [updated, ...prev.rejected] : prev.rejected,
+          rejected: action === 'reject' ? [updated, ...prev.rejected] : prev.rejected,
         }
       })
+
+      if (action === 'approve') {
+        setApproveNotice('Claim approved — workers added to the wages register.')
+      }
 
       if (action === 'reject' && json.notifications) {
         const n = json.notifications as RejectionNotifications
@@ -627,7 +603,6 @@ export default function ClaimApprovalList({
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'pending',  label: `Pending (${data.pending.length})`  },
-    { key: 'approved', label: `Approved (${data.approved.length})` },
     { key: 'rejected', label: `Rejected (${data.rejected.length})` },
   ]
 
@@ -646,6 +621,18 @@ export default function ClaimApprovalList({
           </button>
         ))}
       </div>
+
+      {approveNotice && (
+        <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-3">
+          <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p>{approveNotice}</p>
+            <a href="/admin/claims" className="text-xs text-green-800 underline mt-1 inline-block">
+              View wages register →
+            </a>
+          </div>
+        </div>
+      )}
 
       {rejectNotice && (
         <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-3">

@@ -1,9 +1,8 @@
-import { createServiceClient } from '@/lib/supabase/server'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
-import ClaimApprovalList from './_components/ClaimApprovalList'
-import { dedupeClaimsByForemanPeriod } from '@/lib/claims/dedupe-period-claims'
-import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
+import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { createServiceClient } from '@/lib/supabase/server'
+import { loadWagesRegisterRows } from '@/lib/claims/load-wages-register'
+import WagesRegisterTable from './_components/WagesRegisterTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,85 +11,85 @@ export default async function AdminClaimsPage() {
 
   const supabase = createServiceClient()
 
-  const { data: rawClaims } = await supabase
+  let registerRows: Awaited<ReturnType<typeof loadWagesRegisterRows>> = []
+  let error: string | null = null
+
+  const { count: pendingCount } = await supabase
     .from('claim_periods')
-    .select(`
-      id, status, pool_total, pool_items, period_start, period_end,
-      submitted_at, approved_at, rejected_at, rejection_reason,
-      foreman_id, site_id,
-      sites ( id, name ),
-      claim_allocations ( id, worker_id, gross_amount )
-    `)
-    .order('submitted_at', { ascending: false })
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
 
-  // Enrich with foreman name + worker details separately to avoid FK hint issues
-  const claims = await Promise.all((rawClaims ?? []).map(async (claim) => {
-    // Foreman
-    const { data: foreman } = await supabase
-      .from('workers')
-      .select('id, first_name, surname, email, phone')
-      .eq('id', claim.foreman_id)
-      .maybeSingle()
+  try {
+    registerRows = await loadWagesRegisterRows(supabase)
+  } catch (err) {
+    error = err instanceof Error ? err.message : 'Failed to load wages register.'
+  }
 
-    // Worker details for each allocation
-    const enrichedAllocations = await Promise.all(
-      (claim.claim_allocations ?? []).map(async (alloc) => {
-        const { data: worker } = await supabase
-          .from('workers')
-          .select('id, first_name, surname, role, tax_type, has_personal_insurance')
-          .eq('id', alloc.worker_id)
-          .maybeSingle()
-        return {
-          ...alloc,
-          workers: worker
-            ? {
-                ...worker,
-                has_own_insurance: worker.has_personal_insurance ?? false,
-              }
-            : null,
-        }
-      })
-    )
-
-    return { ...claim, workers: foreman, claim_allocations: enrichedAllocations }
-  }))
-
-  const { adminFee, insuranceFee } = await fetchPayFeeSettings()
-
-  const deduped = dedupeClaimsByForemanPeriod(claims ?? [])
-
-  const pending  = deduped.filter((c) => c.status === 'pending')
-  const approved = deduped.filter((c) => c.status === 'approved')
-  const rejected = deduped.filter((c) => c.status === 'rejected')
+  const registerTotal = registerRows.reduce((sum, r) => sum + r.netPay, 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-slate-900 px-5 pt-12 pb-6">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div>
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
               Glyn Jenkins LTD
             </p>
-            <h1 className="text-xl font-bold text-white">Claim Approvals</h1>
+            <h1 className="text-xl font-bold text-white">Booking In</h1>
+            <p className="text-slate-400 text-xs mt-1">Wages register</p>
           </div>
           <Link
             href="/admin"
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm
-                       font-medium rounded-xl transition-colors"
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors shrink-0"
           >
             ← Admin
           </Link>
         </div>
       </header>
 
-      <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
-        <ClaimApprovalList
-          pending={pending as never}
-          approved={approved as never}
-          rejected={rejected as never}
-          adminFee={adminFee}
-          insuranceFee={insuranceFee}
-        />
+      <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-4">
+        {error ? (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-sm text-red-800">
+            {error}
+          </div>
+        ) : (
+          <>
+            {registerRows.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                    Payments
+                  </p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{registerRows.length}</p>
+                </div>
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 col-span-2 sm:col-span-1">
+                  <p className="text-xs text-orange-700 uppercase tracking-wide font-medium">
+                    Total net paid
+                  </p>
+                  <p className="text-2xl font-bold text-orange-900 mt-1">
+                    {'£' + registerTotal.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                {(pendingCount ?? 0) > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 col-span-2 sm:col-span-1">
+                    <p className="text-xs text-amber-700 uppercase tracking-wide font-medium">
+                      Awaiting approval
+                    </p>
+                    <p className="text-2xl font-bold text-amber-900 mt-1">{pendingCount}</p>
+                    <Link
+                      href="/admin/claims/pending"
+                      className="text-xs text-amber-700 underline mt-1 inline-block"
+                    >
+                      Review pending claims →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <WagesRegisterTable rows={registerRows} pendingCount={pendingCount ?? 0} />
+          </>
+        )}
       </div>
     </div>
   )
