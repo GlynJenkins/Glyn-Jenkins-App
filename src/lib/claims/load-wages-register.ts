@@ -266,6 +266,54 @@ export function defaultWagesPeriodKey(tabs: WagesFortnightTab[]): string {
   return tabs[0]?.key ?? 'all'
 }
 
+export function claimPeriodKey(periodStart: string, periodEnd: string): string {
+  return `${periodStart}|${periodEnd}`
+}
+
+export function buildClaimFortnightTabs(
+  settings: PayCycleSettings | null,
+  claims: { period_start: string; period_end: string }[],
+  at = new Date(),
+  count = 52,
+): WagesFortnightTab[] {
+  const tabMap = new Map<string, WagesFortnightTab>()
+
+  for (const period of listFortnightOptions(count, settings, at)) {
+    const start = toLocalDateString(period.start)
+    const end = toLocalDateString(period.end)
+    const key = `${start}|${end}`
+    tabMap.set(key, {
+      key,
+      start,
+      end,
+      label:     formatWagesPeriodLabel(start, end),
+      periodEnd: end,
+      rowCount:  0,
+    })
+  }
+
+  for (const claim of claims) {
+    const key = claimPeriodKey(claim.period_start, claim.period_end)
+    if (!tabMap.has(key)) {
+      tabMap.set(key, {
+        key,
+        start:     claim.period_start,
+        end:       claim.period_end,
+        label:     formatWagesPeriodLabel(claim.period_start, claim.period_end),
+        periodEnd: claim.period_end,
+        rowCount:  0,
+      })
+    }
+  }
+
+  for (const claim of claims) {
+    const tab = tabMap.get(claimPeriodKey(claim.period_start, claim.period_end))
+    if (tab) tab.rowCount += 1
+  }
+
+  return Array.from(tabMap.values()).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))
+}
+
 export function formatWagesPeriodLabel(start: string | null, end: string | null): string {
   if (!start || !end) return 'Unknown period'
   const s = new Date(start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })

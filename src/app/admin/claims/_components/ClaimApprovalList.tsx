@@ -1,12 +1,16 @@
 'use client'
 
-import { useState, useTransition, useEffect, useCallback } from 'react'
+import { useState, useTransition, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown, ChevronUp, CheckCircle, XCircle,
   Loader2, Clock, PoundSterling, RefreshCw, Mail, MessageSquare, AlertCircle,
 } from 'lucide-react'
 import { calculatePayLine } from '@/lib/cis/calculate-pay'
+import {
+  claimPeriodKey,
+  type WagesFortnightTab,
+} from '@/lib/claims/load-wages-register'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,12 +61,17 @@ type Claim = {
 }
 
 interface Props {
-  pending:      Claim[]
-  approved:     Claim[]
-  rejected:     Claim[]
-  adminFee:     number
-  insuranceFee: number
+  pending:                    Claim[]
+  approved:                   Claim[]
+  rejected:                   Claim[]
+  approvedPeriodTabs:         WagesFortnightTab[]
+  defaultApprovedPeriodKey:   string
+  adminFee:                   number
+  insuranceFee:               number
 }
+
+const selectClass =
+  'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-orange-400'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -544,10 +553,18 @@ function ClaimCard({
 type Tab = 'pending' | 'approved' | 'rejected'
 
 export default function ClaimApprovalList({
-  pending, approved, rejected, adminFee: initialAdminFee, insuranceFee: initialInsuranceFee,
+  pending,
+  approved,
+  rejected,
+  approvedPeriodTabs,
+  defaultApprovedPeriodKey,
+  adminFee: initialAdminFee,
+  insuranceFee: initialInsuranceFee,
 }: Props) {
   const [tab,  setTab]  = useState<Tab>('pending')
   const [data, setData] = useState({ pending, approved, rejected })
+  const [approvedPeriodFilter, setApprovedPeriodFilter] = useState(defaultApprovedPeriodKey)
+  const [approvedForemanFilter, setApprovedForemanFilter] = useState('all')
   const [approveNotice, setApproveNotice] = useState<string | null>(null)
   const [adminFee, setAdminFee] = useState(initialAdminFee)
   const [insuranceFee, setInsuranceFee] = useState(initialInsuranceFee)
@@ -572,6 +589,10 @@ export default function ClaimApprovalList({
   }, [pending, approved, rejected])
 
   useEffect(() => {
+    setApprovedPeriodFilter(defaultApprovedPeriodKey)
+  }, [defaultApprovedPeriodKey])
+
+  useEffect(() => {
     setAdminFee(initialAdminFee)
     setInsuranceFee(initialInsuranceFee)
   }, [initialAdminFee, initialInsuranceFee])
@@ -584,6 +605,48 @@ export default function ClaimApprovalList({
   }, [loadFees])
 
   const lists: Record<Tab, Claim[]> = data
+
+  const approvedPeriodClaims = useMemo(
+    () =>
+      data.approved.filter((claim) => {
+        if (approvedPeriodFilter === 'all') return true
+        return claimPeriodKey(claim.period_start, claim.period_end) === approvedPeriodFilter
+      }),
+    [data.approved, approvedPeriodFilter],
+  )
+
+  const approvedForemen = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const claim of approvedPeriodClaims) {
+      const foreman = claim.workers
+      if (foreman?.id) map.set(foreman.id, `${foreman.first_name} ${foreman.surname}`)
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [approvedPeriodClaims])
+
+  useEffect(() => {
+    if (
+      approvedForemanFilter !== 'all' &&
+      !approvedForemen.some((f) => f.id === approvedForemanFilter)
+    ) {
+      setApprovedForemanFilter('all')
+    }
+  }, [approvedForemanFilter, approvedForemen])
+
+  const approvedFiltered = useMemo(
+    () =>
+      approvedPeriodClaims.filter((claim) =>
+        approvedForemanFilter === 'all' || claim.workers?.id === approvedForemanFilter,
+      ),
+    [approvedPeriodClaims, approvedForemanFilter],
+  )
+
+  const displayList = tab === 'approved' ? approvedFiltered : lists[tab]
+
+  const hasApprovedFilters =
+    approvedForemanFilter !== 'all' || approvedPeriodFilter !== defaultApprovedPeriodKey
 
   const handleAction = async (
     claimId: string,
@@ -603,6 +666,7 @@ export default function ClaimApprovalList({
       if (!res.ok) throw new Error(json.error ?? 'Action failed.')
 
       const rejectExtra = extra as { reason?: string } | undefined
+      const approvedClaim = data.pending.find((c) => c.id === claimId)
 
       // Move the claim to the correct tab
       setData((prev) => {
@@ -627,6 +691,10 @@ export default function ClaimApprovalList({
 
       if (action === 'approve') {
         setApproveNotice('Claim approved — workers added to the wages register.')
+        if (approvedClaim) {
+          setApprovedPeriodFilter(claimPeriodKey(approvedClaim.period_start, approvedClaim.period_end))
+        }
+        setApprovedForemanFilter('all')
         setTab('approved')
       }
 
@@ -715,21 +783,115 @@ export default function ClaimApprovalList({
         Fees applied to subcontractors: admin £{adminFee.toFixed(2)} · insurance £{insuranceFee.toFixed(2)} — not charged to management or apprentices
       </p>
 
+      {tab === 'approved' && (data.approved.length > 0 || approvedPeriodTabs.length > 0) && (
+        <div className="space-y-3">
+          <div>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5 block">
+              Pay period
+            </span>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+              {approvedPeriodTabs.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => {
+                    setApprovedPeriodFilter(p.key)
+                    setApprovedForemanFilter('all')
+                  }}
+                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+                    approvedPeriodFilter === p.key
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {p.label}
+                  {p.rowCount > 0 && (
+                    <span
+                      className={`ml-1.5 tabular-nums ${
+                        approvedPeriodFilter === p.key ? 'text-orange-300' : 'text-slate-400'
+                      }`}
+                    >
+                      ({p.rowCount})
+                    </span>
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setApprovedPeriodFilter('all')
+                  setApprovedForemanFilter('all')
+                }}
+                className={`shrink-0 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+                  approvedPeriodFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                All periods
+              </button>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
+              Foreman gang
+            </span>
+            <select
+              value={approvedForemanFilter}
+              onChange={(e) => setApprovedForemanFilter(e.target.value)}
+              className={selectClass}
+            >
+              <option value="all">All foremen</option>
+              {approvedForemen.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {tab === 'approved' && hasApprovedFilters && (
+        <p className="text-xs text-slate-500">
+          Showing {approvedFiltered.length} of {approvedPeriodClaims.length} claim{approvedPeriodClaims.length !== 1 ? 's' : ''} this period
+          {' · '}
+          <button
+            type="button"
+            onClick={() => {
+              setApprovedForemanFilter('all')
+              setApprovedPeriodFilter(defaultApprovedPeriodKey)
+            }}
+            className="text-orange-600 underline"
+          >
+            Clear filters
+          </button>
+        </p>
+      )}
+
       {lists[tab].length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">No {tab} claims</p>
         </div>
+      ) : displayList.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">
+          <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">
+            {tab === 'approved' && approvedPeriodClaims.length === 0
+              ? 'No approved claims for this fortnight.'
+              : 'No claims match these filters.'}
+          </p>
+        </div>
       ) : (
         <div className="space-y-2">
-          {lists[tab].map((claim, index) => (
+          {displayList.map((claim, index) => (
             <ClaimCard
               key={claim.id}
               claim={claim}
               adminFee={adminFee}
               insuranceFee={insuranceFee}
               onAction={tab === 'pending' ? handleAction : undefined}
-              defaultExpanded={tab === 'pending' && lists[tab].length === 1 && index === 0}
+              defaultExpanded={tab === 'pending' && displayList.length === 1 && index === 0}
             />
           ))}
         </div>

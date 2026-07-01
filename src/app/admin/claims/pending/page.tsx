@@ -3,7 +3,12 @@ import { requireAdminAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import ClaimApprovalList from '../_components/ClaimApprovalList'
 import { dedupeClaimsByForemanPeriod } from '@/lib/claims/dedupe-period-claims'
+import {
+  buildClaimFortnightTabs,
+  defaultWagesPeriodKey,
+} from '@/lib/claims/load-wages-register'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
+import { fetchPayCycleSettings } from '@/lib/fortnight'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,11 +56,14 @@ export default async function PendingClaimsPage() {
   }))
 
   const { adminFee, insuranceFee } = await fetchPayFeeSettings()
+  const payCycleSettings = await fetchPayCycleSettings(supabase)
   const deduped = dedupeClaimsByForemanPeriod(claims ?? [])
 
   const pending  = deduped.filter((c) => c.status === 'pending')
   const approved = deduped.filter((c) => c.status === 'approved')
   const rejected = deduped.filter((c) => c.status === 'rejected')
+  const approvedPeriodTabs = buildClaimFortnightTabs(payCycleSettings, approved)
+  const defaultApprovedPeriodKey = defaultWagesPeriodKey(approvedPeriodTabs)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -90,6 +98,8 @@ export default async function PendingClaimsPage() {
           pending={pending as never}
           approved={approved as never}
           rejected={rejected as never}
+          approvedPeriodTabs={approvedPeriodTabs}
+          defaultApprovedPeriodKey={defaultApprovedPeriodKey}
           adminFee={adminFee}
           insuranceFee={insuranceFee}
         />
