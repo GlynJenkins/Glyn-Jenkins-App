@@ -79,6 +79,7 @@ export async function POST(
         insurance_fee:         pay.insuranceFee,
         custom_deduction:      0,
         cis_tax_deducted:      pay.cisTax,
+        national_insurance:    0,
         net_pay:               pay.net,
       })
 

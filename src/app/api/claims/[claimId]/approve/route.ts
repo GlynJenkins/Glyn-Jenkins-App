@@ -106,6 +106,7 @@ export async function POST(
         custom_deduction:      customDed,
         custom_deduction_note: customReason,
         cis_tax_deducted:      pay.cisTax,
+        national_insurance:    0,
         net_pay:               pay.net,
       })
 

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     ws['!cols'] = [
       { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 12 },
       { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 10 }, { wch: 10 },
+      { wch: 12 }, { wch: 12 }, { wch: 10 },
     ]
 
     const wb = XLSX.utils.book_new()

@@ -15,6 +15,7 @@ export type WagesRegisterRow = {
   customDeduction: number
   fees:            number
   tax:             number
+  nationalInsurance: number
   netPay:          number
   periodStart:     string | null
   periodEnd:       string | null
@@ -30,6 +31,7 @@ type RawLedgerRow = {
   insurance_fee:         number | null
   custom_deduction:      number | null
   cis_tax_deducted:      number | null
+  national_insurance:    number | null
   net_pay:               number | null
   claim_period_id:       string | null
   worker_id:             string
@@ -45,6 +47,19 @@ type RawLedgerRow = {
   }[] | null
 }
 
+export function isApprenticeEmployed(role: string) {
+  return role === 'apprentice'
+}
+
+export function computeRegisterNet(
+  gross: number,
+  fees: number,
+  tax: number,
+  nationalInsurance: number,
+): number {
+  return Math.round((gross - fees - tax - nationalInsurance) * 100) / 100
+}
+
 function compareByName(a: WagesRegisterRow, b: WagesRegisterRow) {
   const s = a.surname.localeCompare(b.surname, undefined, { sensitivity: 'base' })
   if (s !== 0) return s
@@ -58,7 +73,7 @@ export async function loadWagesRegisterRows(
     .from('worker_cis_ledger')
     .select(`
       id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
-      cis_tax_deducted, net_pay, claim_period_id, worker_id,
+      cis_tax_deducted, national_insurance, net_pay, claim_period_id, worker_id,
       workers ( id, first_name, surname, role ),
       claim_periods ( period_start, period_end, foreman_id )
     `)
@@ -95,6 +110,9 @@ export async function loadWagesRegisterRows(
     const insuranceFee = row.insurance_fee ?? 0
     const customDeduction = row.custom_deduction ?? 0
 
+    const tax = row.cis_tax_deducted ?? 0
+    const nationalInsurance = row.national_insurance ?? 0
+
     rows.push({
       id:              row.id,
       workerId:        worker.id,
@@ -110,8 +128,9 @@ export async function loadWagesRegisterRows(
       insuranceFee,
       customDeduction,
       fees:            adminFee + insuranceFee + customDeduction,
-      tax:             row.cis_tax_deducted ?? 0,
-      netPay:          row.net_pay ?? 0,
+      tax,
+      nationalInsurance,
+      netPay:          row.net_pay ?? computeRegisterNet(row.gross_pay ?? 0, adminFee + insuranceFee + customDeduction, tax, nationalInsurance),
       periodStart:     claim?.period_start ?? null,
       periodEnd:       claim?.period_end ?? null,
       dateOfPay:       row.date_of_pay,
@@ -204,19 +223,20 @@ export function wagesRegisterFilterOptions(rows: WagesRegisterRow[]) {
 
 export function wagesRegisterToSheetRows(rows: WagesRegisterRow[]) {
   return rows.map((r) => ({
-    'Name':       `${r.surname}, ${r.firstName}`,
-    'Role':       WAGES_ROLE_LABELS[r.role] ?? r.role,
-    'Foreman':    r.foremanName,
-    'Pay period': formatWagesPeriodLabel(r.periodStart, r.periodEnd),
-    'Paid on':    r.dateOfPay
+    'Name':               `${r.surname}, ${r.firstName}`,
+    'Role':               WAGES_ROLE_LABELS[r.role] ?? r.role,
+    'Foreman':            r.foremanName,
+    'Pay period':         formatWagesPeriodLabel(r.periodStart, r.periodEnd),
+    'Paid on':            r.dateOfPay
       ? new Date(r.dateOfPay).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
       : '',
-    'Gross':      r.grossPay,
-    'Admin fee':  r.adminFee,
-    'Insurance':  r.insuranceFee,
-    'Other fees': r.customDeduction,
-    'Total fees': r.fees,
-    'CIS tax':    r.tax,
-    'Net pay':    r.netPay,
+    'Gross':              r.grossPay,
+    'Admin fee':          r.adminFee,
+    'Insurance':          r.insuranceFee,
+    'Other fees':         r.customDeduction,
+    'Total fees':         r.fees,
+    'Tax / CIS':          r.tax,
+    'National Insurance': isApprenticeEmployed(r.role) ? r.nationalInsurance : '',
+    'Net pay':            r.netPay,
   }))
 }
