@@ -17,8 +17,9 @@ export type FortnightPeriod = {
   upcomingPays:  { date: Date; label: string }[]
 }
 
-const PERIOD_DAYS   = 14
-const GRACE_HOURS   = 24
+const CYCLE_DAYS    = 14  // days between period starts and between pay dates
+const WORK_DAYS     = 13  // days of work in each window (apply day follows)
+const GRACE_HOURS   = 24  // 24h after last work day to submit (the next calendar day)
 
 const DEFAULT_SETTINGS: PayCycleSettings = {
   periodStartAnchor: '2025-06-15',
@@ -89,9 +90,9 @@ type PeriodCore = {
 function buildPeriodCore(index: number, cfg: PayCycleSettings, prevLockTime?: Date): PeriodCore {
   const anchor    = parseLocalDate(cfg.periodStartAnchor)
   const payAnchor = parseLocalDate(cfg.payDayAnchor)
-  const start     = addDays(anchor, index * PERIOD_DAYS)
-  const end       = addDays(start, PERIOD_DAYS - 1)
-  const payDate  = addDays(payAnchor, index * PERIOD_DAYS)
+  const start     = addDays(anchor, index * CYCLE_DAYS)
+  const end       = addDays(start, WORK_DAYS - 1)
+  const payDate  = addDays(payAnchor, index * CYCLE_DAYS)
   const lockTime = addHours(endOfLocalDay(end), GRACE_HOURS)
 
   let effectiveOpen = startOfLocalDay(start)
@@ -110,7 +111,7 @@ function atOrBefore(a: Date, b: Date): boolean {
 function periodIndexForDate(at: Date, cfg: PayCycleSettings): number {
   const anchor = parseLocalDate(cfg.periodStartAnchor)
   const daysSince = daysBetween(anchor, startOfLocalDay(at))
-  return Math.max(0, Math.floor(daysSince / PERIOD_DAYS))
+  return Math.max(0, Math.floor(daysSince / CYCLE_DAYS))
 }
 
 function toFortnightPeriod(
@@ -120,7 +121,7 @@ function toFortnightPeriod(
   opts: { isLocked: boolean; isGracePeriod: boolean }
 ): FortnightPeriod {
   const upcomingPays = [0, 1, 2].map((offset) => {
-    const d = addDays(core.payDate, offset * PERIOD_DAYS)
+    const d = addDays(core.payDate, offset * CYCLE_DAYS)
     return { date: d, label: fmtFull(d) }
   })
 
@@ -139,8 +140,8 @@ function toFortnightPeriod(
 
 /**
  * Which fortnight is open for claim submission right now.
- * Includes a 24-hour grace after the work window ends. During grace, claims still
- * attach to that fortnight — the next period cannot open until grace ends.
+ * Each cycle has 13 work days plus a final apply-by day (24h grace after the last work day).
+ * The next period cannot open until submissions for the previous period have closed.
  */
 export function computeFortnight(at: Date, settings?: PayCycleSettings | null): FortnightPeriod {
   const cfg = settings ?? DEFAULT_SETTINGS

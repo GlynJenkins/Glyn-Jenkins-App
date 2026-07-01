@@ -216,7 +216,7 @@ export default function SettingsForm({
               onChange={(e) => { setPeriodStart(e.target.value); setSuccess(false) }}
               className={inputCls}
             />
-            <p className="text-xs text-slate-400 mt-1">First day of a known 14-day booking window</p>
+            <p className="text-xs text-slate-400 mt-1">First day of a known 13-day work window</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -250,7 +250,7 @@ export default function SettingsForm({
                 {cyclePreview.isLocked
                   ? 'locked now'
                   : cyclePreview.isGracePeriod
-                  ? 'grace period (24h after window ends)'
+                  ? 'apply-by day (day after last work day)'
                   : `${Math.ceil((new Date(cyclePreview.lockTime).getTime() - Date.now()) / 3_600_000)}h remaining`}
               </p>
               <p>
@@ -263,8 +263,8 @@ export default function SettingsForm({
               </p>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Foremen can submit during each 14-day window, plus a 24-hour grace after it ends.
-              The next fortnight cannot open until grace finishes — no overlapping claims.
+              Each cycle is 13 work days plus one apply-by day (e.g. work 15–27 Jun, apply by 28 Jun, paid 3 Jul).
+              The next fortnight opens the day after apply-by closes — no overlapping claims.
             </p>
           </div>
         )}
