@@ -28,8 +28,9 @@ const amountInputClass =
   'w-[4.5rem] px-2 py-1 border border-slate-200 rounded-lg text-xs text-right tabular-nums outline-none focus:ring-2 focus:ring-orange-400'
 
 type Props = {
-  rows:          WagesRegisterRow[]
-  pendingCount?: number
+  rows:               WagesRegisterRow[]
+  pendingCount?:      number
+  niColumnAvailable?: boolean
 }
 
 function parseAmount(value: string) {
@@ -70,7 +71,11 @@ function ApprenticeAmountInput({
   )
 }
 
-export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
+export default function WagesRegisterTable({
+  rows,
+  pendingCount = 0,
+  niColumnAvailable = true,
+}: Props) {
   const router = useRouter()
   const [foremanFilter, setForemanFilter] = useState('all')
   const [roleFilter, setRoleFilter]       = useState('all')
@@ -169,7 +174,7 @@ export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
           <p className="text-xs text-slate-500 mt-1">
             Approved pay from booking in · alphabetical by name
           </p>
-          {hasApprentices && (
+          {hasApprentices && niColumnAvailable && (
             <p className="text-xs text-violet-700 mt-1">
               Apprentices are employed — edit tax and NI from your payroll figures.
             </p>
@@ -319,7 +324,7 @@ export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
                 </tr>
               ) : (
                 filteredRows.map((row) => {
-                  const employed = isApprenticeEmployed(row.role)
+                  const employed = isApprenticeEmployed(row.role) && niColumnAvailable
                   const saving = busyId === row.id
 
                   return (

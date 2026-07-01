@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-import { loadWagesRegisterRows } from '@/lib/claims/load-wages-register'
+import { loadWagesRegisterResult } from '@/lib/claims/load-wages-register'
 import WagesRegisterTable from './_components/WagesRegisterTable'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +11,8 @@ export default async function AdminClaimsPage() {
 
   const supabase = createServiceClient()
 
-  let registerRows: Awaited<ReturnType<typeof loadWagesRegisterRows>> = []
+  let registerRows: Awaited<ReturnType<typeof loadWagesRegisterResult>>['rows'] = []
+  let niColumnAvailable = true
   let error: string | null = null
 
   const { count: pendingCount } = await supabase
@@ -20,7 +21,9 @@ export default async function AdminClaimsPage() {
     .eq('status', 'pending')
 
   try {
-    registerRows = await loadWagesRegisterRows(supabase)
+    const result = await loadWagesRegisterResult(supabase)
+    registerRows = result.rows
+    niColumnAvailable = result.niColumnAvailable
   } catch (err) {
     error = err instanceof Error ? err.message : 'Failed to load wages register.'
   }
@@ -54,6 +57,19 @@ export default async function AdminClaimsPage() {
           </div>
         ) : (
           <>
+            {!niColumnAvailable && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
+                <p className="font-semibold">Database update needed</p>
+                <p className="text-xs mt-1 leading-relaxed">
+                  Run this in Supabase → SQL Editor to enable apprentice NI and editable tax:
+                </p>
+                <pre className="mt-2 text-[11px] bg-white border border-amber-100 rounded-xl p-3 overflow-x-auto">
+{`ALTER TABLE worker_cis_ledger
+  ADD COLUMN IF NOT EXISTS national_insurance NUMERIC(10,2) NOT NULL DEFAULT 0;`}
+                </pre>
+              </div>
+            )}
+
             {registerRows.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="bg-white border border-slate-200 rounded-2xl p-4">
@@ -87,7 +103,11 @@ export default async function AdminClaimsPage() {
               </div>
             )}
 
-            <WagesRegisterTable rows={registerRows} pendingCount={pendingCount ?? 0} />
+            <WagesRegisterTable
+              rows={registerRows}
+              pendingCount={pendingCount ?? 0}
+              niColumnAvailable={niColumnAvailable}
+            />
           </>
         )}
       </div>

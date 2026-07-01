@@ -66,23 +66,55 @@ function compareByName(a: WagesRegisterRow, b: WagesRegisterRow) {
   return a.firstName.localeCompare(b.firstName, undefined, { sensitivity: 'base' })
 }
 
-export async function loadWagesRegisterRows(
+const LEDGER_SELECT_WITH_NI = `
+  id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
+  cis_tax_deducted, national_insurance, net_pay, claim_period_id, worker_id,
+  workers ( id, first_name, surname, role ),
+  claim_periods ( period_start, period_end, foreman_id )
+`
+
+const LEDGER_SELECT_LEGACY = `
+  id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
+  cis_tax_deducted, net_pay, claim_period_id, worker_id,
+  workers ( id, first_name, surname, role ),
+  claim_periods ( period_start, period_end, foreman_id )
+`
+
+function isMissingNationalInsuranceColumn(message: string) {
+  return /national_insurance/i.test(message)
+}
+
+export type WagesRegisterLoadResult = {
+  rows:              WagesRegisterRow[]
+  niColumnAvailable: boolean
+}
+
+export async function loadWagesRegisterResult(
   supabase: SupabaseClient,
-): Promise<WagesRegisterRow[]> {
-  const { data, error } = await supabase
+): Promise<WagesRegisterLoadResult> {
+  let niColumnAvailable = true
+  let rawRows: RawLedgerRow[] = []
+
+  const primary = await supabase
     .from('worker_cis_ledger')
-    .select(`
-      id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
-      cis_tax_deducted, national_insurance, net_pay, claim_period_id, worker_id,
-      workers ( id, first_name, surname, role ),
-      claim_periods ( period_start, period_end, foreman_id )
-    `)
+    .select(LEDGER_SELECT_WITH_NI)
     .order('date_of_pay', { ascending: false })
 
-  if (error) throw new Error(error.message)
+  if (primary.error && isMissingNationalInsuranceColumn(primary.error.message)) {
+    niColumnAvailable = false
+    const retry = await supabase
+      .from('worker_cis_ledger')
+      .select(LEDGER_SELECT_LEGACY)
+      .order('date_of_pay', { ascending: false })
+    if (retry.error) throw new Error(retry.error.message)
+    rawRows = (retry.data ?? []) as RawLedgerRow[]
+  } else {
+    if (primary.error) throw new Error(primary.error.message)
+    rawRows = (primary.data ?? []) as RawLedgerRow[]
+  }
 
   const foremanIds = new Set<string>()
-  for (const row of (data ?? []) as RawLedgerRow[]) {
+  for (const row of rawRows) {
     const claim = relationOne(row.claim_periods)
     if (claim?.foreman_id) foremanIds.add(claim.foreman_id)
   }
@@ -101,7 +133,7 @@ export async function loadWagesRegisterRows(
 
   const rows: WagesRegisterRow[] = []
 
-  for (const row of (data ?? []) as RawLedgerRow[]) {
+  for (const row of rawRows) {
     const worker = relationOne(row.workers)
     if (!worker) continue
 
@@ -109,9 +141,9 @@ export async function loadWagesRegisterRows(
     const adminFee = row.admin_fee ?? 0
     const insuranceFee = row.insurance_fee ?? 0
     const customDeduction = row.custom_deduction ?? 0
-
     const tax = row.cis_tax_deducted ?? 0
     const nationalInsurance = row.national_insurance ?? 0
+    const fees = adminFee + insuranceFee + customDeduction
 
     rows.push({
       id:              row.id,
@@ -127,10 +159,10 @@ export async function loadWagesRegisterRows(
       adminFee,
       insuranceFee,
       customDeduction,
-      fees:            adminFee + insuranceFee + customDeduction,
+      fees,
       tax,
       nationalInsurance,
-      netPay:          row.net_pay ?? computeRegisterNet(row.gross_pay ?? 0, adminFee + insuranceFee + customDeduction, tax, nationalInsurance),
+      netPay:          row.net_pay ?? computeRegisterNet(row.gross_pay ?? 0, fees, tax, nationalInsurance),
       periodStart:     claim?.period_start ?? null,
       periodEnd:       claim?.period_end ?? null,
       dateOfPay:       row.date_of_pay,
@@ -139,6 +171,13 @@ export async function loadWagesRegisterRows(
   }
 
   rows.sort(compareByName)
+  return { rows, niColumnAvailable }
+}
+
+export async function loadWagesRegisterRows(
+  supabase: SupabaseClient,
+): Promise<WagesRegisterRow[]> {
+  const { rows } = await loadWagesRegisterResult(supabase)
   return rows
 }
 
