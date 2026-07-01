@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import Link from 'next/link'
-import NewAdminVariationForm from './_components/NewAdminVariationForm'
+import { Plus } from 'lucide-react'
 import VariationList from './_components/VariationList'
 import VariationRegisterTable from './_components/VariationRegisterTable'
 import { relationOne } from '@/lib/supabase/normalize-relations'
@@ -54,30 +54,6 @@ export default async function AdminVariationsPage() {
     variationRows = (legacy ?? []) as VariationRow[]
   }
 
-  const { data: activeSites } = await supabase
-    .from('sites')
-    .select('id, name')
-    .eq('is_active', true)
-    .order('name')
-
-  const { data: foremen } = await supabase
-    .from('workers')
-    .select('id, first_name, surname')
-    .eq('role', 'foreman')
-    .eq('status', 'active')
-    .order('surname')
-
-  const { data: siteWorkers } = await supabase
-    .from('workers')
-    .select('id, first_name, surname, role')
-    .in('role', ['bricklayer', 'labourer', 'apprentice'])
-    .eq('status', 'active')
-    .order('surname')
-
-  const { data: siteForemanAssignments } = await supabase
-    .from('foreman_site_assignments')
-    .select('site_id, foreman_id')
-
   const supabaseClient = createServiceClient()
   const variationsWithUrls = await Promise.all(
     variationRows.map(async (v) => {
@@ -118,26 +94,36 @@ export default async function AdminVariationsPage() {
             </p>
             <h1 className="text-xl font-bold text-white">Variations</h1>
             <p className="text-slate-400 text-xs mt-1">
-              Create · approve · VO register
+              Approve foreman submissions · VO register
             </p>
           </div>
-          <Link
-            href="/admin"
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            ← Admin
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/admin/variations/create"
+              className="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-xl transition-colors flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Create</span>
+            </Link>
+            <Link
+              href="/admin"
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-xl transition-colors"
+            >
+              ← Admin
+            </Link>
+          </div>
         </div>
       </header>
 
       <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-6">
 
-        <NewAdminVariationForm
-          sites={activeSites ?? []}
-          foremen={foremen ?? []}
-          workers={siteWorkers ?? []}
-          siteForemanAssignments={siteForemanAssignments ?? []}
-        />
+        <Link
+          href="/admin/variations/create"
+          className="sm:hidden flex items-center justify-center gap-2 w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold rounded-xl transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Create variation
+        </Link>
 
         {pendingCount > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
