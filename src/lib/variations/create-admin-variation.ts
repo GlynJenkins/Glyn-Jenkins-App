@@ -3,6 +3,9 @@ import { VARIATION_RATES } from '@/lib/variations/rates'
 
 const ALLOWED_ROLES = Object.keys(VARIATION_RATES)
 
+/** DB requires worker_role NOT NULL; lump-sum rows use a placeholder (UI uses is_lump_sum). */
+const LUMP_SUM_PLACEHOLDER_ROLE = 'labourer'
+
 export type AdminVariationWorkerInput = {
   workerId: string
   workerRole: string
@@ -47,7 +50,7 @@ export async function createAdminVariation(input: CreateAdminVariationInput) {
     records = [{
       ...base,
       worker_id:     null,
-      worker_role:   null,
+      worker_role:   LUMP_SUM_PLACEHOLDER_ROLE,
       hours:         1,
       rate_per_hour: amount,
       is_lump_sum:   true,
