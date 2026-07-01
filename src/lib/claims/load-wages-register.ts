@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { relationOne } from '@/lib/supabase/normalize-relations'
+import {
+  listFortnightOptions,
+  toLocalDateString,
+  type PayCycleSettings,
+} from '@/lib/fortnight'
 
 export type WagesRegisterRow = {
   id:              string
@@ -192,9 +197,73 @@ export const WAGES_ROLE_LABELS: Record<string, string> = {
 }
 
 export function wagesRegisterPeriodKey(row: WagesRegisterRow): string {
-  if (row.claimPeriodId) return row.claimPeriodId
   if (row.periodStart && row.periodEnd) return `${row.periodStart}|${row.periodEnd}`
+  if (row.claimPeriodId) return row.claimPeriodId
   return 'unknown'
+}
+
+export function rowMatchesPeriodKey(row: WagesRegisterRow, periodKey: string): boolean {
+  if (periodKey === 'all') return true
+  return wagesRegisterPeriodKey(row) === periodKey
+}
+
+export type WagesFortnightTab = {
+  key:       string
+  start:     string
+  end:       string
+  label:     string
+  periodEnd: string
+  rowCount:  number
+}
+
+export function buildWagesFortnightTabs(
+  settings: PayCycleSettings | null,
+  rows: WagesRegisterRow[],
+  at = new Date(),
+  count = 52,
+): WagesFortnightTab[] {
+  const tabMap = new Map<string, WagesFortnightTab>()
+
+  for (const period of listFortnightOptions(count, settings, at)) {
+    const start = toLocalDateString(period.start)
+    const end = toLocalDateString(period.end)
+    const key = `${start}|${end}`
+    tabMap.set(key, {
+      key,
+      start,
+      end,
+      label:     formatWagesPeriodLabel(start, end),
+      periodEnd: end,
+      rowCount:  0,
+    })
+  }
+
+  for (const row of rows) {
+    if (!row.periodStart || !row.periodEnd) continue
+    const key = `${row.periodStart}|${row.periodEnd}`
+    if (!tabMap.has(key)) {
+      tabMap.set(key, {
+        key,
+        start:     row.periodStart,
+        end:       row.periodEnd,
+        label:     formatWagesPeriodLabel(row.periodStart, row.periodEnd),
+        periodEnd: row.periodEnd,
+        rowCount:  0,
+      })
+    }
+  }
+
+  for (const row of rows) {
+    const key = wagesRegisterPeriodKey(row)
+    const tab = tabMap.get(key)
+    if (tab) tab.rowCount += 1
+  }
+
+  return Array.from(tabMap.values()).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))
+}
+
+export function defaultWagesPeriodKey(tabs: WagesFortnightTab[]): string {
+  return tabs[0]?.key ?? 'all'
 }
 
 export function formatWagesPeriodLabel(start: string | null, end: string | null): string {
@@ -222,7 +291,7 @@ export function filterWagesRegisterRows(
     result = result.filter((r) => r.role === filters.role)
   }
   if (filters.periodKey) {
-    result = result.filter((r) => wagesRegisterPeriodKey(r) === filters.periodKey)
+    result = result.filter((r) => rowMatchesPeriodKey(r, filters.periodKey!))
   }
   return result
 }
@@ -239,11 +308,11 @@ export function wagesRegisterFilterOptions(rows: WagesRegisterRow[]) {
     if (row.role) roles.add(row.role)
 
     const key = wagesRegisterPeriodKey(row)
-    if (!periods.has(key)) {
+    if (!periods.has(key) && row.periodStart && row.periodEnd) {
       periods.set(key, {
         key,
         label:     formatWagesPeriodLabel(row.periodStart, row.periodEnd),
-        periodEnd: row.periodEnd ?? '',
+        periodEnd: row.periodEnd,
       })
     }
   }

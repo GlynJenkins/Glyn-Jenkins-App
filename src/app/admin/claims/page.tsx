@@ -1,7 +1,12 @@
 import Link from 'next/link'
 import { requireAdminAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-import { loadWagesRegisterResult } from '@/lib/claims/load-wages-register'
+import {
+  buildWagesFortnightTabs,
+  defaultWagesPeriodKey,
+  loadWagesRegisterResult,
+} from '@/lib/claims/load-wages-register'
+import { fetchPayCycleSettings } from '@/lib/fortnight'
 import WagesRegisterTable from './_components/WagesRegisterTable'
 
 export const dynamic = 'force-dynamic'
@@ -14,6 +19,8 @@ export default async function AdminClaimsPage() {
   let registerRows: Awaited<ReturnType<typeof loadWagesRegisterResult>>['rows'] = []
   let niColumnAvailable = true
   let error: string | null = null
+  let periodTabs: ReturnType<typeof buildWagesFortnightTabs> = []
+  let defaultPeriodKey = 'all'
 
   const { count: pendingCount } = await supabase
     .from('claim_periods')
@@ -21,14 +28,17 @@ export default async function AdminClaimsPage() {
     .eq('status', 'pending')
 
   try {
-    const result = await loadWagesRegisterResult(supabase)
+    const [result, payCycleSettings] = await Promise.all([
+      loadWagesRegisterResult(supabase),
+      fetchPayCycleSettings(supabase),
+    ])
     registerRows = result.rows
     niColumnAvailable = result.niColumnAvailable
+    periodTabs = buildWagesFortnightTabs(payCycleSettings, registerRows)
+    defaultPeriodKey = defaultWagesPeriodKey(periodTabs)
   } catch (err) {
     error = err instanceof Error ? err.message : 'Failed to load wages register.'
   }
-
-  const registerTotal = registerRows.reduce((sum, r) => sum + r.netPay, 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -70,41 +80,25 @@ export default async function AdminClaimsPage() {
               </div>
             )}
 
-            {registerRows.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                  <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
-                    Payments
-                  </p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1">{registerRows.length}</p>
-                </div>
-                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 col-span-2 sm:col-span-1">
-                  <p className="text-xs text-orange-700 uppercase tracking-wide font-medium">
-                    Total net paid
-                  </p>
-                  <p className="text-2xl font-bold text-orange-900 mt-1">
-                    {'£' + registerTotal.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                  </p>
-                </div>
-                {(pendingCount ?? 0) > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 col-span-2 sm:col-span-1">
-                    <p className="text-xs text-amber-700 uppercase tracking-wide font-medium">
-                      Awaiting approval
-                    </p>
-                    <p className="text-2xl font-bold text-amber-900 mt-1">{pendingCount}</p>
-                    <Link
-                      href="/admin/claims/pending"
-                      className="text-xs text-amber-700 underline mt-1 inline-block"
-                    >
-                      Review pending claims →
-                    </Link>
-                  </div>
-                )}
+            {(pendingCount ?? 0) > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <p className="text-xs text-amber-700 uppercase tracking-wide font-medium">
+                  Awaiting approval
+                </p>
+                <p className="text-2xl font-bold text-amber-900 mt-1">{pendingCount}</p>
+                <Link
+                  href="/admin/claims/pending"
+                  className="text-xs text-amber-700 underline mt-1 inline-block"
+                >
+                  Review pending claims →
+                </Link>
               </div>
             )}
 
             <WagesRegisterTable
               rows={registerRows}
+              periodTabs={periodTabs}
+              defaultPeriodKey={defaultPeriodKey}
               pendingCount={pendingCount ?? 0}
               niColumnAvailable={niColumnAvailable}
             />

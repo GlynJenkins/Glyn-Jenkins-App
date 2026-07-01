@@ -11,6 +11,7 @@ import {
   isApprenticeEmployed,
   wagesRegisterFilterOptions,
   WAGES_ROLE_LABELS,
+  type WagesFortnightTab,
   type WagesRegisterRow,
 } from '@/lib/claims/load-wages-register'
 
@@ -29,6 +30,8 @@ const amountInputClass =
 
 type Props = {
   rows:               WagesRegisterRow[]
+  periodTabs:         WagesFortnightTab[]
+  defaultPeriodKey:   string
   pendingCount?:      number
   niColumnAvailable?: boolean
 }
@@ -73,13 +76,15 @@ function ApprenticeAmountInput({
 
 export default function WagesRegisterTable({
   rows,
+  periodTabs,
+  defaultPeriodKey,
   pendingCount = 0,
   niColumnAvailable = true,
 }: Props) {
   const router = useRouter()
   const [foremanFilter, setForemanFilter] = useState('all')
   const [roleFilter, setRoleFilter]       = useState('all')
-  const [periodFilter, setPeriodFilter]   = useState('all')
+  const [periodFilter, setPeriodFilter]   = useState(defaultPeriodKey)
   const [localRows, setLocalRows]         = useState(rows)
   const [error, setError]                 = useState<string | null>(null)
   const [busyId, setBusyId]               = useState<string | null>(null)
@@ -89,16 +94,36 @@ export default function WagesRegisterTable({
     setLocalRows(rows)
   }, [rows])
 
-  const { foremen, roles, periods } = useMemo(() => wagesRegisterFilterOptions(localRows), [localRows])
+  useEffect(() => {
+    setPeriodFilter(defaultPeriodKey)
+  }, [defaultPeriodKey])
+
+  const periodRows = useMemo(
+    () =>
+      filterWagesRegisterRows(localRows, {
+        periodKey: periodFilter !== 'all' ? periodFilter : undefined,
+      }),
+    [localRows, periodFilter],
+  )
+
+  const { foremen, roles } = useMemo(
+    () => wagesRegisterFilterOptions(periodRows),
+    [periodRows],
+  )
+
+  useEffect(() => {
+    if (foremanFilter !== 'all' && !foremen.some((f) => f.id === foremanFilter)) {
+      setForemanFilter('all')
+    }
+  }, [foremanFilter, foremen])
 
   const filteredRows = useMemo(
     () =>
-      filterWagesRegisterRows(localRows, {
+      filterWagesRegisterRows(periodRows, {
         foremanId: foremanFilter !== 'all' ? foremanFilter : undefined,
         role:      roleFilter !== 'all' ? roleFilter : undefined,
-        periodKey: periodFilter !== 'all' ? periodFilter : undefined,
       }),
-    [localRows, foremanFilter, roleFilter, periodFilter],
+    [periodRows, foremanFilter, roleFilter],
   )
 
   const totals = useMemo(
@@ -116,8 +141,14 @@ export default function WagesRegisterTable({
     [filteredRows],
   )
 
-  const hasFilters = foremanFilter !== 'all' || roleFilter !== 'all' || periodFilter !== 'all'
-  const hasApprentices = localRows.some((r) => isApprenticeEmployed(r.role))
+  const hasFilters =
+    foremanFilter !== 'all' ||
+    roleFilter !== 'all' ||
+    periodFilter !== defaultPeriodKey
+  const hasApprentices = periodRows.some((r) => isApprenticeEmployed(r.role))
+  const activePeriodLabel =
+    periodTabs.find((p) => p.key === periodFilter)?.label ??
+    (periodFilter === 'all' ? 'All periods' : formatWagesPeriodLabel(null, null))
 
   const exportUrl = useMemo(() => {
     const params = new URLSearchParams()
@@ -172,7 +203,7 @@ export default function WagesRegisterTable({
             Wages register
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Approved pay from booking in · alphabetical by name
+            Approved pay from booking in · {activePeriodLabel}
           </p>
           {hasApprentices && niColumnAvailable && (
             <p className="text-xs text-violet-700 mt-1">
@@ -211,72 +242,128 @@ export default function WagesRegisterTable({
         </p>
       )}
 
-      {localRows.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <label className="block">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
+      {(localRows.length > 0 || periodTabs.length > 0) && (
+        <div className="space-y-3">
+          <div>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5 block">
               Pay period
             </span>
-            <select
-              value={periodFilter}
-              onChange={(e) => setPeriodFilter(e.target.value)}
-              className={selectClass}
-            >
-              <option value="all">All periods</option>
-              {periods.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+              {periodTabs.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => {
+                    setPeriodFilter(p.key)
+                    setForemanFilter('all')
+                    setRoleFilter('all')
+                  }}
+                  className={`shrink-0 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+                    periodFilter === p.key
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {p.label}
+                  {p.rowCount > 0 && (
+                    <span
+                      className={`ml-1.5 tabular-nums ${
+                        periodFilter === p.key ? 'text-orange-300' : 'text-slate-400'
+                      }`}
+                    >
+                      ({p.rowCount})
+                    </span>
+                  )}
+                </button>
               ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
-              Foreman gang
-            </span>
-            <select
-              value={foremanFilter}
-              onChange={(e) => setForemanFilter(e.target.value)}
-              className={selectClass}
-            >
-              <option value="all">All foremen</option>
-              {foremen.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
-              Job role
-            </span>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className={selectClass}
-            >
-              <option value="all">All roles</option>
-              {roles.map((r) => (
-                <option key={r.role} value={r.role}>{r.label}</option>
-              ))}
-            </select>
-          </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodFilter('all')
+                  setForemanFilter('all')
+                  setRoleFilter('all')
+                }}
+                className={`shrink-0 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+                  periodFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                All periods
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
+                Foreman gang
+              </span>
+              <select
+                value={foremanFilter}
+                onChange={(e) => setForemanFilter(e.target.value)}
+                className={selectClass}
+              >
+                <option value="all">All foremen</option>
+                {foremen.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
+                Job role
+              </span>
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className={selectClass}
+              >
+                <option value="all">All roles</option>
+                {roles.map((r) => (
+                  <option key={r.role} value={r.role}>{r.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       )}
 
       {hasFilters && (
         <p className="text-xs text-slate-500">
-          Showing {filteredRows.length} of {localRows.length} payment{localRows.length !== 1 ? 's' : ''}
+          Showing {filteredRows.length} of {periodRows.length} payment{periodRows.length !== 1 ? 's' : ''} this period
           {' · '}
           <button
             type="button"
             onClick={() => {
               setForemanFilter('all')
               setRoleFilter('all')
-              setPeriodFilter('all')
+              setPeriodFilter(defaultPeriodKey)
             }}
             className="text-orange-600 underline"
           >
             Clear filters
           </button>
         </p>
+      )}
+
+      {(localRows.length > 0 || periodTabs.length > 0) && filteredRows.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+              Payments
+            </p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">{filteredRows.length}</p>
+          </div>
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4">
+            <p className="text-xs text-orange-700 uppercase tracking-wide font-medium">
+              Total net paid
+            </p>
+            <p className="text-2xl font-bold text-orange-900 mt-1">
+              {'£' + totals.net.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </p>
+          </div>
+        </div>
       )}
 
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
@@ -319,7 +406,9 @@ export default function WagesRegisterTable({
                   <td colSpan={9} className="px-4 py-10 text-center text-slate-400 text-sm">
                     {localRows.length === 0
                       ? 'No approved wages yet. Approve a booking-in claim to add entries here.'
-                      : 'No payments match these filters.'}
+                      : periodRows.length === 0
+                        ? 'No payments for this fortnight.'
+                        : 'No payments match these filters.'}
                   </td>
                 </tr>
               ) : (
