@@ -28,19 +28,19 @@ type Props = {
 
 export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
   const [foremanFilter, setForemanFilter] = useState('all')
-  const [workerFilter, setWorkerFilter]   = useState('all')
+  const [roleFilter, setRoleFilter]       = useState('all')
   const [periodFilter, setPeriodFilter]   = useState('all')
 
-  const { foremen, workers, periods } = useMemo(() => wagesRegisterFilterOptions(rows), [rows])
+  const { foremen, roles, periods } = useMemo(() => wagesRegisterFilterOptions(rows), [rows])
 
   const filteredRows = useMemo(
     () =>
       filterWagesRegisterRows(rows, {
         foremanId: foremanFilter !== 'all' ? foremanFilter : undefined,
-        workerId:  workerFilter !== 'all' ? workerFilter : undefined,
+        role:      roleFilter !== 'all' ? roleFilter : undefined,
         periodKey: periodFilter !== 'all' ? periodFilter : undefined,
       }),
-    [rows, foremanFilter, workerFilter, periodFilter],
+    [rows, foremanFilter, roleFilter, periodFilter],
   )
 
   const totals = useMemo(
@@ -57,16 +57,16 @@ export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
     [filteredRows],
   )
 
-  const hasFilters = foremanFilter !== 'all' || workerFilter !== 'all' || periodFilter !== 'all'
+  const hasFilters = foremanFilter !== 'all' || roleFilter !== 'all' || periodFilter !== 'all'
 
   const exportUrl = useMemo(() => {
     const params = new URLSearchParams()
     if (foremanFilter !== 'all') params.set('foreman', foremanFilter)
-    if (workerFilter !== 'all') params.set('worker', workerFilter)
+    if (roleFilter !== 'all') params.set('role', roleFilter)
     if (periodFilter !== 'all') params.set('period', periodFilter)
     const qs = params.toString()
     return `/api/admin/claims/export${qs ? `?${qs}` : ''}`
-  }, [foremanFilter, workerFilter, periodFilter])
+  }, [foremanFilter, roleFilter, periodFilter])
 
   return (
     <div className="space-y-4">
@@ -138,16 +138,16 @@ export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
           </label>
           <label className="block">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1 block">
-              Individual
+              Job role
             </span>
             <select
-              value={workerFilter}
-              onChange={(e) => setWorkerFilter(e.target.value)}
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
               className={selectClass}
             >
-              <option value="all">All workers</option>
-              {workers.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
+              <option value="all">All roles</option>
+              {roles.map((r) => (
+                <option key={r.role} value={r.role}>{r.label}</option>
               ))}
             </select>
           </label>
@@ -162,7 +162,7 @@ export default function WagesRegisterTable({ rows, pendingCount = 0 }: Props) {
             type="button"
             onClick={() => {
               setForemanFilter('all')
-              setWorkerFilter('all')
+              setRoleFilter('all')
               setPeriodFilter('all')
             }}
             className="text-orange-600 underline"

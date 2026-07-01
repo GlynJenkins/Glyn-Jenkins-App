@@ -18,12 +18,12 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const foremanId = searchParams.get('foreman') ?? undefined
-    const workerId  = searchParams.get('worker') ?? undefined
+    const role      = searchParams.get('role') ?? undefined
     const periodKey = searchParams.get('period') ?? undefined
 
     const supabase = createServiceClient()
     const allRows = await loadWagesRegisterRows(supabase)
-    const rows = filterWagesRegisterRows(allRows, { foremanId, workerId, periodKey })
+    const rows = filterWagesRegisterRows(allRows, { foremanId, role, periodKey })
 
     const sheetRows = wagesRegisterToSheetRows(rows)
     const ws = XLSX.utils.json_to_sheet(sheetRows)

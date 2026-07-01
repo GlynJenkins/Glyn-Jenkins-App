@@ -45,10 +45,6 @@ type RawLedgerRow = {
   }[] | null
 }
 
-function workerName(first: string, surname: string) {
-  return `${surname}, ${first}`
-}
-
 function compareByName(a: WagesRegisterRow, b: WagesRegisterRow) {
   const s = a.surname.localeCompare(b.surname, undefined, { sensitivity: 'base' })
   if (s !== 0) return s
@@ -152,7 +148,7 @@ export function formatWagesPeriodLabel(start: string | null, end: string | null)
 
 export type WagesRegisterFilters = {
   foremanId?: string
-  workerId?:  string
+  role?:      string
   periodKey?: string
 }
 
@@ -164,8 +160,8 @@ export function filterWagesRegisterRows(
   if (filters.foremanId) {
     result = result.filter((r) => r.foremanId === filters.foremanId)
   }
-  if (filters.workerId) {
-    result = result.filter((r) => r.workerId === filters.workerId)
+  if (filters.role) {
+    result = result.filter((r) => r.role === filters.role)
   }
   if (filters.periodKey) {
     result = result.filter((r) => wagesRegisterPeriodKey(r) === filters.periodKey)
@@ -175,14 +171,14 @@ export function filterWagesRegisterRows(
 
 export function wagesRegisterFilterOptions(rows: WagesRegisterRow[]) {
   const foremen = new Map<string, string>()
-  const workers = new Map<string, string>()
+  const roles = new Set<string>()
   const periods = new Map<string, { key: string; label: string; periodEnd: string }>()
 
   for (const row of rows) {
     if (row.foremanId) {
       foremen.set(row.foremanId, row.foremanName)
     }
-    workers.set(row.workerId, workerName(row.firstName, row.surname))
+    if (row.role) roles.add(row.role)
 
     const key = wagesRegisterPeriodKey(row)
     if (!periods.has(key)) {
@@ -198,9 +194,9 @@ export function wagesRegisterFilterOptions(rows: WagesRegisterRow[]) {
     foremen: Array.from(foremen.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    workers: Array.from(workers.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    roles: Array.from(roles)
+      .map((role) => ({ role, label: WAGES_ROLE_LABELS[role] ?? role }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
     periods: Array.from(periods.values())
       .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)),
   }
