@@ -42,6 +42,7 @@ export default async function WorkerProfilePage({
       id, date_of_pay, gross_pay, cis_tax_deducted,
       admin_fee, insurance_fee, custom_deduction, custom_deduction_note,
       net_pay, claim_period_id,
+      sites ( name ),
       claim_periods ( period_start, period_end, sites ( name ) )
     `)
     .eq('worker_id', workerId)
@@ -51,6 +52,7 @@ export default async function WorkerProfilePage({
     const claimPeriod = relationOne(entry.claim_periods)
     return {
       ...entry,
+      sites: relationOne(entry.sites),
       claim_periods: claimPeriod
         ? {
             period_start: claimPeriod.period_start,

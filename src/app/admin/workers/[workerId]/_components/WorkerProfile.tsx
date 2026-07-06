@@ -22,11 +22,18 @@ export type LedgerEntry = {
   custom_deduction_note: string | null
   net_pay:               number
   claim_period_id:       string
+  sites:                 { name: string } | null
   claim_periods: {
     period_start: string
     period_end:   string
     sites:        { name: string } | null
   } | null
+}
+
+function ledgerSiteName(entry: LedgerEntry): string {
+  return entry.sites?.name
+    ?? entry.claim_periods?.sites?.name
+    ?? 'Glyn Jenkins LTD'
 }
 
 type Worker = {
@@ -107,7 +114,7 @@ function printStatement(worker: Worker, entries: LedgerEntry[]) {
       (e) => `
       <tr>
         <td>${fmtDate(e.date_of_pay)}</td>
-        <td>${e.claim_periods?.sites?.name ?? '—'}</td>
+        <td>${ledgerSiteName(e)}</td>
         <td>${fmt(e.gross_pay)}</td>
         <td>${fmt(e.cis_tax_deducted)}</td>
         <td>${fmt((e.admin_fee ?? 0) + (e.insurance_fee ?? 0) + (e.custom_deduction ?? 0))}</td>
@@ -184,7 +191,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-800 truncate">
-              {entry.claim_periods?.sites?.name ?? 'Unknown site'}
+              {ledgerSiteName(entry)}
             </p>
             <p className="text-xs text-slate-400">{fmtDate(entry.date_of_pay)}</p>
           </div>
