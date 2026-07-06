@@ -10,7 +10,6 @@ import {
   buildPayrollCsvRows,
   payrollCsvContent,
   payrollExportFilename,
-  type WorkerBankDetails,
 } from '@/lib/claims/payroll-csv'
 
 export const dynamic = 'force-dynamic'
@@ -29,26 +28,15 @@ export async function GET(request: NextRequest) {
     const allRows = await loadWagesRegisterRows(supabase)
     const rows = filterWagesRegisterRows(allRows, { foremanId, role, periodKey })
 
-    const workerIds = [...new Set(rows.map((r) => r.workerId))]
-    const bankByWorkerId = new Map<string, WorkerBankDetails>()
+    const result = buildPayrollCsvRows(rows)
 
-    if (workerIds.length > 0) {
-      const { data: workers, error } = await supabase
-        .from('workers')
-        .select('id, bank_sort_code, bank_account_number')
-        .in('id', workerIds)
-
-      if (error) throw new Error(error.message)
-
-      for (const w of workers ?? []) {
-        bankByWorkerId.set(w.id, {
-          sortCode:      w.bank_sort_code ?? null,
-          accountNumber: w.bank_account_number ?? null,
-        })
-      }
+    if (result.rows.length === 0) {
+      return NextResponse.json(
+        { error: 'No approved payments match these filters. Approve a claim first, or try a different fortnight.' },
+        { status: 404 },
+      )
     }
 
-    const result = buildPayrollCsvRows(rows, bankByWorkerId)
     const csv = payrollCsvContent(result)
 
     let periodEnd: string | null = null
@@ -63,9 +51,6 @@ export async function GET(request: NextRequest) {
     }
 
     const filename = payrollExportFilename(periodEnd)
-    const skippedNote = result.skipped.length > 0
-      ? `; ${result.skipped.length} worker(s) skipped (missing bank details or zero pay)`
-      : ''
 
     return new NextResponse(csv, {
       status: 200,
@@ -74,9 +59,9 @@ export async function GET(request: NextRequest) {
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Cache-Control':       'no-store',
         'X-Payroll-Rows':      String(result.rows.length),
-        'X-Payroll-Skipped':   String(result.skipped.length),
+        'X-Payroll-Bank-Ready': String(result.bankReadyCount),
+        'X-Payroll-Needs-Bank': String(result.needsBankCount),
         'X-Payroll-Total-Net': result.totalNet.toFixed(2),
-        'X-Payroll-Note':      `Bank transfer CSV for online banking import${skippedNote}`,
       },
     })
   } catch (err) {

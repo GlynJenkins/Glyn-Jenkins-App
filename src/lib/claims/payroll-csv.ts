@@ -11,18 +11,15 @@ export type PayrollCsvRow = {
   accountNumber: string
   amount:        number
   reference:     string
-}
-
-export type PayrollCsvSkipped = {
-  workerId: string
-  payee:    string
-  reason:   string
+  bankReady:     boolean
+  note:          string
 }
 
 export type PayrollCsvBuildResult = {
-  rows:     PayrollCsvRow[]
-  skipped:  PayrollCsvSkipped[]
-  totalNet: number
+  rows:          PayrollCsvRow[]
+  bankReadyCount: number
+  needsBankCount: number
+  totalNet:      number
 }
 
 const REFERENCE_MAX = 18
@@ -43,17 +40,18 @@ function payrollReference(row: WagesRegisterRow): string {
   return ref.length > REFERENCE_MAX ? ref.slice(0, REFERENCE_MAX) : ref
 }
 
-function normalizeSortCode(raw: string | null): string | null {
+export function normalizeSortCode(raw: string | null | undefined): string | null {
   if (!raw) return null
   const digits = raw.replace(/\D/g, '')
   if (digits.length !== 6) return null
   return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`
 }
 
-function normalizeAccountNumber(raw: string | null): string | null {
+export function normalizeAccountNumber(raw: string | null | undefined): string | null {
   if (!raw) return null
   const digits = raw.replace(/\D/g, '')
-  return digits.length === 8 ? digits : null
+  if (digits.length < 6 || digits.length > 8) return null
+  return digits.padStart(8, '0')
 }
 
 type AggregatedPayment = {
@@ -95,62 +93,62 @@ function referenceForAggregate(entry: AggregatedPayment): string {
 
 export function buildPayrollCsvRows(
   registerRows: WagesRegisterRow[],
-  bankByWorkerId: Map<string, WorkerBankDetails>,
 ): PayrollCsvBuildResult {
   const payments = aggregatePaymentsByWorker(registerRows)
   const rows: PayrollCsvRow[] = []
-  const skipped: PayrollCsvSkipped[] = []
+  let bankReadyCount = 0
+  let needsBankCount = 0
   let totalNet = 0
 
   for (const entry of payments) {
     const payee = payeeName(entry.row)
-    const bank = bankByWorkerId.get(entry.row.workerId)
-    const sortCode = normalizeSortCode(bank?.sortCode ?? null)
-    const accountNumber = normalizeAccountNumber(bank?.accountNumber ?? null)
+    const sortCode = entry.row.payeeSortCode
+    const accountNumber = entry.row.payeeAccountNumber
     const amount = Math.round(entry.netPay * 100) / 100
+    const bankReady = !!sortCode && !!accountNumber && amount > 0
 
-    if (!sortCode || !accountNumber) {
-      skipped.push({
-        workerId: entry.row.workerId,
-        payee,
-        reason:   'Missing or invalid bank details',
-      })
-      continue
-    }
-
+    let note = ''
     if (amount <= 0) {
-      skipped.push({
-        workerId: entry.row.workerId,
-        payee,
-        reason:   'Net pay is zero',
-      })
-      continue
+      note = 'Zero net pay'
+    } else if (!sortCode || !accountNumber) {
+      note = 'No bank details on registration — worker must complete /induction'
+      needsBankCount += 1
+    } else {
+      bankReadyCount += 1
     }
 
     rows.push({
       payee,
-      sortCode,
-      accountNumber,
+      sortCode:      sortCode ?? '',
+      accountNumber: accountNumber ?? '',
       amount,
-      reference: referenceForAggregate(entry),
+      reference:     referenceForAggregate(entry),
+      bankReady,
+      note,
     })
     totalNet += amount
   }
 
   totalNet = Math.round(totalNet * 100) / 100
-  return { rows, skipped, totalNet }
+  return { rows, bankReadyCount, needsBankCount, totalNet }
 }
 
 export function payrollCsvContent(result: PayrollCsvBuildResult): string {
   const lines = [
-    ['Payee', 'Sort Code', 'Account Number', 'Amount', 'Reference'].map(csvCell).join(','),
+    ['Payee', 'Sort Code', 'Account Number', 'Amount', 'Reference', 'Note'].map(csvCell).join(','),
     ...result.rows.map((r) =>
-      [r.payee, r.sortCode, r.accountNumber, r.amount.toFixed(2), r.reference]
-        .map(csvCell)
-        .join(','),
+      [
+        r.payee,
+        r.sortCode,
+        r.accountNumber,
+        r.amount.toFixed(2),
+        r.reference,
+        r.note,
+      ].map(csvCell).join(','),
     ),
   ]
-  return lines.join('\r\n') + '\r\n'
+  // UTF-8 BOM helps Numbers/Excel open comma-separated columns correctly.
+  return '\uFEFF' + lines.join('\r\n') + '\r\n'
 }
 
 export function payrollExportFilename(periodEnd?: string | null): string {

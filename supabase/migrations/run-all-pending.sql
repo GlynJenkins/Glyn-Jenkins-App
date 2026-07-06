@@ -126,3 +126,32 @@ ALTER TABLE variation_developer_submissions
 
 ALTER TABLE variation_developer_submissions
   ADD COLUMN IF NOT EXISTS agreed_at timestamptz;
+
+-- 8. Worker bank columns (from registration) + payee snapshot on ledger
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS bank_sort_code text;
+
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS bank_account_number text;
+
+ALTER TABLE worker_cis_ledger
+  ADD COLUMN IF NOT EXISTS payee_name text;
+
+ALTER TABLE worker_cis_ledger
+  ADD COLUMN IF NOT EXISTS payee_sort_code text;
+
+ALTER TABLE worker_cis_ledger
+  ADD COLUMN IF NOT EXISTS payee_account_number text;
+
+UPDATE worker_cis_ledger AS l
+SET
+  payee_name = trim(w.first_name || ' ' || w.surname),
+  payee_sort_code = w.bank_sort_code,
+  payee_account_number = w.bank_account_number
+FROM workers AS w
+WHERE l.worker_id = w.id
+  AND (
+    l.payee_sort_code IS NULL
+    OR l.payee_account_number IS NULL
+    OR l.payee_name IS NULL
+  );

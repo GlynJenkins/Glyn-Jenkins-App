@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { buildLedgerPayeeSnapshot } from '@/lib/cis/ledger-payee'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 import {
   listFortnightOptions,
@@ -26,6 +27,8 @@ export type WagesRegisterRow = {
   periodEnd:       string | null
   dateOfPay:       string
   claimPeriodId:   string | null
+  payeeSortCode:      string | null
+  payeeAccountNumber: string | null
 }
 
 type RawLedgerRow = {
@@ -40,7 +43,9 @@ type RawLedgerRow = {
   net_pay:               number | null
   claim_period_id:       string | null
   worker_id:             string
-  workers:               { id: string; first_name: string; surname: string; role: string } | { id: string; first_name: string; surname: string; role: string }[] | null
+  payee_sort_code:       string | null
+  payee_account_number:  string | null
+  workers:               { id: string; first_name: string; surname: string; role: string; bank_sort_code?: string | null; bank_account_number?: string | null } | { id: string; first_name: string; surname: string; role: string; bank_sort_code?: string | null; bank_account_number?: string | null }[] | null
   claim_periods:         {
     period_start: string
     period_end:   string
@@ -74,19 +79,63 @@ function compareByName(a: WagesRegisterRow, b: WagesRegisterRow) {
 const LEDGER_SELECT_WITH_NI = `
   id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
   cis_tax_deducted, national_insurance, net_pay, claim_period_id, worker_id,
-  workers ( id, first_name, surname, role ),
+  payee_sort_code, payee_account_number,
+  workers ( id, first_name, surname, role, bank_sort_code, bank_account_number ),
   claim_periods ( period_start, period_end, foreman_id )
 `
 
 const LEDGER_SELECT_LEGACY = `
   id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
   cis_tax_deducted, net_pay, claim_period_id, worker_id,
-  workers ( id, first_name, surname, role ),
+  payee_sort_code, payee_account_number,
+  workers ( id, first_name, surname, role, bank_sort_code, bank_account_number ),
+  claim_periods ( period_start, period_end, foreman_id )
+`
+
+const LEDGER_SELECT_WITHOUT_PAYEE = `
+  id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
+  cis_tax_deducted, national_insurance, net_pay, claim_period_id, worker_id,
+  workers ( id, first_name, surname, role, bank_sort_code, bank_account_number ),
+  claim_periods ( period_start, period_end, foreman_id )
+`
+
+const LEDGER_SELECT_LEGACY_WITHOUT_PAYEE = `
+  id, date_of_pay, gross_pay, admin_fee, insurance_fee, custom_deduction,
+  cis_tax_deducted, net_pay, claim_period_id, worker_id,
+  workers ( id, first_name, surname, role, bank_sort_code, bank_account_number ),
   claim_periods ( period_start, period_end, foreman_id )
 `
 
 function isMissingNationalInsuranceColumn(message: string) {
   return /national_insurance/i.test(message)
+}
+
+function isMissingPayeeColumn(message: string) {
+  return /payee_sort_code|payee_account_number/i.test(message)
+}
+
+function resolvePayeeBank(
+  row: RawLedgerRow,
+  worker: { first_name: string; surname: string; bank_sort_code?: string | null; bank_account_number?: string | null },
+) {
+  if (row.payee_sort_code && row.payee_account_number) {
+    return {
+      payeeSortCode:      row.payee_sort_code,
+      payeeAccountNumber: row.payee_account_number,
+    }
+  }
+
+  const snap = buildLedgerPayeeSnapshot({
+    first_name:           worker.first_name,
+    surname:              worker.surname,
+    bank_sort_code:       worker.bank_sort_code,
+    bank_account_number:  worker.bank_account_number,
+  })
+
+  return {
+    payeeSortCode:      snap.payee_sort_code,
+    payeeAccountNumber: snap.payee_account_number,
+  }
 }
 
 export type WagesRegisterLoadResult = {
@@ -105,14 +154,40 @@ export async function loadWagesRegisterResult(
     .select(LEDGER_SELECT_WITH_NI)
     .order('date_of_pay', { ascending: false })
 
-  if (primary.error && isMissingNationalInsuranceColumn(primary.error.message)) {
+  if (primary.error && isMissingPayeeColumn(primary.error.message)) {
+    const withoutPayee = await supabase
+      .from('worker_cis_ledger')
+      .select(LEDGER_SELECT_WITHOUT_PAYEE)
+      .order('date_of_pay', { ascending: false })
+    if (withoutPayee.error && isMissingNationalInsuranceColumn(withoutPayee.error.message)) {
+      const legacy = await supabase
+        .from('worker_cis_ledger')
+        .select(LEDGER_SELECT_LEGACY_WITHOUT_PAYEE)
+        .order('date_of_pay', { ascending: false })
+      if (legacy.error) throw new Error(legacy.error.message)
+      rawRows = (legacy.data ?? []) as RawLedgerRow[]
+      niColumnAvailable = false
+    } else {
+      if (withoutPayee.error) throw new Error(withoutPayee.error.message)
+      rawRows = (withoutPayee.data ?? []) as RawLedgerRow[]
+    }
+  } else if (primary.error && isMissingNationalInsuranceColumn(primary.error.message)) {
     niColumnAvailable = false
     const retry = await supabase
       .from('worker_cis_ledger')
       .select(LEDGER_SELECT_LEGACY)
       .order('date_of_pay', { ascending: false })
-    if (retry.error) throw new Error(retry.error.message)
-    rawRows = (retry.data ?? []) as RawLedgerRow[]
+    if (retry.error && isMissingPayeeColumn(retry.error.message)) {
+      const legacy = await supabase
+        .from('worker_cis_ledger')
+        .select(LEDGER_SELECT_LEGACY_WITHOUT_PAYEE)
+        .order('date_of_pay', { ascending: false })
+      if (legacy.error) throw new Error(legacy.error.message)
+      rawRows = (legacy.data ?? []) as RawLedgerRow[]
+    } else {
+      if (retry.error) throw new Error(retry.error.message)
+      rawRows = (retry.data ?? []) as RawLedgerRow[]
+    }
   } else {
     if (primary.error) throw new Error(primary.error.message)
     rawRows = (primary.data ?? []) as RawLedgerRow[]
@@ -149,6 +224,7 @@ export async function loadWagesRegisterResult(
     const tax = row.cis_tax_deducted ?? 0
     const nationalInsurance = row.national_insurance ?? 0
     const fees = adminFee + insuranceFee + customDeduction
+    const payee = resolvePayeeBank(row, worker)
 
     rows.push({
       id:              row.id,
@@ -172,6 +248,8 @@ export async function loadWagesRegisterResult(
       periodEnd:       claim?.period_end ?? null,
       dateOfPay:       row.date_of_pay,
       claimPeriodId:   row.claim_period_id,
+      payeeSortCode:      payee.payeeSortCode,
+      payeeAccountNumber: payee.payeeAccountNumber,
     })
   }
 

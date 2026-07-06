@@ -25,7 +25,7 @@ export default async function WorkerProfilePage({
     .select(`
       id, first_name, surname, phone, email, utr_number,
       tax_type, role, status, has_personal_insurance, created_at,
-      auth_user_id,
+      auth_user_id, bank_sort_code, bank_account_number,
       subcontract_agreement_pdf_url, subcontract_signature_url
     `)
     .eq('id', workerId)

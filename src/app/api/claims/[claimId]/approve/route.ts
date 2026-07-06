@@ -3,6 +3,7 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 import { calculatePayLine } from '@/lib/cis/calculate-pay'
+import { buildLedgerPayeeSnapshot } from '@/lib/cis/ledger-payee'
 import { resolveClaimLedgerSiteId } from '@/lib/cis/resolve-claim-site'
 
 export async function POST(
@@ -34,7 +35,7 @@ export async function POST(
       (claimBase?.claim_allocations ?? []).map(async (alloc) => {
         const { data: worker } = await supabase
           .from('workers')
-          .select('id, first_name, surname, phone, email, tax_type, role, has_personal_insurance')
+          .select('id, first_name, surname, phone, email, tax_type, role, has_personal_insurance, bank_sort_code, bank_account_number')
           .eq('id', alloc.worker_id)
           .maybeSingle()
         return {
@@ -76,6 +77,8 @@ export async function POST(
         tax_type: string
         role: string
         has_own_insurance: boolean | null
+        bank_sort_code: string | null
+        bank_account_number: string | null
       } | null
     }[]
 
@@ -100,6 +103,13 @@ export async function POST(
         customDed,
       )
 
+      const payee = buildLedgerPayeeSnapshot({
+        first_name:          worker.first_name,
+        surname:             worker.surname,
+        bank_sort_code:      worker.bank_sort_code,
+        bank_account_number: worker.bank_account_number,
+      })
+
       const { error: ledgerErr } = await supabase.from('worker_cis_ledger').insert({
         worker_id:             worker.id,
         claim_period_id:       claimId,
@@ -114,6 +124,9 @@ export async function POST(
         cis_tax_deducted:      pay.cisTax,
         national_insurance:    0,
         net_pay:               pay.net,
+        payee_name:            payee.payee_name,
+        payee_sort_code:       payee.payee_sort_code,
+        payee_account_number:  payee.payee_account_number,
       })
 
       if (ledgerErr) {

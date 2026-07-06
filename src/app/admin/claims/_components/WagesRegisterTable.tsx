@@ -88,6 +88,7 @@ export default function WagesRegisterTable({
   const [localRows, setLocalRows]         = useState(rows)
   const [error, setError]                 = useState<string | null>(null)
   const [busyId, setBusyId]               = useState<string | null>(null)
+  const [payrollExporting, setPayrollExporting] = useState(false)
   const [, startTransition]               = useTransition()
 
   useEffect(() => {
@@ -161,6 +162,44 @@ export default function WagesRegisterTable({
   const exportUrl = `/api/admin/claims/export${exportQuery ? `?${exportQuery}` : ''}`
   const payrollExportUrl = `/api/admin/claims/payroll-export${exportQuery ? `?${exportQuery}` : ''}`
 
+  const downloadPayrollCsv = async () => {
+    setPayrollExporting(true)
+    setError(null)
+    try {
+      const res = await fetch(payrollExportUrl)
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(json.error ?? 'Payroll export failed.')
+      }
+
+      const needsBank = Number(res.headers.get('X-Payroll-Needs-Bank') ?? 0)
+      const bankReady = Number(res.headers.get('X-Payroll-Bank-Ready') ?? 0)
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') ?? ''
+      const match = disposition.match(/filename="([^"]+)"/)
+      const filename = match?.[1] ?? 'payroll.csv'
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+
+      if (needsBank > 0) {
+        setError(
+          `${bankReady} payment${bankReady === 1 ? '' : 's'} ready for bank transfer. ` +
+          `${needsBank} worker${needsBank === 1 ? '' : 's'} have no bank on file — ` +
+          `they must complete worker registration at /induction (or re-approve the claim after registration).`,
+        )
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Payroll export failed.')
+    } finally {
+      setPayrollExporting(false)
+    }
+  }
+
   const saveApprenticeDeductions = (
     row: WagesRegisterRow,
     updates: { tax?: number; nationalInsurance?: number },
@@ -218,11 +257,14 @@ export default function WagesRegisterTable({
             <>
               <button
                 type="button"
-                onClick={() => { window.location.href = payrollExportUrl }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl"
+                disabled={payrollExporting}
+                onClick={downloadPayrollCsv}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl"
                 title="Bank transfer CSV — payee, sort code, account, net amount"
               >
-                <Download className="w-3.5 h-3.5" />
+                {payrollExporting
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Download className="w-3.5 h-3.5" />}
                 Bank CSV
               </button>
               <button
@@ -250,7 +292,11 @@ export default function WagesRegisterTable({
       </div>
 
       {error && (
-        <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+        <p className={`text-xs rounded-xl px-3 py-2 ${
+          error.includes('still need bank details')
+            ? 'text-amber-800 bg-amber-50 border border-amber-100'
+            : 'text-red-600 bg-red-50 border border-red-100'
+        }`}>
           {error}
         </p>
       )}

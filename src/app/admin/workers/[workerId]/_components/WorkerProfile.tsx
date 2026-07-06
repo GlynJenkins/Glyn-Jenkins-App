@@ -49,6 +49,8 @@ type Worker = {
   has_personal_insurance:          boolean | null
   created_at:                      string
   auth_user_id:                    string | null
+  bank_sort_code:                  string | null
+  bank_account_number:             string | null
   subcontract_agreement_pdf_url:   string | null
   subcontract_signature_url:       string | null
 }
@@ -396,6 +398,17 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
             <div className="flex items-center gap-2 py-2">
               <FileText className="w-3.5 h-3.5 text-slate-400" />
               <span>UTR: {worker.utr_number}</span>
+            </div>
+          )}
+          {worker.bank_sort_code && worker.bank_account_number ? (
+            <div className="flex items-center gap-2 py-2">
+              <PoundSterling className="w-3.5 h-3.5 text-slate-400" />
+              <span>Bank: {worker.bank_sort_code} · {worker.bank_account_number}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 py-2 text-amber-700 text-xs">
+              <PoundSterling className="w-3.5 h-3.5 shrink-0" />
+              <span>No bank on file — worker must complete registration at /induction</span>
             </div>
           )}
           <div className="flex items-center gap-2 py-2">
