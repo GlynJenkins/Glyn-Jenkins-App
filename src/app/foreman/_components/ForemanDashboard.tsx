@@ -209,6 +209,24 @@ export default function ForemanDashboard({
           <p className="text-xs text-slate-400 mt-0.5">One combined claim across all your sites</p>
         </div>
 
+        {hasClaim ? (
+          <Link
+            href={`/foreman/claim/${currentClaim!.claimId}`}
+            className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors border-b border-gray-50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                <ClipboardList className="w-4 h-4 text-slate-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">View claim</p>
+                <p className="text-xs text-slate-400">Workers, pool breakdown &amp; status</p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-300" />
+          </Link>
+        ) : null}
+
         {hasClaim && isPending ? (
           <div className="divide-y divide-gray-50">
             <div className="flex items-center gap-3 px-5 py-3.5 opacity-60">
@@ -251,6 +269,20 @@ export default function ForemanDashboard({
             </div>
             <ClaimBadge status="approved" />
           </div>
+        ) : hasClaim && isRejected ? (
+          <Link href="/foreman/claim"
+            className="flex items-center justify-between px-5 py-3.5 hover:bg-blue-50 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shrink-0">
+                <ClipboardList className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-blue-700">Resubmit Claim</p>
+                <p className="text-xs text-blue-400">Claim rejected — tap to resubmit</p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-blue-300" />
+          </Link>
         ) : period.isLocked ? (
           <div className="flex items-center gap-3 px-5 py-3.5 opacity-40">
             <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
