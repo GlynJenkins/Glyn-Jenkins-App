@@ -150,14 +150,16 @@ export default function WagesRegisterTable({
     periodTabs.find((p) => p.key === periodFilter)?.label ??
     (periodFilter === 'all' ? 'All periods' : formatWagesPeriodLabel(null, null))
 
-  const exportUrl = useMemo(() => {
+  const exportQuery = useMemo(() => {
     const params = new URLSearchParams()
     if (foremanFilter !== 'all') params.set('foreman', foremanFilter)
     if (roleFilter !== 'all') params.set('role', roleFilter)
     if (periodFilter !== 'all') params.set('period', periodFilter)
-    const qs = params.toString()
-    return `/api/admin/claims/export${qs ? `?${qs}` : ''}`
+    return params.toString()
   }, [foremanFilter, roleFilter, periodFilter])
+
+  const exportUrl = `/api/admin/claims/export${exportQuery ? `?${exportQuery}` : ''}`
+  const payrollExportUrl = `/api/admin/claims/payroll-export${exportQuery ? `?${exportQuery}` : ''}`
 
   const saveApprenticeDeductions = (
     row: WagesRegisterRow,
@@ -213,14 +215,25 @@ export default function WagesRegisterTable({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {localRows.length > 0 && (
-            <button
-              type="button"
-              onClick={() => { window.location.href = exportUrl }}
-              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Excel
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => { window.location.href = payrollExportUrl }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl"
+                title="Bank transfer CSV — payee, sort code, account, net amount"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Bank CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => { window.location.href = exportUrl }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Excel
+              </button>
+            </>
           )}
           <Link
             href="/admin/claims/pending"

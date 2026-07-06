@@ -79,17 +79,61 @@ The app uses the **service role** on the server for most operations. Ensure RLS 
 
 ## 7. Post-deploy smoke test
 
-- [ ] Home page loads over HTTPS
-- [ ] New worker registration (`/induction`) submits successfully
-- [ ] Foreman login → dashboard → site grid → submit claim
-- [ ] Admin login → approve/reject claim (check email/SMS)
-- [ ] Forgot password → email → reset → login
-- [ ] Add to Home Screen on iPhone (PWA manifest + icons)
-- [ ] Admin settings: pay cycle dates save correctly
+Production URL: **`https://glyn-jenkins-app.vercel.app`**
 
-## 8. Still recommended before first real payday
+**Status: Priority 1 complete (6 Jul 2026)** — migrations applied, env vars confirmed, logged-in flows tested, iPhone PWA installed.
 
-- **Priority 2:** Payroll CSV export (backup if the app is down on payday)
+### Automated checks (6 Jul 2026)
+
+| Check | Result |
+|-------|--------|
+| Home page over HTTPS | Pass — HTTP 200, HSTS enabled |
+| `/login` loads | Pass — staff login form renders |
+| `/induction` loads | Pass — full registration form renders |
+| PWA manifest + icons | Pass — `/manifest.webmanifest`, `/icon`, `/apple-icon` all HTTP 200 |
+| Offline fallback | Pass — `/~offline` HTTP 200 |
+| Test routes blocked in prod | Pass — `/api/test-email` and `/api/test-sms` return 404 |
+| Auth routes protected | Pass — `/admin` and `/foreman` redirect (307) when logged out |
+| Read-only foreman claim route | Pass — `/foreman/claim/[id]` deployed (redirects to login) |
+
+### Manual checks
+
+| Stage | Task | Status |
+|-------|------|--------|
+| 1 | Supabase migrations (`run-all-pending.sql`) | Done |
+| 2 | Vercel environment variables confirmed | Done |
+| 3 | Logged-in smoke test (foreman + admin flows) | Done |
+| 4 | iPhone PWA — Add to Home Screen | Done |
+
+Optional extras (only if not already covered in stage 3):
+
+- [ ] **Induction submit** — test registration on `/induction` (skip if you don’t want test data in production)
+- [ ] **Email/SMS** — confirm Resend email and Twilio SMS on approve/reject (if Twilio configured)
+- [ ] **Forgot password** — `/forgot-password` → email link → reset → log in
+
+### Vercel environment variables
+
+Confirmed in **Vercel → glyn-jenkins-app → Settings → Environment Variables** (Production + Preview) — 6 Jul 2026.
+
+| Variable | Required | Status |
+|----------|----------|--------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Confirmed |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Confirmed |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Confirmed |
+| `RESEND_API_KEY` | Yes | Confirmed |
+| `RESEND_FROM_EMAIL` | Yes | Confirmed |
+| `TWILIO_*` | Optional | As configured |
+| `ALLOW_LEGACY_ADMIN` | No | Unset in production |
+
+### Supabase migrations
+
+**Applied** — `supabase/migrations/run-all-pending.sql` run successfully in Supabase SQL Editor (6 Jul 2026).
+
+Includes worker induction columns, apprentice `national_insurance` on the ledger, management holidays, and developer variation tables.
+
+## 8. Before first real payday
+
+- **Payroll bank CSV** — on **Booking In** (`/admin/claims`), use **Bank CSV** next to Excel. Exports payee, sort code, account number, net amount, and reference for the selected fortnight/filters. Workers without valid bank details are omitted from the file.
 - Monitor usage/errors in Vercel and Supabase dashboards
 
 ---
