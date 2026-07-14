@@ -14,6 +14,7 @@ type SheetPreview = {
   headerRowIdx: number    // 0-based index into the raw rows, used by import
   plotColIndex: number
   colTotals?:   number[]
+  sections?:    { houses: number; garages: number; screenWalls: number }
   sample?:      { plot: string; values: string[] }[]
 }
 
@@ -287,6 +288,14 @@ export default function ExcelImporter({ siteId }: { siteId: string }) {
                   <span className="text-slate-500">Plots detected</span>
                   <span className="font-semibold text-slate-800">{selectedPreview.plotCount}</span>
                 </div>
+
+                {selectedPreview.sections && (
+                  <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    {selectedPreview.sections.houses} houses
+                    {selectedPreview.sections.garages > 0 && ` · ${selectedPreview.sections.garages} garages`}
+                    {selectedPreview.sections.screenWalls > 0 && ` · ${selectedPreview.sections.screenWalls} screen walls`}
+                  </div>
+                )}
 
                 <div>
                   <p className="text-sm text-slate-500 mb-1">

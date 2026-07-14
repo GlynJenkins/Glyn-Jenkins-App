@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import {
   buildColumnStages,
+  classifyImportedPlots,
   parseExcelCellValue,
   rebuildSheetRef,
   resolvePlotColumnMerges,
@@ -92,6 +93,9 @@ export async function POST(
         return { plot: row[plotColIndex]?.toString().trim() ?? '', values }
       })
 
+      const plotNumbers = dataRows.map((row) => row[plotColIndex]?.toString().trim() ?? '').filter(Boolean)
+      const sections    = classifyImportedPlots(plotNumbers)
+
       return {
         name,
         usable:       true,
@@ -103,6 +107,7 @@ export async function POST(
         headerRow:    headerIdx + 1,
         sample,
         colTotals,
+        sections,
       }
     })
 

@@ -6,6 +6,7 @@ import { syncFiresockPlots } from '@/lib/firesock/queries'
 import {
   buildColumnStages,
   buildGridCellsFromRows,
+  classifyImportedPlots,
   rebuildSheetRef,
   resolvePlotColumnMerges,
   resolvePlotRows,
@@ -149,6 +150,7 @@ export async function POST(
       const na = parseFloat(a), nb = parseFloat(b)
       return isNaN(na) || isNaN(nb) ? a.localeCompare(b) : na - nb
     })
+    const sections = classifyImportedPlots(plotList)
 
     try {
       await syncJetwashPlots(siteId, plotList)
@@ -179,6 +181,7 @@ export async function POST(
       plotMin:        plotList[0]  ?? null,
       plotMax:        plotList[plotList.length - 1] ?? null,
       plotList,
+      sections,
       totalRowsRead:  rows.length,
       boundaryDump,
       skippedRows,

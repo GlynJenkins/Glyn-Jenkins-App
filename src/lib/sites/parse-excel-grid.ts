@@ -1,4 +1,16 @@
 import * as XLSX from 'xlsx'
+import { isFirstLiftStage } from '@/lib/jetwash/plot-descriptions'
+
+/**
+ * Expected spreadsheet layout (any site):
+ * 1. Header row — Plot No, description columns (house type, facing, etc.), then lift/work columns
+ * 2. House plot rows (any plot numbers and descriptions)
+ * 3. "Garages" section header, then garage rows (may reuse plot numbers)
+ * 4. "Screen Walls" section header, then screen wall rows (may reuse plot numbers)
+ *
+ * Lift columns are discovered from headers — extra lifts (5th, 6th, etc.) import automatically.
+ * Duplicate plot numbers across sections become separate rows, e.g. "46 · Garage".
+ */
 
 export function parseExcelCellValue(val: string | number | boolean | null | undefined): number | null {
   if (val === null || val === undefined || val === '') return null
@@ -67,17 +79,31 @@ function isSectionHeaderLabel(plotVal: string): boolean {
 
 type PlotSection = 'house' | 'garage' | 'screen_wall'
 
+function isGarageSectionHeader(plotVal: string): boolean {
+  return /^garages?$/i.test(plotVal.trim())
+}
+
+function isScreenWallSectionHeader(plotVal: string): boolean {
+  return /^screen\s*walls?$/i.test(plotVal.trim())
+}
+
 function findTypeColumnIndex(allHeaders: string[], plotColIndex: number): number | null {
   for (let i = 0; i < allHeaders.length; i++) {
     if (i === plotColIndex || !allHeaders[i]) continue
-    if (isFirstLiftHeader(allHeaders[i])) break
+    if (isFirstLiftStage(allHeaders[i])) break
     if (i > plotColIndex) return i
   }
   return plotColIndex + 1 < allHeaders.length ? plotColIndex + 1 : null
 }
 
-function isFirstLiftHeader(header: string): boolean {
-  return /1st\s*lift|first\s*lift|^lift\s*1/i.test(header.trim())
+function descriptionColumnIndices(allHeaders: string[], plotColIndex: number): number[] {
+  const cols: number[] = []
+  for (let i = 0; i < allHeaders.length; i++) {
+    if (i === plotColIndex || !allHeaders[i]) continue
+    if (isFirstLiftStage(allHeaders[i])) break
+    if (i > plotColIndex) cols.push(i)
+  }
+  return cols
 }
 
 function typeColumnText(
@@ -90,14 +116,25 @@ function typeColumnText(
   return String(raw).trim()
 }
 
+function rowDescriptionText(
+  row: (string | number | null)[],
+  descCols: number[],
+): string {
+  return descCols
+    .map((i) => typeColumnText(row, i))
+    .filter(Boolean)
+    .join(' ')
+}
+
 /** Same plot number can be house, garage, and screen wall — suffix keeps rows separate. */
 function buildPlotKey(
   basePlot: string,
   section: PlotSection,
   typeText: string,
+  allDescriptionText = '',
 ): string {
-  const desc = typeText.trim()
-  if (section === 'screen_wall' || /screen\s*wall/i.test(desc)) {
+  const combined = `${typeText} ${allDescriptionText}`.trim()
+  if (section === 'screen_wall' || /screen\s*wall/i.test(combined)) {
     return `${basePlot} · Screen Wall`
   }
   if (section === 'garage') {
@@ -152,6 +189,24 @@ function derivePlotLabel(
   return candidates[0].text
 }
 
+export function classifyImportedPlots(plotNumbers: string[]): {
+  houses:      number
+  garages:     number
+  screenWalls: number
+} {
+  let houses = 0
+  let garages = 0
+  let screenWalls = 0
+
+  for (const plot of plotNumbers) {
+    if (/·\s*screen\s*wall/i.test(plot)) screenWalls++
+    else if (/·\s*garage/i.test(plot)) garages++
+    else if (!isSectionHeaderLabel(plot)) houses++
+  }
+
+  return { houses, garages, screenWalls }
+}
+
 export function resolvePlotRows(
   rows: (string | number | null)[][],
   headerRowIndex: number,
@@ -161,6 +216,7 @@ export function resolvePlotRows(
   let lastPlot: string | number | null = null
   let section: PlotSection = 'house'
   const typeColIndex = findTypeColumnIndex(allHeaders, plotColIndex)
+  const descCols     = descriptionColumnIndices(allHeaders, plotColIndex)
 
   return rows.slice(headerRowIndex + 1).map((row) => {
     if (rowIsFullyBlank(row, plotColIndex, allHeaders)) {
@@ -171,14 +227,15 @@ export function resolvePlotRows(
     const plotVal = row[plotColIndex]
     const plotStr = plotVal !== null && plotVal !== undefined ? String(plotVal).trim() : ''
     const typeText = typeColumnText(row, typeColIndex)
+    const allDesc  = rowDescriptionText(row, descCols)
 
     if (plotStr) {
-      if (/^garages?$/i.test(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
+      if (isGarageSectionHeader(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
         section = 'garage'
         lastPlot = null
         return row
       }
-      if (/^screen\s*walls?$/i.test(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
+      if (isScreenWallSectionHeader(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
         section = 'screen_wall'
         lastPlot = null
         return row
@@ -188,7 +245,7 @@ export function resolvePlotRows(
         return row
       }
 
-      const plotKey = buildPlotKey(plotStr, section, typeText)
+      const plotKey = buildPlotKey(plotStr, section, typeText, allDesc)
       lastPlot = plotKey
       return applyPlotKey(row, plotColIndex, plotKey)
     }
@@ -196,7 +253,7 @@ export function resolvePlotRows(
     if (rowHasStageData(row, plotColIndex, allHeaders)) {
       const derived = derivePlotLabel(row, plotColIndex, allHeaders)
       if (derived) {
-        const plotKey = buildPlotKey(derived, section, typeText || derived)
+        const plotKey = buildPlotKey(derived, section, typeText || derived, allDesc)
         lastPlot = plotKey
         return applyPlotKey(row, plotColIndex, plotKey)
       }
