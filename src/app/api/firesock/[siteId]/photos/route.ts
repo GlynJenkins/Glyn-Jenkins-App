@@ -5,9 +5,15 @@ import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import { fetchFiresockSiteGrid } from '@/lib/firesock/queries'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 function photoExtension(mime: string): string {
   return mime.includes('png') ? 'png' : 'jpg'
+}
+
+/** Safe storage path segment — plot numbers may contain slashes or spaces. */
+function storagePlotSegment(plotNumber: string): string {
+  return plotNumber.replace(/[^a-zA-Z0-9._-]+/g, '_')
 }
 
 export async function POST(
@@ -66,7 +72,8 @@ export async function POST(
       const raw  = Buffer.from(await file.arrayBuffer())
       const normalized = await normalizePhotoForPdf(raw)
       const ext = photoExtension(normalized.mime)
-      const photoPath = `firesock/${siteId}/${plotNumber}/${ts}-${i}.${ext}`
+      const plotSeg   = storagePlotSegment(plotNumber)
+      const photoPath = `firesock/${siteId}/${plotSeg}/${ts}-${i}.${ext}`
 
       const { error: uploadErr } = await supabase.storage
         .from('worker-documents')

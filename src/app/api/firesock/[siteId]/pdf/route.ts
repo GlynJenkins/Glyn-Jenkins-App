@@ -3,6 +3,7 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { loadFiresockSitePdf } from '@/lib/firesock/load-site-pdf'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 export async function GET(
   _request: NextRequest,

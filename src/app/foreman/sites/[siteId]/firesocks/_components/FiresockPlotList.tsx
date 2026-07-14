@@ -79,7 +79,17 @@ function UploadModal({
       for (const file of pending) fd.append('photos', file)
 
       const res  = await fetch(`/api/firesock/${siteId}/photos`, { method: 'POST', body: fd })
-      const json = await res.json()
+      const text = await res.text()
+      let json: { error?: string; grid?: FiresockSiteGrid }
+      try {
+        json = JSON.parse(text) as { error?: string; grid?: FiresockSiteGrid }
+      } catch {
+        throw new Error(
+          res.status === 413
+            ? 'Photos are too large — try fewer at a time or retake closer shots.'
+            : `Upload failed (${res.status}). Refresh the page and try again.`,
+        )
+      }
       if (!res.ok) throw new Error(json.error ?? 'Upload failed.')
 
       previews.forEach((u) => URL.revokeObjectURL(u))
