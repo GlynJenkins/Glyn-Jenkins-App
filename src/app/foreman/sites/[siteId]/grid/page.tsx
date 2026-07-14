@@ -4,6 +4,7 @@ import { notFound }             from 'next/navigation'
 import Link                     from 'next/link'
 import ForemanGrid              from './_components/ForemanGrid'
 import PortalHeader              from '@/components/PortalHeader'
+import { fetchFiresockMetByPlot } from '@/lib/firesock/queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,6 +76,14 @@ export default async function ForemanSiteGridPage({
     ? cellsParam.split(',').filter((p) => { const id = p.split(':')[0]; return id && !thisSiteCellIds.has(id) }).join(',')
     : ''
 
+  let firesockMetByPlot: Record<string, boolean> = {}
+  try {
+    const metMap = await fetchFiresockMetByPlot(siteId)
+    firesockMetByPlot = Object.fromEntries(metMap)
+  } catch {
+    // table may not exist until migration runs
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PortalHeader>
@@ -108,6 +117,7 @@ export default async function ForemanSiteGridPage({
             overrideNote:    c.override_note ?? null,
             totalClaimedPct: c.total_claimed_pct ?? 0,
           }))}
+          firesockMetByPlot={firesockMetByPlot}
         />
       </div>
     </div>

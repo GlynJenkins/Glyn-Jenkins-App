@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Building2, MapPin, Grid3x3, FileUp, ClipboardList,
-  Clock, AlertCircle, CheckCircle2, Loader2, Lock, ChevronRight, RotateCcw,
+  Clock, AlertCircle, CheckCircle2, Loader2, Lock, ChevronRight, RotateCcw, Shield,
 } from 'lucide-react'
 import ForemanClaimHistory from './ForemanClaimHistory'
 import type { ForemanClaimHistoryItem } from '@/lib/claims/load-foreman-claim-history'
@@ -161,6 +161,19 @@ function SiteCard({ site, variationCount }: { site: Site; variationCount: number
             <div>
               <p className="text-sm font-semibold text-slate-800">Submit Variation</p>
               <p className="text-xs text-slate-400">Extra works &amp; daywork with photos</p>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-300" />
+        </Link>
+        <Link href={`/foreman/sites/${site.id}/firesocks`}
+          className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+              <Shield className="w-4 h-4 text-amber-700" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Roof Firesocks</p>
+              <p className="text-xs text-slate-400">Upload evidence photos per plot</p>
             </div>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-300" />

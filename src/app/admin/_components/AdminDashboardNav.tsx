@@ -7,6 +7,7 @@ import {
   Droplets,
   FileUp,
   Settings,
+  Shield,
   Sun,
   TrendingUp,
   Users,
@@ -75,6 +76,12 @@ function buildSections(counts: AdminNavCounts): NavSection[] {
           icon:        Droplets,
           label:       'Jetwash',
           description: 'Plot washing progress & pay log',
+        },
+        {
+          href:        '/admin/firesocks',
+          icon:        Shield,
+          label:       'Roof firesocks',
+          description: 'Evidence photos & developer PDF',
         },
         {
           href:        '/admin/qa',

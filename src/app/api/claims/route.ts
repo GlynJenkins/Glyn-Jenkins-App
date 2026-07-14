@@ -4,6 +4,7 @@ import { foremanHasClaimSiteAccess } from '@/lib/auth/foreman-sites'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getCurrentFortnight, toLocalDateString } from '@/lib/fortnight'
 import { deleteClaimPeriod } from '@/lib/claims/delete-claim-period'
+import { validateFiresockForClaimItems } from '@/lib/firesock/claim-gate'
 
 type PoolItem = {
   type:       string
@@ -39,6 +40,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
+    const supabase = createServiceClient()
+
+    const firesockCheck = await validateFiresockForClaimItems(supabase, poolItems ?? [])
+    if (!firesockCheck.ok) {
+      return NextResponse.json({ error: firesockCheck.error }, { status: 400 })
+    }
+
     const hasSiteAccess = await foremanHasClaimSiteAccess(
       auth.worker.id,
       siteId,
@@ -48,7 +56,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden — site not assigned to you.' }, { status: 403 })
     }
 
-    const supabase = createServiceClient()
     const period = await getCurrentFortnight(supabase)
     if (period.isLocked) {
       return NextResponse.json({ error: 'Submission window is locked.' }, { status: 403 })

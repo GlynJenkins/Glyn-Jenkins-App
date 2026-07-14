@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { syncJetwashPlots } from '@/lib/jetwash/queries'
+import { syncFiresockPlots } from '@/lib/firesock/queries'
 import * as XLSX from 'xlsx'
 
 export const dynamic = 'force-dynamic'
@@ -259,6 +260,12 @@ export async function POST(
       await syncJetwashPlots(siteId, plotList)
     } catch (syncErr) {
       console.error('[Jetwash sync]', syncErr)
+    }
+
+    try {
+      await syncFiresockPlots(siteId, plotList)
+    } catch (syncErr) {
+      console.error('[Firesock sync]', syncErr)
     }
 
     // Raw rows around the boundary — helps diagnose cutoff issues

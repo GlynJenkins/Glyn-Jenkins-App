@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckSquare, Square, ClipboardList, X, Lock } from 'lucide-react'
+import { CheckSquare, Square, ClipboardList, X, Lock, Shield } from 'lucide-react'
+import { isRoofCompletionStage } from '@/lib/firesock/stages'
+import { MIN_FIRESOCK_PHOTOS } from '@/lib/firesock/constants'
 
 type Stage = { id: string; name: string }
 type Cell  = {
@@ -48,13 +50,14 @@ function fmtFull(v: number): string {
 
 interface Props {
   siteId:       string
-  initialCells:    string  // "cellId:penceAmount,…" — this site's selected cells
-  otherSitesCells: string  // "cellId:penceAmount,…" — other sites' cells, passed through untouched
-  initialGang:     string  // "workerId,workerId,…" — preserved across navigation
-  initialDays:     string  // "workerId:college:holiday,…" — apprentice days preserved
+  initialCells:    string
+  otherSitesCells: string
+  initialGang:     string
+  initialDays:     string
   stages:       Stage[]
   plotNumbers:  string[]
   cells:        Cell[]
+  firesockMetByPlot: Record<string, boolean>
 }
 
 // ── Percentage picker ─────────────────────────────────────────────────────────
@@ -138,8 +141,13 @@ function PctPicker({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ForemanGrid({ initialCells, otherSitesCells, initialGang, initialDays, stages, plotNumbers, cells }: Props) {
+export default function ForemanGrid({
+  siteId,
+  initialCells, otherSitesCells, initialGang, initialDays,
+  stages, plotNumbers, cells, firesockMetByPlot,
+}: Props) {
   const router = useRouter()
+  const [firesockMsg, setFiresockMsg] = useState<string | null>(null)
 
   const parseInitial = (): Map<string, Selection> => {
     const map = new Map<string, Selection>()
@@ -175,6 +183,25 @@ export default function ForemanGrid({ initialCells, otherSitesCells, initialGang
     setSelections((prev) => new Map(prev).set(cellId, { fullValue: cell.contractValue, claimAmount: amount }))
   }
 
+  const cellBlockedByFiresock = (cell: Cell): boolean => {
+    const stageName = stageNameById.get(cell.stageId) ?? ''
+    if (!isRoofCompletionStage(stageName)) return false
+    return firesockMetByPlot[cell.plotNumber] === false
+  }
+
+  const openCellPicker = (cellId: string) => {
+    const cell = cells.find((c) => c.id === cellId)
+    if (!cell) return
+    if (cellBlockedByFiresock(cell)) {
+      setFiresockMsg(
+        `Plot ${cell.plotNumber} needs at least ${MIN_FIRESOCK_PHOTOS} roof firesock photos before Roof completion can be claimed.`,
+      )
+      return
+    }
+    setFiresockMsg(null)
+    setPickerCellId(cellId)
+  }
+
   const removeCell = (cellId: string) => {
     setSelections((prev) => { const next = new Map(prev); next.delete(cellId); return next })
   }
@@ -189,6 +216,7 @@ export default function ForemanGrid({ initialCells, otherSitesCells, initialGang
         rowCells.forEach((c) => next.delete(c.id))
       } else {
         rowCells.forEach((c) => {
+          if (cellBlockedByFiresock(c)) return
           const remaining = Math.round(c.contractValue * (100 - c.totalClaimedPct) / 100 * 100) / 100
           next.set(c.id, { fullValue: c.contractValue, claimAmount: remaining })
         })
@@ -262,7 +290,19 @@ export default function ForemanGrid({ initialCells, otherSitesCells, initialGang
         <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
           Tap a cell to choose how much to claim (25% / 50% / 75% / All remaining).
           Tap the plot number to select the whole row at full remaining value.
-          Green cells are fully claimed and locked.
+          Green cells are fully claimed and locked. Roof completion requires {MIN_FIRESOCK_PHOTOS} firesock photos per plot.
+        </p>
+      )}
+
+      {firesockMsg && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
+          <Shield className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            {firesockMsg}{' '}
+            <a href={`/foreman/sites/${siteId}/firesocks`} className="font-semibold underline">
+              Upload firesocks →
+            </a>
+          </span>
         </p>
       )}
 
@@ -330,7 +370,8 @@ export default function ForemanGrid({ initialCells, otherSitesCells, initialGang
 
                       const sel          = selections.get(cell.id)
                       const isTotalCol   = isTotalStage(stage.name)
-                      const fullyLocked  = cell.totalClaimedPct >= 100 || isTotalCol
+                      const firesockBlocked = cellBlockedByFiresock(cell)
+                      const fullyLocked  = cell.totalClaimedPct >= 100 || isTotalCol || firesockBlocked
                       const isSelectable = claimMode && cell.contractValue > 0 && !fullyLocked
                       const bgCls        = sel
                         ? 'bg-orange-500 text-white'
@@ -339,12 +380,12 @@ export default function ForemanGrid({ initialCells, otherSitesCells, initialGang
                       return (
                         <td
                           key={stage.id}
-                          onClick={isSelectable ? () => setPickerCellId(cell.id) : undefined}
+                          onClick={isSelectable ? () => openCellPicker(cell.id) : firesockBlocked && claimMode ? () => openCellPicker(cell.id) : undefined}
                           className={`px-3 border-r border-gray-100 last:border-r-0
                                       whitespace-nowrap transition-colors
                                       ${claimMode && isSelectable ? 'py-3 min-h-[52px]' : 'py-2'}
                                       ${bgCls}
-                                      ${isSelectable ? 'cursor-pointer active:scale-[0.98] touch-manipulation' : ''}
+                                      ${isSelectable || (claimMode && firesockBlocked) ? 'cursor-pointer active:scale-[0.98] touch-manipulation' : ''}
                                       ${claimMode && fullyLocked ? 'opacity-70' : ''}`}
                         >
                           <div className="flex flex-col items-start gap-0.5">
@@ -362,7 +403,11 @@ export default function ForemanGrid({ initialCells, otherSitesCells, initialGang
                               </span>
                             </div>
 
-                            {/* Claim status badge */}
+                            {!sel && firesockBlocked && claimMode && (
+                              <span className="text-[10px] font-semibold bg-amber-200/80 text-amber-900 rounded px-1 leading-tight">
+                                Firesocks needed
+                              </span>
+                            )}
                             {!sel && cell.totalClaimedPct > 0 && cell.totalClaimedPct < 100 && (
                               <span className="text-[10px] font-semibold bg-black/15 rounded px-1 leading-tight">
                                 {cell.totalClaimedPct}% claimed
