@@ -11,6 +11,7 @@ import {
   resolvePlotColumnMerges,
   resolvePlotRows,
 } from '@/lib/sites/parse-excel-grid'
+import { sortPlotNumbers } from '@/lib/sites/plot-order'
 import * as XLSX from 'xlsx'
 
 export const dynamic = 'force-dynamic'
@@ -146,10 +147,7 @@ export async function POST(
       cells: stageCellCount.get(name) ?? 0,
     }))
 
-    const plotList = Array.from(importedPlots).sort((a, b) => {
-      const na = parseFloat(a), nb = parseFloat(b)
-      return isNaN(na) || isNaN(nb) ? a.localeCompare(b) : na - nb
-    })
+    const plotList = sortPlotNumbers(Array.from(importedPlots))
     const sections = classifyImportedPlots(plotList)
 
     try {

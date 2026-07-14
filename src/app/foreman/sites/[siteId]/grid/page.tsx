@@ -2,6 +2,7 @@ import { createServiceClient }  from '@/lib/supabase/server'
 import { requireForemanAccess } from '@/lib/auth/portal-access'
 import { notFound }             from 'next/navigation'
 import Link                     from 'next/link'
+import { sortPlotNumbers } from '@/lib/sites/plot-order'
 import ForemanGrid              from './_components/ForemanGrid'
 import PortalHeader              from '@/components/PortalHeader'
 import { fetchFiresockMetByPlot } from '@/lib/firesock/queries'
@@ -60,10 +61,7 @@ export default async function ForemanSiteGridPage({
 
   const sortedStages = [...(stages ?? [])].sort((a, b) => a.stage_order - b.stage_order)
 
-  const plotNumbers = Array.from(new Set((cells ?? []).map((c) => c.plot_number))).sort((a, b) => {
-    const na = parseFloat(a), nb = parseFloat(b)
-    return isNaN(na) || isNaN(nb) ? a.localeCompare(b) : na - nb
-  })
+  const plotNumbers = sortPlotNumbers(Array.from(new Set((cells ?? []).map((c) => c.plot_number))))
 
   // Separate the incoming cells param into this-site cells and other-sites cells.
   // The multi-site claim builder sends ALL selected cells (from every site) so this

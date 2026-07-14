@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CheckSquare, Square, ClipboardList, X, Lock, Shield } from 'lucide-react'
 import { isRoofCompletionStage } from '@/lib/firesock/stages'
 import { MIN_FIRESOCK_PHOTOS } from '@/lib/firesock/constants'
+import { buildPlotGridRows } from '@/lib/sites/plot-order'
 
 type Stage = { id: string; name: string }
 type Cell  = {
@@ -169,6 +170,8 @@ export default function ForemanGrid({
   const cellMap = new Map<string, Cell>()
   for (const c of cells) cellMap.set(`${c.plotNumber}__${c.stageId}`, c)
 
+  const plotRows = buildPlotGridRows(plotNumbers)
+
   // Claimable = has value AND not 100% already claimed
   const stageNameById  = new Map(stages.map((s) => [s.id, s.name]))
   const claimableCells = cells.filter((c) =>
@@ -330,13 +333,25 @@ export default function ForemanGrid({
               </tr>
             </thead>
             <tbody>
-              {plotNumbers.map((plotNo, rowIdx) => {
+              {plotRows.map((row, rowIdx) => {
+                if (row.type === 'section') {
+                  return (
+                    <tr key={row.key} className="bg-slate-100 border-y border-slate-200">
+                      <td colSpan={stages.length + 1}
+                          className="sticky left-0 z-10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                        {row.label}
+                      </td>
+                    </tr>
+                  )
+                }
+
+                const plotNo = row.plotNumber
                 const rowClaimable = claimableCells.filter((c) => c.plotNumber === plotNo)
                 const rowAllOn     = rowClaimable.length > 0 && rowClaimable.every((c) => selections.has(c.id))
                 const rowSomeOn    = rowClaimable.some((c) => selections.has(c.id))
 
                 return (
-                  <tr key={plotNo} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                  <tr key={row.key} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td
                       className={`sticky left-0 z-10 px-3 font-semibold text-slate-800
                                   border-r border-gray-200 bg-inherit whitespace-nowrap

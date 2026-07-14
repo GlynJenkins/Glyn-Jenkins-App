@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import CellEditorPanel, { type SelectedCell } from './CellEditorPanel'
 import { ShieldCheck, X, Loader2 } from 'lucide-react'
+import { buildPlotGridRows, sortPlotNumbers } from '@/lib/sites/plot-order'
 
 type Stage = { id: string; stage_name: string; stage_order: number }
 type Cell  = {
@@ -147,10 +148,8 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
     cellMap.get(cell.plot_number)!.set(cell.stage_id, cell)
   }
 
-  const plotNumbers = Array.from(new Set(gridCells.map((c) => c.plot_number))).sort((a, b) => {
-    const na = parseInt(a), nb = parseInt(b)
-    return isNaN(na) || isNaN(nb) ? a.localeCompare(b) : na - nb
-  })
+  const plotNumbers = sortPlotNumbers(Array.from(new Set(gridCells.map((c) => c.plot_number))))
+  const plotRows    = buildPlotGridRows(plotNumbers)
 
   const sortedStages = [...stages].sort((a, b) => a.stage_order - b.stage_order)
 
@@ -261,8 +260,21 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
             </tr>
           </thead>
           <tbody>
-            {plotNumbers.map((plotNo, rowIdx) => (
-              <tr key={plotNo} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+            {plotRows.map((row, rowIdx) => {
+              if (row.type === 'section') {
+                return (
+                  <tr key={row.key} className="bg-slate-100 border-y border-slate-200">
+                    <td colSpan={sortedStages.length + 2}
+                        className="sticky left-0 z-10 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                      {row.label}
+                    </td>
+                  </tr>
+                )
+              }
+
+              const plotNo = row.plotNumber
+              return (
+              <tr key={row.key} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                 <td className="sticky left-0 z-10 px-4 py-2 font-semibold text-slate-800
                                border-r border-gray-200 bg-inherit whitespace-nowrap">
                   {plotNo}
@@ -320,7 +332,8 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
                   )
                 })()}
               </tr>
-            ))}
+              )
+            })}
 
             {/* Totals row */}
             <tr className="bg-slate-800 text-white font-bold border-t-2 border-slate-600">
