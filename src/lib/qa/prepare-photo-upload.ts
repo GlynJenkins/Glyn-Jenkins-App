@@ -161,3 +161,8 @@ export function prepareVariationPhotoForUpload(file: File): Promise<File> {
     maxBytes:       900_000,
   })
 }
+
+/** Same compression as variations — site photos, one upload per request on the server. */
+export function prepareFiresockPhotoForUpload(file: File): Promise<File> {
+  return prepareVariationPhotoForUpload(file)
+}

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   Camera, Check, ChevronRight, Download, ImagePlus, Loader2, Shield, Trash2, X,
 } from 'lucide-react'
-import { preparePhotoForUpload } from '@/lib/qa/prepare-photo-upload'
+import { prepareFiresockPhotoForUpload } from '@/lib/qa/prepare-photo-upload'
 import { MIN_FIRESOCK_PHOTOS, FIRESOCK_EVIDENCE_LABEL } from '@/lib/firesock/constants'
 import type { FiresockPlotRow, FiresockSiteGrid } from '@/lib/firesock/queries'
 
@@ -41,6 +41,7 @@ function UploadModal({
   const [previews, setPreviews] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
 
   const addFiles = async (files: FileList | null) => {
     if (!files?.length) return
@@ -49,7 +50,7 @@ function UploadModal({
     const urls: string[] = []
     try {
       for (const file of Array.from(files)) {
-        const prepared = await preparePhotoForUpload(file)
+        const prepared = await prepareFiresockPhotoForUpload(file)
         next.push(prepared)
         urls.push(URL.createObjectURL(prepared))
       }
@@ -73,31 +74,37 @@ function UploadModal({
     if (pending.length === 0) return
     setUploading(true)
     setError(null)
+    setUploadProgress(`Uploading 0 of ${pending.length}…`)
     try {
-      const fd = new FormData()
-      fd.append('plotNumber', plot.plot_number)
-      for (const file of pending) fd.append('photos', file)
+      let latestGrid: FiresockSiteGrid | undefined
 
-      const res  = await fetch(`/api/firesock/${siteId}/photos`, { method: 'POST', body: fd })
-      const text = await res.text()
-      let json: { error?: string; grid?: FiresockSiteGrid }
-      try {
-        json = JSON.parse(text) as { error?: string; grid?: FiresockSiteGrid }
-      } catch {
-        throw new Error(
-          res.status === 413
-            ? 'Photos are too large — try fewer at a time or retake closer shots.'
-            : `Upload failed (${res.status}). Refresh the page and try again.`,
-        )
+      for (let i = 0; i < pending.length; i++) {
+        setUploadProgress(`Uploading ${i + 1} of ${pending.length}…`)
+        const fd = new FormData()
+        fd.append('plotNumber', plot.plot_number)
+        fd.append('photos', pending[i]!)
+
+        const res  = await fetch(`/api/firesock/${siteId}/photos`, { method: 'POST', body: fd })
+        const text = await res.text()
+        let json: { error?: string; grid?: FiresockSiteGrid }
+        try {
+          json = JSON.parse(text) as { error?: string; grid?: FiresockSiteGrid }
+        } catch {
+          throw new Error(
+            `Upload failed (photo ${i + 1}). Check your connection and try again.`,
+          )
+        }
+        if (!res.ok) throw new Error(json.error ?? `Upload failed on photo ${i + 1}.`)
+        latestGrid = json.grid
       }
-      if (!res.ok) throw new Error(json.error ?? 'Upload failed.')
 
       previews.forEach((u) => URL.revokeObjectURL(u))
-      onSaved(json.grid as FiresockSiteGrid)
+      if (latestGrid) onSaved(latestGrid)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.')
       setUploading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -190,6 +197,10 @@ function UploadModal({
               {pending.length} new photo{pending.length !== 1 ? 's' : ''} selected
               {needMore > 0 && ` · ${needMore} more required after upload`}
             </p>
+          )}
+
+          {uploadProgress && uploading && (
+            <p className="text-xs text-slate-500 text-center">{uploadProgress}</p>
           )}
 
           {error && <p className="text-xs text-red-600">{error}</p>}
