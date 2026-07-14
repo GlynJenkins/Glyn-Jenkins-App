@@ -4,7 +4,7 @@ import {
   parseSiteDocumentDetails,
 } from '@/lib/documents/company-branding'
 import { fetchFiresockSiteGrid } from './queries'
-import { generateFiresockSitePdf, type FiresockPdfPhoto } from './generate-site-pdf'
+import { generateFiresockPlotPdf, type FiresockPdfPhoto } from './generate-plot-pdf'
 
 function mimeFromPath(path: string): string {
   const lower = path.toLowerCase()
@@ -19,7 +19,10 @@ async function downloadStorageFile(path: string): Promise<Buffer | null> {
   return Buffer.from(await data.arrayBuffer())
 }
 
-export async function loadFiresockSitePdf(siteId: string): Promise<Buffer | null> {
+export async function loadFiresockPlotPdf(
+  siteId: string,
+  plotNumber: string,
+): Promise<Buffer | null> {
   const supabase = createServiceClient()
 
   const { data: site } = await supabase
@@ -35,36 +38,40 @@ export async function loadFiresockSitePdf(siteId: string): Promise<Buffer | null
   if (!site) return null
 
   const grid = await fetchFiresockSiteGrid(siteId)
+  const plot = grid.plots.find((p) => p.plot_number === plotNumber)
+  if (!plot || plot.photos.length === 0) return null
+
   const company = await loadCompanyBranding()
+  const photos: FiresockPdfPhoto[] = []
 
-  const plots = []
+  for (let i = 0; i < plot.photos.length; i++) {
+    const rec = plot.photos[i]!
+    const buffer = await downloadStorageFile(rec.photo_path)
+    if (!buffer) continue
+    photos.push({
+      label:  `Photo ${i + 1}`,
+      buffer,
+      mime:   mimeFromPath(rec.photo_path),
+    })
+  }
 
-  for (const plot of grid.plots) {
-    const photos: FiresockPdfPhoto[] = []
-    for (let i = 0; i < plot.photos.length; i++) {
-      const rec = plot.photos[i]!
-      const buffer = await downloadStorageFile(rec.photo_path)
-      if (!buffer) continue
-      photos.push({
-        label:  `Photo ${i + 1}`,
-        buffer,
-        mime:   mimeFromPath(rec.photo_path),
-      })
-    }
+  if (photos.length === 0) return null
 
-    plots.push({
+  return generateFiresockPlotPdf({
+    siteName:      site.name,
+    siteDocuments: parseSiteDocumentDetails(site),
+    company,
+    generatedAt:   new Date(),
+    plot: {
       plotNumber:  plot.plot_number,
       details:     plot.details,
       photos,
       evidenceMet: plot.evidence_met,
-    })
-  }
-
-  return generateFiresockSitePdf({
-    siteName:       site.name,
-    siteDocuments:  parseSiteDocumentDetails(site),
-    company,
-    generatedAt:    new Date(),
-    plots,
+    },
   })
+}
+
+export function firesockPlotPdfFilename(plotNumber: string): string {
+  const safe = plotNumber.replace(/[^a-zA-Z0-9._-]+/g, '-')
+  return `firesock-plot-${safe}.pdf`
 }

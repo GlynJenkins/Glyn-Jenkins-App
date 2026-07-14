@@ -11,8 +11,8 @@ import type { FiresockPlotRow, FiresockSiteGrid } from '@/lib/firesock/queries'
 type Props = {
   siteId:       string
   initialGrid:  FiresockSiteGrid
-  canUpload?:   boolean
-  showPdfLink?: boolean
+  canUpload?:            boolean
+  showPlotPdfDownloads?: boolean
 }
 
 function PlotDetailLine({ plot }: { plot: FiresockPlotRow }) {
@@ -21,6 +21,26 @@ function PlotDetailLine({ plot }: { plot: FiresockPlotRow }) {
     <p className="text-xs text-slate-500 mt-0.5 truncate">
       {plot.details.map((d) => d.value).join(' · ')}
     </p>
+  )
+}
+
+function PlotRowContent({ plot }: { plot: FiresockPlotRow }) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <p className="font-semibold text-slate-900">Plot {plot.plot_number}</p>
+        {plot.evidence_met ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+            <Check className="w-3 h-3" /> Complete
+          </span>
+        ) : (
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+            {plot.photo_count}/{MIN_FIRESOCK_PHOTOS}
+          </span>
+        )}
+      </div>
+      <PlotDetailLine plot={plot} />
+    </>
   )
 }
 
@@ -270,7 +290,7 @@ export default function FiresockPlotList({
   siteId,
   initialGrid,
   canUpload = true,
-  showPdfLink = false,
+  showPlotPdfDownloads = false,
 }: Props) {
   const [grid, setGrid] = useState(initialGrid)
   const [openPlot, setOpenPlot] = useState<FiresockPlotRow | null>(null)
@@ -321,15 +341,6 @@ export default function FiresockPlotList({
         <p className="text-xs text-slate-500 mt-2">
           Minimum {MIN_FIRESOCK_PHOTOS} photos per plot before Roof completion can be claimed.
         </p>
-        {showPdfLink && (
-          <a
-            href={`/api/firesock/${siteId}/pdf`}
-            className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700"
-          >
-            <Download className="w-4 h-4" />
-            Download PDF for developer
-          </a>
-        )}
       </div>
 
       <div className="flex gap-2">
@@ -359,27 +370,20 @@ export default function FiresockPlotList({
           {visible.map((plot) => (
             <div key={plot.plot_number} className="px-4 py-3.5">
               <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  disabled={!canUpload}
-                  onClick={() => canUpload && setOpenPlot(grid.plots.find((p) => p.plot_number === plot.plot_number) ?? plot)}
-                  className={`flex-1 text-left min-w-0 ${canUpload ? 'hover:opacity-80' : ''}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-slate-900">Plot {plot.plot_number}</p>
-                    {plot.evidence_met ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                        <Check className="w-3 h-3" /> Complete
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                        {plot.photo_count}/{MIN_FIRESOCK_PHOTOS}
-                      </span>
-                    )}
+                {canUpload ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpenPlot(grid.plots.find((p) => p.plot_number === plot.plot_number) ?? plot)}
+                    className="flex-1 text-left min-w-0 hover:opacity-80"
+                  >
+                    <PlotRowContent plot={plot} />
+                  </button>
+                ) : (
+                  <div className="flex-1 min-w-0">
+                    <PlotRowContent plot={plot} />
                   </div>
-                  <PlotDetailLine plot={plot} />
-                </button>
-                {canUpload && (
+                )}
+                {canUpload ? (
                   <button
                     type="button"
                     onClick={() => setOpenPlot(grid.plots.find((p) => p.plot_number === plot.plot_number) ?? plot)}
@@ -387,7 +391,15 @@ export default function FiresockPlotList({
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
-                )}
+                ) : showPlotPdfDownloads && plot.photo_count > 0 ? (
+                  <a
+                    href={`/api/firesock/${siteId}/plots/${encodeURIComponent(plot.plot_number)}/pdf`}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-50 text-orange-700 text-xs font-semibold hover:bg-orange-100"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    PDF
+                  </a>
+                ) : null}
               </div>
             </div>
           ))}

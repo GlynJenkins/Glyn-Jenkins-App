@@ -1,25 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
-import { loadFiresockSitePdf } from '@/lib/firesock/load-site-pdf'
+import { firesockPlotPdfFilename, loadFiresockPlotPdf } from '@/lib/firesock/load-plot-pdf'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ siteId: string }> },
+  { params }: { params: Promise<{ siteId: string; plotNumber: string }> },
 ) {
   const auth = await verifyAdminApiAccess()
   if (!auth.ok) return auth.response
 
   try {
-    const { siteId } = await params
-    const pdf = await loadFiresockSitePdf(siteId)
+    const { siteId, plotNumber } = await params
+    const decodedPlot = decodeURIComponent(plotNumber)
+    const pdf = await loadFiresockPlotPdf(siteId, decodedPlot)
     if (!pdf) {
-      return NextResponse.json({ error: 'Site not found.' }, { status: 404 })
+      return NextResponse.json(
+        { error: 'Plot not found or has no photos to export.' },
+        { status: 404 },
+      )
     }
 
-    const filename = `firesock-evidence-${siteId.slice(0, 8)}.pdf`
+    const filename = firesockPlotPdfFilename(decodedPlot)
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         'Content-Type':        'application/pdf',

@@ -81,7 +81,7 @@ The app uses the **service role** on the server for most operations. Ensure RLS 
 
 Production URL: **`https://glyn-jenkins-app.vercel.app`**
 
-**Status: Priority 1 complete (6 Jul 2026)** — migrations applied, env vars confirmed, logged-in flows tested, iPhone PWA installed.
+**Status: Go-live ready (6 Jul 2026)** — migrations applied, env vars confirmed, dry-run payday complete, iPhone PWA installed.
 
 ### Automated checks (6 Jul 2026)
 
@@ -104,12 +104,13 @@ Production URL: **`https://glyn-jenkins-app.vercel.app`**
 | 2 | Vercel environment variables confirmed | Done |
 | 3 | Logged-in smoke test (foreman + admin flows) | Done |
 | 4 | iPhone PWA — Add to Home Screen | Done |
+| 5 | End-to-end payday dry run (claim → approve → Bank CSV) | Done |
+| 6 | Forgot password email + reset | Done |
 
-Optional extras (only if not already covered in stage 3):
+Optional extras:
 
 - [ ] **Induction submit** — test registration on `/induction` (skip if you don’t want test data in production)
-- [ ] **Email/SMS** — confirm Resend email and Twilio SMS on approve/reject (if Twilio configured)
-- [ ] **Forgot password** — `/forgot-password` → email link → reset → log in
+- [ ] **Email/SMS** — confirm Twilio SMS on approve/reject (if Twilio configured)
 
 ### Vercel environment variables
 
@@ -131,10 +132,17 @@ Confirmed in **Vercel → glyn-jenkins-app → Settings → Environment Variable
 
 Includes worker induction columns, apprentice `national_insurance` on the ledger, management holidays, and developer variation tables.
 
-## 8. Before first real payday
+## 8. First real payday
 
-- **Payroll bank CSV** — on **Booking In** (`/admin/claims`), use **Bank CSV** next to Excel. Exports payee, sort code, account number, net amount, and reference for the selected fortnight/filters. Workers without valid bank details are omitted from the file.
-- Monitor usage/errors in Vercel and Supabase dashboards
+**Ready.** Use this flow each fortnight:
+
+1. Foreman submits claim (before apply-by day)
+2. Admin approves on **Pending claims**
+3. **Booking In** — check totals, edit apprentice tax/NI if needed
+4. **Bank CSV** — import to your bank
+5. **Excel** — keep as backup/archive if needed
+
+Monitor usage/errors in Vercel and Supabase dashboards around payday.
 
 ---
 

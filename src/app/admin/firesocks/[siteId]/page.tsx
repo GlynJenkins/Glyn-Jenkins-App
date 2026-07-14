@@ -41,7 +41,7 @@ export default async function AdminFiresockSitePage({
           siteId={siteId}
           initialGrid={grid!}
           canUpload={false}
-          showPdfLink
+          showPlotPdfDownloads
         />
       </div>
     </div>
