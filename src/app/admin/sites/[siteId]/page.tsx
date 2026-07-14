@@ -6,6 +6,7 @@ import SiteGrid from './_components/SiteGrid'
 import ExcelImporter from './_components/ExcelImporter'
 import ForemanAssignments from './_components/ForemanAssignments'
 import ClearGridButton from './_components/ClearGridButton'
+import AddStageColumnButton from './_components/AddStageColumnButton'
 import SiteDocumentDetailsForm from './_components/SiteDocumentDetailsForm'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
 
@@ -113,6 +114,7 @@ export default async function AdminSitePage({
                   Jetwash
                 </Link>
               )}
+              {hasData && <AddStageColumnButton siteId={siteId} />}
               {hasData && <ClearGridButton siteId={siteId} />}
               <ExcelImporter siteId={siteId} />
             </div>
