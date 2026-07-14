@@ -3,6 +3,11 @@ import { requireForemanAccess } from '@/lib/auth/portal-access'
 import { getCurrentFortnight, toLocalDateString } from '@/lib/fortnight'
 import LogoutButton             from '../admin/_components/LogoutButton'
 import ForemanDashboard         from './_components/ForemanDashboard'
+import {
+  filterPastForemanClaims,
+  foremanClaimPeriodKey,
+  loadForemanClaimHistory,
+} from '@/lib/claims/load-foreman-claim-history'
 import PortalHeader             from '@/components/PortalHeader'
 
 export const dynamic = 'force-dynamic'
@@ -42,6 +47,13 @@ export default async function ForemanPage() {
     .limit(1)
     .maybeSingle()
   if (claimRow) currentClaim = { status: claimRow.status, claimId: claimRow.id }
+
+  const currentPeriodKey = foremanClaimPeriodKey(
+    toLocalDateString(period.start),
+    toLocalDateString(period.end),
+  )
+  const allClaims = await loadForemanClaimHistory(supabase, worker.id)
+  const pastClaims = filterPastForemanClaims(allClaims, currentPeriodKey)
 
   // ── Pending variation count per site (one submission = one count, not per worker line) ──
   const variationCountMap: Record<string, number> = {}
@@ -83,6 +95,7 @@ export default async function ForemanPage() {
         <ForemanDashboard
           sites={sites}
           currentClaim={currentClaim}
+          pastClaims={pastClaims}
           variationCountMap={variationCountMap}
           period={{
             label:         period.label,

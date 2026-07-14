@@ -7,6 +7,8 @@ import {
   Building2, MapPin, Grid3x3, FileUp, ClipboardList,
   Clock, AlertCircle, CheckCircle2, Loader2, Lock, ChevronRight, RotateCcw,
 } from 'lucide-react'
+import ForemanClaimHistory from './ForemanClaimHistory'
+import type { ForemanClaimHistoryItem } from '@/lib/claims/load-foreman-claim-history'
 import { formatCountdown } from '@/lib/fortnight'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -31,6 +33,7 @@ type Period = {
 interface Props {
   sites:             Site[]
   currentClaim:      { status: string; claimId: string } | null
+  pastClaims:        ForemanClaimHistoryItem[]
   variationCountMap: Record<string, number>
   period:            Period
 }
@@ -170,7 +173,7 @@ function SiteCard({ site, variationCount }: { site: Site; variationCount: number
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 export default function ForemanDashboard({
-  sites, currentClaim, variationCountMap, period,
+  sites, currentClaim, pastClaims, variationCountMap, period,
 }: Props) {
   const router        = useRouter()
   const [withdrawing, setWithdrawing] = useState(false)
@@ -313,6 +316,8 @@ export default function ForemanDashboard({
           </Link>
         )}
       </div>
+
+      <ForemanClaimHistory claims={pastClaims} />
 
       {/* No sites */}
       {sites.length === 0 && (

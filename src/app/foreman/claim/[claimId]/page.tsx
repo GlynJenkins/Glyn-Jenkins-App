@@ -41,7 +41,13 @@ export default async function ForemanClaimDetailPage({
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
               Glyn Jenkins LTD
             </p>
-            <h1 className="text-xl font-bold text-white truncate">My claim</h1>
+            <h1 className="text-xl font-bold text-white truncate">
+              {claim.period_start && claim.period_end
+                ? new Date(claim.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                  + ' – '
+                  + new Date(claim.period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                : 'My claim'}
+            </h1>
           </div>
           <Link
             href="/foreman"
