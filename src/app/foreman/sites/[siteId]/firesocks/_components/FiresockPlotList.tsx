@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import Link from 'next/link'
 import {
   Camera, Check, ChevronRight, Download, ImagePlus, Loader2, Shield, Trash2, X,
 } from 'lucide-react'
@@ -29,12 +28,12 @@ function UploadModal({
   siteId,
   plot,
   onClose,
-  onSaved,
+  onGridUpdate,
 }: {
-  siteId:   string
-  plot:     FiresockPlotRow
-  onClose:  () => void
-  onSaved:  (grid: FiresockSiteGrid) => void
+  siteId:        string
+  plot:          FiresockPlotRow
+  onClose:       () => void
+  onGridUpdate:  (grid: FiresockSiteGrid) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<File[]>([])
@@ -42,6 +41,8 @@ function UploadModal({
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const [busyPhotoId, setBusyPhotoId] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
 
   const addFiles = async (files: FileList | null) => {
     if (!files?.length) return
@@ -68,6 +69,29 @@ function UploadModal({
       return prev.filter((_, i) => i !== idx)
     })
     setPending((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const deleteSavedPhoto = (photoId: string) => {
+    setError(null)
+    setBusyPhotoId(photoId)
+    startTransition(async () => {
+      const res  = await fetch(`/api/firesock/photos/${photoId}`, { method: 'DELETE' })
+      const text = await res.text()
+      let json: { error?: string; grid?: FiresockSiteGrid }
+      try {
+        json = JSON.parse(text) as { error?: string; grid?: FiresockSiteGrid }
+      } catch {
+        setBusyPhotoId(null)
+        setError('Could not remove photo. Try again.')
+        return
+      }
+      setBusyPhotoId(null)
+      if (!res.ok) {
+        setError(json.error ?? 'Could not remove photo.')
+        return
+      }
+      if (json.grid) onGridUpdate(json.grid)
+    })
   }
 
   const handleUpload = async () => {
@@ -99,8 +123,9 @@ function UploadModal({
       }
 
       previews.forEach((u) => URL.revokeObjectURL(u))
-      if (latestGrid) onSaved(latestGrid)
-      onClose()
+      setPending([])
+      setPreviews([])
+      if (latestGrid) onGridUpdate(latestGrid)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.')
       setUploading(false)
@@ -148,6 +173,17 @@ function UploadModal({
                       Photo {photo.sort_order + 1}
                     </div>
                   )}
+                  <button
+                    type="button"
+                    disabled={busyPhotoId === photo.id || uploading}
+                    onClick={() => deleteSavedPhoto(photo.id)}
+                    className="absolute top-1 right-1 p-1.5 bg-black/50 rounded-full text-white disabled:opacity-50"
+                    aria-label={`Remove photo ${photo.sort_order + 1}`}
+                  >
+                    {busyPhotoId === photo.id
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <Trash2 className="w-3 h-3" />}
+                  </button>
                 </div>
               ))}
             </div>
@@ -212,7 +248,17 @@ function UploadModal({
             className="w-full py-3.5 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-2xl flex items-center justify-center gap-2"
           >
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-            Upload {pending.length > 0 ? `${pending.length} photo${pending.length !== 1 ? 's' : ''}` : 'photos'}
+            {pending.length > 0
+              ? `Upload ${pending.length} photo${pending.length !== 1 ? 's' : ''}`
+              : 'Select photos above to upload'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-3 text-sm font-semibold text-slate-600 hover:text-slate-800"
+          >
+            Done
           </button>
         </div>
       </div>
@@ -229,9 +275,6 @@ export default function FiresockPlotList({
   const [grid, setGrid] = useState(initialGrid)
   const [openPlot, setOpenPlot] = useState<FiresockPlotRow | null>(null)
   const [filter, setFilter] = useState<'all' | 'missing'>('all')
-  const [error, setError] = useState<string | null>(null)
-  const [busyPhotoId, setBusyPhotoId] = useState<string | null>(null)
-  const [, startTransition] = useTransition()
 
   const required = grid.plots.filter((p) => p.requires_evidence)
   const complete = required.filter((p) => p.evidence_met).length
@@ -241,19 +284,12 @@ export default function FiresockPlotList({
     ? required.filter((p) => !p.evidence_met)
     : required
 
-  const deletePhoto = (photoId: string) => {
-    setError(null)
-    setBusyPhotoId(photoId)
-    startTransition(async () => {
-      const res  = await fetch(`/api/firesock/photos/${photoId}`, { method: 'DELETE' })
-      const json = await res.json()
-      setBusyPhotoId(null)
-      if (!res.ok) {
-        setError(json.error ?? 'Could not remove photo.')
-        return
-      }
-      if (json.grid) setGrid(json.grid as FiresockSiteGrid)
-    })
+  const handleGridUpdate = (updated: FiresockSiteGrid) => {
+    setGrid(updated)
+    if (openPlot) {
+      const plot = updated.plots.find((p) => p.plot_number === openPlot.plot_number)
+      if (plot) setOpenPlot(plot)
+    }
   }
 
   if (required.length === 0) {
@@ -270,9 +306,6 @@ export default function FiresockPlotList({
 
   return (
     <div className="space-y-4">
-      {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">{error}</p>
-      )}
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -325,7 +358,7 @@ export default function FiresockPlotList({
         <div className="divide-y divide-gray-50">
           {visible.map((plot) => (
             <div key={plot.plot_number} className="px-4 py-3.5">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
                   disabled={!canUpload}
@@ -356,25 +389,6 @@ export default function FiresockPlotList({
                   </button>
                 )}
               </div>
-
-              {canUpload && plot.photos.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {plot.photos.map((photo) => (
-                    <button
-                      key={photo.id}
-                      type="button"
-                      disabled={busyPhotoId === photo.id}
-                      onClick={() => deletePhoto(photo.id)}
-                      className="inline-flex items-center gap-1 text-[10px] text-red-500 bg-red-50 px-2 py-1 rounded-lg"
-                    >
-                      {busyPhotoId === photo.id
-                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                        : <Trash2 className="w-3 h-3" />}
-                      Remove #{photo.sort_order + 1}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -385,10 +399,7 @@ export default function FiresockPlotList({
           siteId={siteId}
           plot={openPlot}
           onClose={() => setOpenPlot(null)}
-          onSaved={(g) => {
-            setGrid(g)
-            setOpenPlot(null)
-          }}
+          onGridUpdate={handleGridUpdate}
         />
       )}
     </div>
