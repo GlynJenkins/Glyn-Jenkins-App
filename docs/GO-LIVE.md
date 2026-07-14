@@ -53,9 +53,34 @@ Run any pending SQL in `supabase/migrations/` via the Supabase SQL editor (e.g. 
 
 In Supabase → **Project Settings → Database**, confirm daily backups are enabled on your plan.
 
-### Row Level Security
+### Row Level Security (required before first real payday)
 
-The app uses the **service role** on the server for most operations. Ensure RLS policies remain in place as a second layer.
+The browser ships `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Anyone can call Supabase REST with that key. **RLS on every table** is what blocks direct reads of `workers` (bank details, NI, UTR, etc.).
+
+The app’s server uses the **service role** only in API routes and server pages — that bypasses RLS and is correct. Enabling RLS does **not** break the portal.
+
+**Apply (once per Supabase project):**
+
+1. Supabase → **SQL Editor** → run:
+   ```
+   supabase/migrations/enable_row_level_security.sql
+   ```
+2. **Verify** — all rows should show `rowsecurity = true`:
+   ```sql
+   SELECT tablename, rowsecurity
+   FROM pg_tables
+   WHERE schemaname = 'public'
+   ORDER BY tablename;
+   ```
+3. **Live test** — from a terminal (expect `[]` or an error, **not** worker data):
+   ```bash
+   curl -s "https://YOUR_PROJECT.supabase.co/rest/v1/workers?select=id&limit=1" \
+     -H "apikey: YOUR_ANON_KEY" \
+     -H "Authorization: Bearer YOUR_ANON_KEY"
+   ```
+4. Supabase → **Advisors → Security Advisor** — fix any remaining “RLS disabled” flags.
+
+**Do not** add broad “allow anon read” policies unless a page truly queries Supabase from the browser (this app does not — only auth login/logout uses the anon key client-side).
 
 ## 4. Resend (email)
 
@@ -100,7 +125,7 @@ Production URL: **`https://glyn-jenkins-app.vercel.app`**
 
 | Stage | Task | Status |
 |-------|------|--------|
-| 1 | Supabase migrations (`run-all-pending.sql`) | Done |
+| 1 | Supabase migrations + **RLS** (`enable_row_level_security.sql`) | **Run before payday** |
 | 2 | Vercel environment variables confirmed | Done |
 | 3 | Logged-in smoke test (foreman + admin flows) | Done |
 | 4 | iPhone PWA — Add to Home Screen | Done |
