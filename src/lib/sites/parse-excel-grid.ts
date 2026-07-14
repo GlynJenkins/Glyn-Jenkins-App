@@ -65,6 +65,57 @@ function isSectionHeaderLabel(plotVal: string): boolean {
   return /^(garages?|screen\s*walls?|notes?|summary|totals?)$/i.test(plotVal.trim())
 }
 
+type PlotSection = 'house' | 'garage' | 'screen_wall'
+
+function findTypeColumnIndex(allHeaders: string[], plotColIndex: number): number | null {
+  for (let i = 0; i < allHeaders.length; i++) {
+    if (i === plotColIndex || !allHeaders[i]) continue
+    if (isFirstLiftHeader(allHeaders[i])) break
+    if (i > plotColIndex) return i
+  }
+  return plotColIndex + 1 < allHeaders.length ? plotColIndex + 1 : null
+}
+
+function isFirstLiftHeader(header: string): boolean {
+  return /1st\s*lift|first\s*lift|^lift\s*1/i.test(header.trim())
+}
+
+function typeColumnText(
+  row: (string | number | null)[],
+  typeColIndex: number | null,
+): string {
+  if (typeColIndex == null) return ''
+  const raw = row[typeColIndex]
+  if (raw === null || raw === undefined) return ''
+  return String(raw).trim()
+}
+
+/** Same plot number can be house, garage, and screen wall — suffix keeps rows separate. */
+function buildPlotKey(
+  basePlot: string,
+  section: PlotSection,
+  typeText: string,
+): string {
+  const desc = typeText.trim()
+  if (section === 'screen_wall' || /screen\s*wall/i.test(desc)) {
+    return `${basePlot} · Screen Wall`
+  }
+  if (section === 'garage') {
+    return `${basePlot} · Garage`
+  }
+  return basePlot
+}
+
+function applyPlotKey(
+  row: (string | number | null)[],
+  plotColIndex: number,
+  plotKey: string,
+): (string | number | null)[] {
+  const filled = [...row]
+  filled[plotColIndex] = plotKey
+  return filled
+}
+
 function labelColumnScore(header: string): number {
   const h = header.toLowerCase()
   if (/house\s*type|property|description|garage|screen|unit|name|type/.test(h)) return 3
@@ -108,6 +159,8 @@ export function resolvePlotRows(
   allHeaders: string[],
 ): (string | number | null)[][] {
   let lastPlot: string | number | null = null
+  let section: PlotSection = 'house'
+  const typeColIndex = findTypeColumnIndex(allHeaders, plotColIndex)
 
   return rows.slice(headerRowIndex + 1).map((row) => {
     if (rowIsFullyBlank(row, plotColIndex, allHeaders)) {
@@ -117,33 +170,39 @@ export function resolvePlotRows(
 
     const plotVal = row[plotColIndex]
     const plotStr = plotVal !== null && plotVal !== undefined ? String(plotVal).trim() : ''
+    const typeText = typeColumnText(row, typeColIndex)
 
     if (plotStr) {
+      if (/^garages?$/i.test(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
+        section = 'garage'
+        lastPlot = null
+        return row
+      }
+      if (/^screen\s*walls?$/i.test(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
+        section = 'screen_wall'
+        lastPlot = null
+        return row
+      }
       if (isSectionHeaderLabel(plotStr) && !rowHasStageData(row, plotColIndex, allHeaders)) {
         lastPlot = null
         return row
       }
-      if (/garage|screen\s*wall/i.test(plotStr)) {
-        lastPlot = plotVal
-        return row
-      }
-      lastPlot = plotVal
-      return row
+
+      const plotKey = buildPlotKey(plotStr, section, typeText)
+      lastPlot = plotKey
+      return applyPlotKey(row, plotColIndex, plotKey)
     }
 
     if (rowHasStageData(row, plotColIndex, allHeaders)) {
       const derived = derivePlotLabel(row, plotColIndex, allHeaders)
       if (derived) {
-        lastPlot = derived
-        const filled = [...row]
-        filled[plotColIndex] = derived
-        return filled
+        const plotKey = buildPlotKey(derived, section, typeText || derived)
+        lastPlot = plotKey
+        return applyPlotKey(row, plotColIndex, plotKey)
       }
 
       if (lastPlot !== null) {
-        const filled = [...row]
-        filled[plotColIndex] = lastPlot
-        return filled
+        return applyPlotKey(row, plotColIndex, String(lastPlot))
       }
     }
 
