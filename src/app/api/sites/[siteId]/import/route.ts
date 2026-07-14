@@ -3,21 +3,16 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { syncJetwashPlots } from '@/lib/jetwash/queries'
 import { syncFiresockPlots } from '@/lib/firesock/queries'
+import {
+  buildColumnStages,
+  buildGridCellsFromRows,
+  rebuildSheetRef,
+  resolvePlotColumnMerges,
+  resolvePlotRows,
+} from '@/lib/sites/parse-excel-grid'
 import * as XLSX from 'xlsx'
 
 export const dynamic = 'force-dynamic'
-
-// Parse cell value to number — handles currency strings, formula results, and Excel errors
-function parseValue(val: string | number | boolean | null | undefined): number | null {
-  if (val === null || val === undefined || val === '') return null
-  if (typeof val === 'boolean') return null
-  if (typeof val === 'number') return isFinite(val) ? val : null
-  const s = val.toString().trim()
-  if (!s || s.startsWith('#')) return null   // Excel error: #N/A, #VALUE!, #REF! etc.
-  const cleaned = s.replace(/[£$€,\s]/g, '')
-  const n = parseFloat(cleaned)
-  return isNaN(n) ? null : n
-}
 
 export async function POST(
   request: NextRequest,
@@ -34,65 +29,23 @@ export async function POST(
     const plotColRaw      = formData.get('plotColIndex')  as string | null
     const headerRowIdxRaw = formData.get('headerRowIdx')  as string | null
     const plotColIndex    = plotColRaw      != null ? parseInt(plotColRaw)      : 0
-    // If the exact header row index was confirmed in the preview, use it directly.
-    // Fall back to auto-detection only if not provided (e.g. old clients).
     const confirmedHeaderRowIdx = headerRowIdxRaw != null ? parseInt(headerRowIdxRaw) : null
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded.' }, { status: 400 })
     }
 
-    // ── Parse Excel file ───────────────────────────────────────
     const buffer   = Buffer.from(await file.arrayBuffer())
     const workbook = XLSX.read(buffer, { type: 'buffer' })
 
-    // Use selected sheet or fall back to first sheet
     const targetSheet = sheetName && workbook.SheetNames.includes(sheetName)
       ? sheetName
       : workbook.SheetNames[0]
 
     const sheet = workbook.Sheets[targetSheet]
+    resolvePlotColumnMerges(sheet, plotColIndex)
+    rebuildSheetRef(sheet)
 
-    // ── Step 1: resolve merged cells in the PLOT column only ──
-    // Excel merged cells only store the value in the top-left cell; all other
-    // cells in a vertical merge are empty. We fill downward ONLY in the plot
-    // column so sub-rows of a merged plot block get the correct plot number.
-    // We deliberately do NOT touch other columns — merged title/header rows
-    // that span the full width would otherwise overwrite stage column headers.
-    const merges = (sheet['!merges'] ?? []) as XLSX.Range[]
-    for (const merge of merges) {
-      // Only fill merges that are in, or contain, the plot column
-      if (merge.s.c > plotColIndex || merge.e.c < plotColIndex) continue
-      const firstAddr = XLSX.utils.encode_cell({ r: merge.s.r, c: plotColIndex })
-      const firstCell = sheet[firstAddr]
-      if (!firstCell) continue
-      for (let r = merge.s.r + 1; r <= merge.e.r; r++) {
-        const addr = XLSX.utils.encode_cell({ r, c: plotColIndex })
-        if (!sheet[addr]) sheet[addr] = { ...firstCell }
-      }
-    }
-
-    // ── Step 2: rebuild !ref from actual cell addresses ───────
-    // The saved !ref (used-range) is often stale and doesn't cover rows added
-    // after the file was first created. Instead of guessing, scan every real
-    // cell in the sheet and set !ref to the true extent.
-    {
-      let maxRow = 0, maxCol = 0
-      for (const key of Object.keys(sheet)) {
-        if (key.startsWith('!')) continue
-        try {
-          const { r, c } = XLSX.utils.decode_cell(key)
-          if (r > maxRow) maxRow = r
-          if (c > maxCol) maxCol = c
-        } catch { /* ignore non-cell keys */ }
-      }
-      if (maxRow > 0 || maxCol > 0) {
-        sheet['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxRow, c: maxCol } })
-      }
-    }
-
-    // raw:true  → formula results come through as their cached numeric value
-    // defval:null → empty cells become null rather than undefined
     const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(
       sheet, { header: 1, defval: null, raw: true }
     )
@@ -104,7 +57,6 @@ export async function POST(
       )
     }
 
-    // ── Step 3: locate the header row ─────────────────────────
     let headerRowIndex: number
     if (confirmedHeaderRowIdx != null && !isNaN(confirmedHeaderRowIdx)) {
       headerRowIndex = confirmedHeaderRowIdx
@@ -118,61 +70,26 @@ export async function POST(
 
     const headerRow  = rows[headerRowIndex] as (string | number | null)[]
     const allHeaders = headerRow.map((h) => h?.toString().trim() ?? '')
-
-    // Unique stage names preserve first-seen column order (duplicate headers share one stage).
-    const stageNames: string[] = []
-    const seenStageNames = new Set<string>()
-    for (let i = 0; i < allHeaders.length; i++) {
-      if (i === plotColIndex) continue
-      const name = allHeaders[i]
-      if (!name) continue
-      if (seenStageNames.has(name)) continue
-      seenStageNames.add(name)
-      stageNames.push(name)
-    }
-
-    // All rows after the header; merged plot cells are already resolved above.
-    // Also apply fill-down for any remaining empty plot cells that have stage data
-    // (handles cases like block-label rows where the plot number is absent but data exists).
-    let lastPlot: string | number | null = null
-    const dataRows = (rows.slice(headerRowIndex + 1) as (string | number | null)[][]).map((row) => {
-      const plotVal = row[plotColIndex]
-      const hasStageData = allHeaders.some((_, i) => {
-        if (i === plotColIndex) return false
-        const v = row[i]
-        return v !== null && v !== undefined && String(v).trim() !== ''
-      })
-
-      if (plotVal !== null && plotVal !== undefined && String(plotVal).trim() !== '') {
-        lastPlot = plotVal
-        return row
-      }
-      if (hasStageData && lastPlot !== null) {
-        const filled = [...row]
-        filled[plotColIndex] = lastPlot
-        return filled
-      }
-      // Blank rows don't reset lastPlot — the next section can still inherit it
-      return row
-    })
+    const columnStages = buildColumnStages(allHeaders, plotColIndex)
+    const stageNames   = columnStages.map((c) => c.stageName)
 
     if (stageNames.length === 0) {
       return NextResponse.json({ error: 'No stage columns found in the spreadsheet.' }, { status: 400 })
     }
 
+    const dataRows = resolvePlotRows(rows, headerRowIndex, plotColIndex, allHeaders)
+
     const supabase = createServiceClient()
 
-    // ── Clear existing data for a clean re-import ──────────────
     await supabase.from('price_grid').delete().eq('site_id', siteId)
     await supabase.from('site_stages').delete().eq('site_id', siteId)
 
-    // ── Insert stages ──────────────────────────────────────────
     const { data: stages, error: stagesError } = await supabase
       .from('site_stages')
       .insert(
-        stageNames.map((name, i) => ({
+        columnStages.map((col, i) => ({
           site_id:     siteId,
-          stage_name:  name,
+          stage_name:  col.stageName,
           stage_order: i + 1,
         }))
       )
@@ -185,96 +102,29 @@ export async function POST(
       )
     }
 
-    // Build name → id lookup (duplicate header columns map to the same stage)
     const stageMap = new Map(stages.map((s) => [s.stage_name, s.id]))
-
     const columnStageIds: (string | null)[] = allHeaders.map((name, i) => {
       if (i === plotColIndex || !name) return null
-      return stageMap.get(name) ?? null
+      const col = columnStages.find((c) => c.colIndex === i)
+      return col ? stageMap.get(col.stageName) ?? null : null
     })
 
-    // ── Build cell records ─────────────────────────────────────
-    type CellInsert = {
-      site_id:        string
-      stage_id:       string
-      plot_number:    string
-      contract_value: number | null
-      override_note:  string | null
-      cell_color:     string
-    }
+    const {
+      cells,
+      importedPlots,
+      skippedRows,
+      duplicateCellsMerged,
+      skippedExamples,
+    } = buildGridCellsFromRows({
+      siteId,
+      dataRows,
+      plotColIndex,
+      allHeaders,
+      columnStageIds,
+    })
 
-    function cellHasContent(cell: CellInsert): boolean {
-      return (cell.contract_value != null && cell.contract_value !== 0) || !!cell.override_note?.trim()
-    }
-
-    function upsertCell(map: Map<string, CellInsert>, key: string, incoming: CellInsert): boolean {
-      const existing = map.get(key)
-      if (!existing) {
-        map.set(key, incoming)
-        return false
-      }
-      if (!cellHasContent(incoming)) return true
-      if (!cellHasContent(existing)) {
-        map.set(key, incoming)
-        return true
-      }
-      // Both have content — later row/column wins.
-      map.set(key, incoming)
-      return true
-    }
-
-    const cellByKey = new Map<string, CellInsert>()
-    // Track cells per stage for the detailed report
     const stageCellCount = new Map<string, number>()
     stageNames.forEach((n) => stageCellCount.set(n, 0))
-
-    let skippedRows = 0
-    let duplicateCellsMerged = 0
-    const skippedExamples: string[] = []   // first few skipped row descriptions
-    const importedPlots  = new Set<string>()
-
-    for (const row of dataRows) {
-      const rawPlot = (row as (string | number | null)[])[plotColIndex]
-      const plotNo  = rawPlot?.toString().trim()
-      if (!plotNo) {
-        skippedRows++
-        // Record what the row looks like for debugging (first 5)
-        if (skippedExamples.length < 5) {
-          const rowStr = (row as (string | number | null)[])
-            .map((v) => (v === null ? '(empty)' : String(v).trim().slice(0, 20)))
-            .join(' | ')
-          skippedExamples.push(rowStr)
-        }
-        continue
-      }
-      importedPlots.add(plotNo)
-
-      for (let i = 0; i < allHeaders.length; i++) {
-        if (i === plotColIndex) continue
-        const stageName = allHeaders[i]
-        if (!stageName) continue
-        const stageId = columnStageIds[i]
-        if (!stageId) continue
-
-        const raw      = (row as (string | number | null)[])[i]
-        const numValue = parseValue(raw)
-        const isNote   = raw !== null && numValue === null && typeof raw === 'string' && raw.trim() !== ''
-
-        const incoming: CellInsert = {
-          site_id:        siteId,
-          stage_id:       stageId,
-          plot_number:    plotNo,
-          contract_value: numValue,
-          override_note:  isNote ? raw.trim() : null,
-          cell_color:     'white',
-        }
-
-        const key = `${stageId}|${plotNo}`
-        if (upsertCell(cellByKey, key, incoming)) duplicateCellsMerged++
-      }
-    }
-
-    const cells = Array.from(cellByKey.values())
     for (const cell of cells) {
       const stageName = stages.find((s) => s.id === cell.stage_id)?.stage_name
       if (stageName) {
@@ -282,7 +132,6 @@ export async function POST(
       }
     }
 
-    // ── Insert cells in batches ────────────────────────────────
     const BATCH = 500
     for (let i = 0; i < cells.length; i += BATCH) {
       const { error } = await supabase.from('price_grid').insert(cells.slice(i, i + BATCH))
@@ -291,7 +140,6 @@ export async function POST(
       }
     }
 
-    // ── Build per-stage report ─────────────────────────────────
     const stageReport = stageNames.map((name) => ({
       name,
       cells: stageCellCount.get(name) ?? 0,
@@ -314,14 +162,11 @@ export async function POST(
       console.error('[Firesock sync]', syncErr)
     }
 
-    // Raw rows around the boundary — helps diagnose cutoff issues
-    const boundaryDump = rows.slice(headerRowIndex + 1).map((r, i) => {
-      const typed = r as (string | number | null)[]
-      const plotVal = typed[plotColIndex]
-      const hasData = typed.some((v, ci) => ci !== plotColIndex && v !== null && v !== undefined && String(v).trim() !== '')
+    const boundaryDump = dataRows.map((r, i) => {
+      const plotVal = r[plotColIndex]
+      const hasData = r.some((v, ci) => ci !== plotColIndex && v !== null && v !== undefined && String(v).trim() !== '')
       return { rowOffset: i + 1, plot: plotVal, hasData }
-    }).filter((r) => r.plot !== null || r.hasData)
-      .slice(0, 200)   // first 200 data-bearing rows
+    }).filter((r) => r.plot !== null || r.hasData).slice(0, 200)
 
     return NextResponse.json({
       success:        true,
