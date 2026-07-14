@@ -203,6 +203,26 @@ export async function POST(
       cell_color:     string
     }
 
+    function cellHasContent(cell: CellInsert): boolean {
+      return (cell.contract_value != null && cell.contract_value !== 0) || !!cell.override_note?.trim()
+    }
+
+    function upsertCell(map: Map<string, CellInsert>, key: string, incoming: CellInsert): boolean {
+      const existing = map.get(key)
+      if (!existing) {
+        map.set(key, incoming)
+        return false
+      }
+      if (!cellHasContent(incoming)) return true
+      if (!cellHasContent(existing)) {
+        map.set(key, incoming)
+        return true
+      }
+      // Both have content — later row/column wins.
+      map.set(key, incoming)
+      return true
+    }
+
     const cellByKey = new Map<string, CellInsert>()
     // Track cells per stage for the detailed report
     const stageCellCount = new Map<string, number>()
@@ -240,18 +260,17 @@ export async function POST(
         const numValue = parseValue(raw)
         const isNote   = raw !== null && numValue === null && typeof raw === 'string' && raw.trim() !== ''
 
-        const key = `${stageId}|${plotNo}`
-        if (cellByKey.has(key)) duplicateCellsMerged++
-
-        // Later row/column wins when the same plot+stage appears more than once.
-        cellByKey.set(key, {
+        const incoming: CellInsert = {
           site_id:        siteId,
           stage_id:       stageId,
           plot_number:    plotNo,
           contract_value: numValue,
           override_note:  isNote ? raw.trim() : null,
           cell_color:     'white',
-        })
+        }
+
+        const key = `${stageId}|${plotNo}`
+        if (upsertCell(cellByKey, key, incoming)) duplicateCellsMerged++
       }
     }
 
