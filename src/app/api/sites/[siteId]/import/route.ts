@@ -118,7 +118,18 @@ export async function POST(
 
     const headerRow  = rows[headerRowIndex] as (string | number | null)[]
     const allHeaders = headerRow.map((h) => h?.toString().trim() ?? '')
-    const stageNames = allHeaders.filter((h, i) => i !== plotColIndex && h !== '')
+
+    // Unique stage names preserve first-seen column order (duplicate headers share one stage).
+    const stageNames: string[] = []
+    const seenStageNames = new Set<string>()
+    for (let i = 0; i < allHeaders.length; i++) {
+      if (i === plotColIndex) continue
+      const name = allHeaders[i]
+      if (!name) continue
+      if (seenStageNames.has(name)) continue
+      seenStageNames.add(name)
+      stageNames.push(name)
+    }
 
     // All rows after the header; merged plot cells are already resolved above.
     // Also apply fill-down for any remaining empty plot cells that have stage data
@@ -174,8 +185,13 @@ export async function POST(
       )
     }
 
-    // Build name → id lookup
+    // Build name → id lookup (duplicate header columns map to the same stage)
     const stageMap = new Map(stages.map((s) => [s.stage_name, s.id]))
+
+    const columnStageIds: (string | null)[] = allHeaders.map((name, i) => {
+      if (i === plotColIndex || !name) return null
+      return stageMap.get(name) ?? null
+    })
 
     // ── Build cell records ─────────────────────────────────────
     type CellInsert = {
@@ -187,12 +203,13 @@ export async function POST(
       cell_color:     string
     }
 
-    const cells: CellInsert[] = []
+    const cellByKey = new Map<string, CellInsert>()
     // Track cells per stage for the detailed report
     const stageCellCount = new Map<string, number>()
     stageNames.forEach((n) => stageCellCount.set(n, 0))
 
     let skippedRows = 0
+    let duplicateCellsMerged = 0
     const skippedExamples: string[] = []   // first few skipped row descriptions
     const importedPlots  = new Set<string>()
 
@@ -216,15 +233,18 @@ export async function POST(
         if (i === plotColIndex) continue
         const stageName = allHeaders[i]
         if (!stageName) continue
-        const stageId = stageMap.get(stageName)
-        // Safety: if stageMap doesn't have this name, skip but record the miss
+        const stageId = columnStageIds[i]
         if (!stageId) continue
 
         const raw      = (row as (string | number | null)[])[i]
         const numValue = parseValue(raw)
         const isNote   = raw !== null && numValue === null && typeof raw === 'string' && raw.trim() !== ''
 
-        cells.push({
+        const key = `${stageId}|${plotNo}`
+        if (cellByKey.has(key)) duplicateCellsMerged++
+
+        // Later row/column wins when the same plot+stage appears more than once.
+        cellByKey.set(key, {
           site_id:        siteId,
           stage_id:       stageId,
           plot_number:    plotNo,
@@ -232,6 +252,13 @@ export async function POST(
           override_note:  isNote ? raw.trim() : null,
           cell_color:     'white',
         })
+      }
+    }
+
+    const cells = Array.from(cellByKey.values())
+    for (const cell of cells) {
+      const stageName = stages.find((s) => s.id === cell.stage_id)?.stage_name
+      if (stageName) {
         stageCellCount.set(stageName, (stageCellCount.get(stageName) ?? 0) + 1)
       }
     }
@@ -292,6 +319,7 @@ export async function POST(
       boundaryDump,
       skippedRows,
       skippedExamples,
+      duplicateCellsMerged,
       stageReport,
     })
   } catch (err) {
