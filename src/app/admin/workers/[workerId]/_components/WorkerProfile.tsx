@@ -100,6 +100,24 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ── Statement print helper ─────────────────────────────────────────────────────
 
+/** Escape user-controlled values before interpolating into the statement HTML. */
+function escapeHtml(value: string | null | undefined): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** Show only the last 4 characters of a sensitive value, e.g. "••••6789". */
+function maskSensitive(value: string | null | undefined): string {
+  const v = (value ?? '').trim()
+  if (!v) return 'N/A'
+  if (v.length <= 4) return v
+  return `••••${v.slice(-4)}`
+}
+
 function printStatement(worker: Worker, entries: LedgerEntry[]) {
   const totals = entries.reduce(
     (acc, e) => ({
@@ -115,8 +133,8 @@ function printStatement(worker: Worker, entries: LedgerEntry[]) {
     .map(
       (e) => `
       <tr>
-        <td>${fmtDate(e.date_of_pay)}</td>
-        <td>${ledgerSiteName(e)}</td>
+        <td>${escapeHtml(fmtDate(e.date_of_pay))}</td>
+        <td>${escapeHtml(ledgerSiteName(e))}</td>
         <td>${fmt(e.gross_pay)}</td>
         <td>${fmt(e.cis_tax_deducted)}</td>
         <td>${fmt((e.admin_fee ?? 0) + (e.insurance_fee ?? 0) + (e.custom_deduction ?? 0))}</td>
@@ -127,7 +145,7 @@ function printStatement(worker: Worker, entries: LedgerEntry[]) {
 
   const html = `<!DOCTYPE html><html><head>
     <meta charset="utf-8"/>
-    <title>CIS Statement — ${worker.first_name} ${worker.surname}</title>
+    <title>CIS Statement — ${escapeHtml(worker.first_name)} ${escapeHtml(worker.surname)}</title>
     <style>
       body { font-family: Arial, sans-serif; font-size: 13px; color: #1e293b; margin: 40px; }
       h1 { font-size: 20px; margin-bottom: 4px; }
@@ -144,9 +162,9 @@ function printStatement(worker: Worker, entries: LedgerEntry[]) {
     </head><body>
     <h1>CIS Payment Statement</h1>
     <div class="sub">
-      ${worker.first_name} ${worker.surname} &bull;
-      UTR: ${worker.utr_number ?? 'N/A'} &bull;
-      ${ROLE_LABELS[worker.role] ?? worker.role} &bull;
+      ${escapeHtml(worker.first_name)} ${escapeHtml(worker.surname)} &bull;
+      UTR: ${escapeHtml(maskSensitive(worker.utr_number))} &bull;
+      ${escapeHtml(ROLE_LABELS[worker.role] ?? worker.role)} &bull;
       ${worker.tax_type === 'cis_20' ? 'CIS 20%' : 'Gross'}<br/>
       Generated: ${fmtDate(new Date().toISOString())} &bull; Glyn Jenkins LTD
     </div>
@@ -397,13 +415,13 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
           {worker.utr_number && (
             <div className="flex items-center gap-2 py-2">
               <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <span>UTR: {worker.utr_number}</span>
+              <span>UTR: {maskSensitive(worker.utr_number)}</span>
             </div>
           )}
           {worker.bank_sort_code && worker.bank_account_number ? (
             <div className="flex items-center gap-2 py-2">
               <PoundSterling className="w-3.5 h-3.5 text-slate-400" />
-              <span>Bank: {worker.bank_sort_code} · {worker.bank_account_number}</span>
+              <span>Bank: {maskSensitive(worker.bank_sort_code)} · {maskSensitive(worker.bank_account_number)}</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 py-2 text-amber-700 text-xs">
