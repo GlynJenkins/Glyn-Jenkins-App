@@ -7,6 +7,7 @@ import {
   rebuildSheetRef,
   resolvePlotColumnMerges,
   resolvePlotRows,
+  validateImportFile,
 } from '@/lib/sites/parse-excel-grid'
 import * as XLSX from 'xlsx'
 
@@ -41,6 +42,9 @@ export async function POST(
     const formData = await request.formData()
     const file     = formData.get('file') as File | null
     if (!file) return NextResponse.json({ error: 'No file uploaded.' }, { status: 400 })
+
+    const fileError = validateImportFile(file)
+    if (fileError) return NextResponse.json({ error: fileError }, { status: 400 })
 
     const buffer   = Buffer.from(await file.arrayBuffer())
     const workbook = XLSX.read(buffer, { type: 'buffer' })
@@ -113,9 +117,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, sheets })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not read file.' },
-      { status: 500 }
-    )
+    console.error('[Excel Preview Error]', err)
+    return NextResponse.json({ error: 'Could not read file.' }, { status: 500 })
   }
 }

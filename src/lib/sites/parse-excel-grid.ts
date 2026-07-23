@@ -19,6 +19,9 @@ export function parseExcelCellValue(val: string | number | boolean | null | unde
   const s = val.toString().trim()
   if (!s || s.startsWith('#')) return null
   const cleaned = s.replace(/[£$€,\s]/g, '')
+  // Only accept the cell as money if the WHOLE cleaned string is a number.
+  // This stops text like "3 Bed House" importing as £3.
+  if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null
   const n = parseFloat(cleaned)
   return isNaN(n) ? null : n
 }
@@ -306,11 +309,24 @@ export type GridCellInsert = {
   cell_color:     string
 }
 
+// A real £0 cell counts as present — only null/absent values are "empty".
 function cellHasContent(cell: GridCellInsert): boolean {
-  return (cell.contract_value != null && cell.contract_value !== 0) || !!cell.override_note?.trim()
+  return cell.contract_value != null || !!cell.override_note?.trim()
 }
 
-function upsertCell(map: Map<string, GridCellInsert>, key: string, incoming: GridCellInsert): boolean {
+export type GridCellConflict = {
+  plot_number:   string
+  stage_id:      string
+  keptValue:     number | null
+  discardedValue: number | null
+}
+
+function upsertCell(
+  map: Map<string, GridCellInsert>,
+  key: string,
+  incoming: GridCellInsert,
+  conflicts: GridCellConflict[],
+): boolean {
   const existing = map.get(key)
   if (!existing) {
     map.set(key, incoming)
@@ -320,6 +336,16 @@ function upsertCell(map: Map<string, GridCellInsert>, key: string, incoming: Gri
   if (!cellHasContent(existing)) {
     map.set(key, incoming)
     return true
+  }
+  // Both cells have content. Record a conflict if the values actually differ,
+  // so the import report can surface it instead of silently keeping the last.
+  if (existing.contract_value !== incoming.contract_value) {
+    conflicts.push({
+      plot_number:    incoming.plot_number,
+      stage_id:       incoming.stage_id,
+      keptValue:      incoming.contract_value,
+      discardedValue: existing.contract_value,
+    })
   }
   map.set(key, incoming)
   return true
@@ -337,6 +363,7 @@ export function buildGridCellsFromRows(opts: {
   skippedRows: number
   duplicateCellsMerged: number
   skippedExamples: string[]
+  conflicts: GridCellConflict[]
 } {
   const { siteId, dataRows, plotColIndex, allHeaders, columnStageIds } = opts
   const cellByKey = new Map<string, GridCellInsert>()
@@ -344,6 +371,7 @@ export function buildGridCellsFromRows(opts: {
   let skippedRows = 0
   let duplicateCellsMerged = 0
   const skippedExamples: string[] = []
+  const conflicts: GridCellConflict[] = []
 
   for (const row of dataRows) {
     const rawPlot = row[plotColIndex]
@@ -382,7 +410,7 @@ export function buildGridCellsFromRows(opts: {
       }
 
       const key = `${stageId}|${plotNo}`
-      if (upsertCell(cellByKey, key, incoming)) duplicateCellsMerged++
+      if (upsertCell(cellByKey, key, incoming, conflicts)) duplicateCellsMerged++
     }
   }
 
@@ -392,5 +420,34 @@ export function buildGridCellsFromRows(opts: {
     skippedRows,
     duplicateCellsMerged,
     skippedExamples,
+    conflicts,
   }
+}
+
+/** Shared upload guardrails for the import/preview routes. */
+export const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+
+const ALLOWED_IMPORT_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.csv']
+const ALLOWED_IMPORT_MIME_TYPES = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-excel.sheet.macroenabled.12',
+  'text/csv',
+  'application/octet-stream', // some browsers send this for xlsx
+  '',                         // some browsers omit the type entirely
+]
+
+/** Returns an error message if the uploaded file fails size/type checks, else null. */
+export function validateImportFile(file: File): string | null {
+  if (file.size > MAX_IMPORT_FILE_BYTES) {
+    return `File is too large (max ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB).`
+  }
+  const name = file.name.toLowerCase()
+  if (!ALLOWED_IMPORT_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+    return 'Unsupported file type — please upload an Excel file (.xlsx, .xls) or CSV.'
+  }
+  if (!ALLOWED_IMPORT_MIME_TYPES.includes(file.type.toLowerCase())) {
+    return 'Unsupported file type — please upload an Excel file (.xlsx, .xls) or CSV.'
+  }
+  return null
 }
