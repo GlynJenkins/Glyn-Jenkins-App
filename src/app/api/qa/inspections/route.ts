@@ -18,6 +18,15 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+const MAX_SIGNATURE_BYTES = 1 * 1024 * 1024  // 1 MB — signature pad PNGs are tiny
+const MAX_PHOTO_BYTES     = 20 * 1024 * 1024 // 20 MB per photo before normalisation
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+function isPngBuffer(buffer: Buffer): boolean {
+  return buffer.length > PNG_MAGIC.length && buffer.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)
+}
+
 export async function POST(request: NextRequest) {
   const auth = await verifyAdminApiAccess()
   if (!auth.ok) return auth.response
@@ -27,7 +36,7 @@ export async function POST(request: NextRequest) {
     const siteId         = formData.get('siteId') as string
     const plotNumber     = (formData.get('plotNumber') as string)?.trim()
     const stage          = formData.get('stage') as string
-    const inspectorName  = (formData.get('inspectorName') as string)?.trim()
+    const submittedName  = (formData.get('inspectorName') as string)?.trim()
     const inspectionDate = (formData.get('inspectionDate') as string)?.trim()
     const observations   = (formData.get('observations') as string)?.trim() ?? ''
     const result         = (formData.get('result') as string)?.trim() || 'Pass'
@@ -38,11 +47,24 @@ export async function POST(request: NextRequest) {
     const inspectionPhotoFiles = (formData.getAll('inspectionPhotos') as File[])
       .filter(isImageUploadFile)
 
+    // The authenticated user is the source of truth for who signed off —
+    // the form-supplied name is only a fallback for legacy accounts with no worker row.
+    const inspectorName = auth.worker
+      ? `${auth.worker.first_name} ${auth.worker.surname}`.trim()
+      : submittedName
+
     if (!siteId || !plotNumber || !stage || !inspectorName || !inspectionDate) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
     }
     if (!isQaStageKey(stage)) {
       return NextResponse.json({ error: 'Invalid inspection stage.' }, { status: 400 })
+    }
+    if (result !== 'Pass' && result !== 'Fail') {
+      return NextResponse.json({ error: 'Result must be Pass or Fail.' }, { status: 400 })
+    }
+    // Plot numbers appear in storage keys — never allow path traversal characters.
+    if (plotNumber.includes('/') || plotNumber.includes('..') || plotNumber.length > 60) {
+      return NextResponse.json({ error: 'Invalid plot number.' }, { status: 400 })
     }
 
     let checklistAnswers: QaChecklistAnswers = {}
@@ -65,11 +87,22 @@ export async function POST(request: NextRequest) {
     if (!signature) {
       return NextResponse.json({ error: 'Signature is required.' }, { status: 400 })
     }
+    if (signature.size > MAX_SIGNATURE_BYTES) {
+      return NextResponse.json({ error: 'Signature image is too large.' }, { status: 400 })
+    }
     if (inspectionPhotoFiles.length > MAX_QA_INSPECTION_PHOTOS) {
       return NextResponse.json(
         { error: `Maximum ${MAX_QA_INSPECTION_PHOTOS} inspection photos allowed.` },
         { status: 400 },
       )
+    }
+    for (const file of inspectionPhotoFiles) {
+      if (file.size > MAX_PHOTO_BYTES) {
+        return NextResponse.json({ error: `Photo "${file.name}" is too large (max 20 MB).` }, { status: 400 })
+      }
+    }
+    if (firesockPhoto && firesockPhoto.size > MAX_PHOTO_BYTES) {
+      return NextResponse.json({ error: 'Firesock photo is too large (max 20 MB).' }, { status: 400 })
     }
 
     const hasFiresockPhoto = !!(firesockPhoto && firesockPhoto.size > 0)
@@ -105,7 +138,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Site not found.' }, { status: 404 })
     }
 
+    // The plot must actually exist on this site's grid.
+    const { data: plotCell } = await supabase
+      .from('price_grid')
+      .select('plot_number')
+      .eq('site_id', siteId)
+      .eq('plot_number', plotNumber)
+      .limit(1)
+      .maybeSingle()
+    if (!plotCell) {
+      return NextResponse.json({ error: 'Plot not found on this site.' }, { status: 400 })
+    }
+
     const signatureBuffer = Buffer.from(await signature.arrayBuffer())
+    if (!isPngBuffer(signatureBuffer)) {
+      return NextResponse.json({ error: 'Signature must be a PNG image.' }, { status: 400 })
+    }
     const signedAt = new Date()
     const plotDetails = (await fetchPlotDetailsBySite(siteId)).get(plotNumber) ?? []
     const ts = Date.now()
@@ -170,6 +218,18 @@ export async function POST(request: NextRequest) {
     const pdfPath       = `qa/${siteId}/${plotNumber}/${stage}/${ts}-inspection.pdf`
     const storedInspectionPhotos: StoredInspectionPhoto[] = []
 
+    // Track everything written to storage so a failure partway through
+    // can clean up instead of leaving orphaned objects.
+    const uploadedPaths: string[] = []
+    const cleanupUploads = async () => {
+      if (uploadedPaths.length === 0) return
+      try {
+        await supabase.storage.from('worker-documents').remove(uploadedPaths)
+      } catch (cleanupErr) {
+        console.error('[QA] Failed to clean up uploads:', cleanupErr)
+      }
+    }
+
     if (firesockBuffer && firesockMime) {
       const ext = photoExtension(firesockMime)
       firesockPhotoPath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-firesock.${ext}`
@@ -177,8 +237,10 @@ export async function POST(request: NextRequest) {
         .from('worker-documents')
         .upload(firesockPhotoPath, firesockBuffer, { contentType: firesockMime, upsert: false })
       if (firesockErr) {
-        return NextResponse.json({ error: `Firesock photo upload failed: ${firesockErr.message}` }, { status: 500 })
+        console.error('[QA] Firesock photo upload failed:', firesockErr)
+        return NextResponse.json({ error: 'Firesock photo upload failed.' }, { status: 500 })
       }
+      uploadedPaths.push(firesockPhotoPath)
     }
 
     for (let i = 0; i < inspectionBuffers.length; i++) {
@@ -189,8 +251,11 @@ export async function POST(request: NextRequest) {
         .from('worker-documents')
         .upload(path, buffer, { contentType: mime, upsert: false })
       if (photoErr) {
-        return NextResponse.json({ error: `Inspection photo upload failed: ${photoErr.message}` }, { status: 500 })
+        console.error('[QA] Inspection photo upload failed:', photoErr)
+        await cleanupUploads()
+        return NextResponse.json({ error: 'Inspection photo upload failed.' }, { status: 500 })
       }
+      uploadedPaths.push(path)
       storedInspectionPhotos.push({ path, mime })
     }
 
@@ -199,19 +264,63 @@ export async function POST(request: NextRequest) {
       .upload(signaturePath, signatureBuffer, { contentType: 'image/png', upsert: false })
 
     if (sigUploadErr) {
-      return NextResponse.json({ error: `Signature upload failed: ${sigUploadErr.message}` }, { status: 500 })
+      console.error('[QA] Signature upload failed:', sigUploadErr)
+      await cleanupUploads()
+      return NextResponse.json({ error: 'Signature upload failed.' }, { status: 500 })
     }
+    uploadedPaths.push(signaturePath)
 
     const { error: pdfUploadErr } = await supabase.storage
       .from('worker-documents')
       .upload(pdfPath, pdfBuffer, { contentType: 'application/pdf', upsert: false })
 
     if (pdfUploadErr) {
-      return NextResponse.json({ error: `PDF upload failed: ${pdfUploadErr.message}` }, { status: 500 })
+      console.error('[QA] PDF upload failed:', pdfUploadErr)
+      await cleanupUploads()
+      return NextResponse.json({ error: 'PDF upload failed.' }, { status: 500 })
     }
+    uploadedPaths.push(pdfPath)
 
     const workerId = auth.worker?.id ?? null
     const nowIso = signedAt.toISOString()
+
+    // If a completed inspection already exists for this plot/stage, archive it
+    // to qa_inspection_history BEFORE overwriting so the original sign-off
+    // (who/when/result/PDF) is preserved.
+    const { data: existing } = await supabase
+      .from('qa_plot_inspections')
+      .select('*')
+      .eq('site_id', siteId)
+      .eq('plot_number', plotNumber)
+      .eq('stage', stage)
+      .maybeSingle()
+
+    if (existing && existing.status === 'completed') {
+      const { error: archiveErr } = await supabase
+        .from('qa_inspection_history')
+        .insert({
+          inspection_id:  existing.id,
+          site_id:        existing.site_id,
+          plot_number:    existing.plot_number,
+          stage:          existing.stage,
+          status:         existing.status,
+          form_data:      existing.form_data,
+          notes:          existing.notes,
+          signature_path: existing.signature_path,
+          pdf_path:       existing.pdf_path,
+          inspected_by:   existing.inspected_by,
+          inspected_at:   existing.inspected_at,
+          archived_by:    workerId,
+        })
+      if (archiveErr) {
+        console.error('[QA] Failed to archive prior inspection:', archiveErr)
+        await cleanupUploads()
+        return NextResponse.json(
+          { error: 'Could not archive the previous inspection — re-inspection aborted. (Has the qa_inspection_history migration been run?)' },
+          { status: 500 },
+        )
+      }
+    }
 
     const row = {
       site_id:        siteId,
@@ -220,6 +329,8 @@ export async function POST(request: NextRequest) {
       status:         'completed',
       form_data: {
         inspectorName,
+        // Flag if the form-submitted name differed from the logged-in account.
+        submittedInspectorName: submittedName && submittedName !== inspectorName ? submittedName : undefined,
         inspectionDate,
         observations,
         result,
@@ -244,7 +355,9 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (upsertErr) {
-      return NextResponse.json({ error: upsertErr.message }, { status: 500 })
+      console.error('[QA] Inspection save failed:', upsertErr)
+      await cleanupUploads()
+      return NextResponse.json({ error: 'Failed to save inspection.' }, { status: 500 })
     }
 
     const grid = await fetchQaSiteGrid(siteId)
@@ -255,9 +368,7 @@ export async function POST(request: NextRequest) {
       grid,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 },
-    )
+    console.error('[QA] Inspection error:', err)
+    return NextResponse.json({ error: 'Unexpected error.' }, { status: 500 })
   }
 }
