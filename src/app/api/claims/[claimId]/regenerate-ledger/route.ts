@@ -91,6 +91,7 @@ export async function POST(
         insurance_fee:         pay.insuranceFee,
         custom_deduction:      0,
         cis_tax_deducted:      pay.cisTax,
+        // NI intentionally 0 — handled in payroll after export (23 Jul 2026).
         national_insurance:    0,
         net_pay:               pay.net,
         payee_name:            payee.payee_name,

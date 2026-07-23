@@ -163,6 +163,7 @@ export async function syncMissingCisLedger(
       custom_deduction:      pay.customDeduction,
       custom_deduction_note: null,
       cis_tax_deducted:      pay.cisTax,
+      // NI intentionally 0 — handled in payroll after export (23 Jul 2026).
       national_insurance:    0,
       net_pay:               pay.net,
     })

@@ -134,6 +134,8 @@ export async function POST(
         custom_deduction:      pay.customDeduction, // capped to what actually reduced pay
         custom_deduction_note: customReason,
         cis_tax_deducted:      pay.cisTax,
+        // NI is intentionally 0 here — it is handled in payroll software
+        // AFTER wages are exported from the app (confirmed 23 Jul 2026).
         national_insurance:    0,
         net_pay:               pay.net,
         payee_name:            payee.payee_name,
