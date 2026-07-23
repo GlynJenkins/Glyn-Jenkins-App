@@ -36,30 +36,8 @@ export async function POST(
       type: string; id: string; amount: number; fullValue?: number
     }[]).filter((p) => p.type === 'grid_cell')
 
-    for (const item of gridItems) {
-      if (!item.id || !item.fullValue) continue
-
-      const { data: cell } = await supabase
-        .from('price_grid')
-        .select('total_claimed_pct')
-        .eq('id', item.id)
-        .single()
-
-      const currentPct = cell?.total_claimed_pct ?? 0
-      const addedPct   = Math.round((item.amount / item.fullValue) * 100)
-      const newPct     = Math.max(0, currentPct - addedPct)
-      const newColor   = newPct <= 0 ? 'white' : 'orange'
-
-      const { error: gridErr } = await supabase
-        .from('price_grid')
-        .update({ total_claimed_pct: newPct, cell_color: newColor })
-        .eq('id', item.id)
-      if (gridErr) {
-        return NextResponse.json({ error: gridErr.message }, { status: 500 })
-      }
-    }
-
-    const deleted = await deleteClaimPeriod(claimId)
+    // Reversal happens inside deleteClaimPeriod so all cleanup paths behave the same.
+    const deleted = await deleteClaimPeriod(claimId, { reverseGridPct: true })
     if (!deleted.ok) {
       return NextResponse.json(
         { error: `Could not withdraw claim: ${deleted.error}` },

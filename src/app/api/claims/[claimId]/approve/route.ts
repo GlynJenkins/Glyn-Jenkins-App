@@ -25,27 +25,30 @@ export async function POST(
     // ── Fetch claim + allocations ──────────────────────────────────────
     const { data: claimBase } = await supabase
       .from('claim_periods')
-      .select('id, site_id, foreman_id, pool_items, status, claim_allocations ( id, worker_id, gross_amount )')
+      .select('id, site_id, foreman_id, pool_items, status, period_end, claim_allocations ( id, worker_id, gross_amount )')
       .eq('id', claimId)
       .eq('status', 'pending')
       .single()
 
-    // Enrich allocations with worker details
-    const enrichedAllocations = await Promise.all(
-      (claimBase?.claim_allocations ?? []).map(async (alloc) => {
-        const { data: worker } = await supabase
+    // Enrich allocations with worker details (single batched query)
+    const workerIds = [...new Set((claimBase?.claim_allocations ?? []).map((a) => a.worker_id))]
+    const { data: workerRows } = workerIds.length > 0
+      ? await supabase
           .from('workers')
           .select('id, first_name, surname, phone, email, tax_type, role, has_personal_insurance, bank_sort_code, bank_account_number')
-          .eq('id', alloc.worker_id)
-          .maybeSingle()
-        return {
-          ...alloc,
-          workers: worker
-            ? { ...worker, has_own_insurance: worker.has_personal_insurance ?? false }
-            : null,
-        }
-      })
-    )
+          .in('id', workerIds)
+      : { data: [] }
+    const workerById = new Map((workerRows ?? []).map((w) => [w.id, w]))
+
+    const enrichedAllocations = (claimBase?.claim_allocations ?? []).map((alloc) => {
+      const worker = workerById.get(alloc.worker_id)
+      return {
+        ...alloc,
+        workers: worker
+          ? { ...worker, has_own_insurance: worker.has_personal_insurance ?? false }
+          : null,
+      }
+    })
 
     const claim = claimBase ? { ...claimBase, claim_allocations: enrichedAllocations } : null
 
@@ -84,13 +87,22 @@ export async function POST(
 
     const payslips: { worker: typeof allocations[0]['workers']; gross: number; cisTax: number; adminFee: number; insuranceFee: number; customDed: number; net: number }[] = []
 
+    // Attribute pay to the claim's fortnight, not the (possibly late) approval date.
+    const dateOfPay = (claim as { period_end?: string | null }).period_end
+      ?? new Date().toISOString().split('T')[0]
+
+    // ── Build every ledger row up front (nothing written yet) ──────────
+    const ledgerRows: Record<string, unknown>[] = []
+
     for (const alloc of allocations) {
       const worker = alloc.workers
       if (!worker) continue
 
       const gross         = alloc.gross_amount ?? 0
-      const customDed     = workerDeductions[worker.id]?.amount   ?? 0
-      const customReason  = workerDeductions[worker.id]?.reason   ?? null
+      // Clamp: a negative deduction must never increase pay.
+      const rawDed        = workerDeductions[worker.id]?.amount ?? 0
+      const customDed     = typeof rawDed === 'number' && isFinite(rawDed) ? Math.max(0, rawDed) : 0
+      const customReason  = workerDeductions[worker.id]?.reason ?? null
       const pay = calculatePayLine(
         gross,
         {
@@ -110,16 +122,16 @@ export async function POST(
         bank_account_number: worker.bank_account_number,
       })
 
-      const { error: ledgerErr } = await supabase.from('worker_cis_ledger').insert({
+      ledgerRows.push({
         worker_id:             worker.id,
         claim_period_id:       claimId,
         claim_allocation_id:   alloc.id,
         site_id:               ledgerSiteId,
-        date_of_pay:           new Date().toISOString().split('T')[0],
+        date_of_pay:           dateOfPay,
         gross_pay:             pay.gross,
         admin_fee:             pay.adminFee,
         insurance_fee:         pay.insuranceFee,
-        custom_deduction:      customDed,
+        custom_deduction:      pay.customDeduction, // capped to what actually reduced pay
         custom_deduction_note: customReason,
         cis_tax_deducted:      pay.cisTax,
         national_insurance:    0,
@@ -129,29 +141,54 @@ export async function POST(
         payee_account_number:  payee.payee_account_number,
       })
 
-      if (ledgerErr) {
-        return NextResponse.json(
-          { error: `Failed to write pay record for ${worker.first_name} ${worker.surname}: ${ledgerErr.message}` },
-          { status: 500 },
-        )
-      }
-
       payslips.push({
         worker,
         gross: pay.gross,
         cisTax: pay.cisTax,
         adminFee: pay.adminFee,
         insuranceFee: pay.insuranceFee,
-        customDed,
+        customDed: pay.customDeduction,
         net: pay.net,
       })
     }
 
-    // ── Update claim to approved ───────────────────────────────────────
-    await supabase
+    // ── Flip pending → approved atomically FIRST ────────────────────────
+    // The conditional update means only one request wins a double-click or
+    // two-admins race; the loser gets zero rows back and stops here.
+    const { data: flipped, error: flipErr } = await supabase
       .from('claim_periods')
       .update({ status: 'approved', approved_at: new Date().toISOString() })
       .eq('id', claimId)
+      .eq('status', 'pending')
+      .select('id')
+
+    if (flipErr || !flipped?.length) {
+      return NextResponse.json(
+        { error: 'Claim was already processed by another request.' },
+        { status: 409 },
+      )
+    }
+
+    // ── Write all pay rows in ONE statement (all-or-nothing) ───────────
+    // The unique index on claim_allocation_id makes retries safe: a re-run
+    // after a partial failure can never create duplicate pay rows.
+    if (ledgerRows.length > 0) {
+      const { error: ledgerErr } = await supabase.from('worker_cis_ledger').insert(ledgerRows)
+
+      if (ledgerErr && ledgerErr.code !== '23505') {
+        // Revert so the admin can retry cleanly. Log details server-side only.
+        console.error('[Claim approval] ledger insert failed:', ledgerErr)
+        await supabase
+          .from('claim_periods')
+          .update({ status: 'pending', approved_at: null })
+          .eq('id', claimId)
+        return NextResponse.json(
+          { error: 'Could not write pay records — the claim was NOT approved. Please try again.' },
+          { status: 500 },
+        )
+      }
+      // 23505 (duplicate) means rows already exist from a previous attempt — safe to continue.
+    }
 
     // ── Promote fully-claimed cells from blue → green ─────────────────
     const poolItems = (claim.pool_items ?? []) as { type: string; id: string }[]
