@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { foremanHasSiteAccess } from '@/lib/auth/foreman-sites'
 import { createServiceClient } from '@/lib/supabase/server'
@@ -95,10 +96,8 @@ export async function POST(request: NextRequest) {
       const raw = Buffer.from(await photo.arrayBuffer())
       normalized = await normalizePhotoForPdf(raw)
     } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : 'Could not process photo.' },
-        { status: 400 }
-      )
+      console.error('[api/variations] Photo processing failed:', err)
+      return NextResponse.json({ error: 'Could not process photo. Please try a different image.' }, { status: 400 })
     }
 
     const path = `variations/${siteId}/${Date.now()}.jpg`
@@ -108,7 +107,7 @@ export async function POST(request: NextRequest) {
       .upload(path, normalized.buffer, { contentType: normalized.mime, upsert: false })
 
     if (uploadError) {
-      return NextResponse.json({ error: `Photo upload failed: ${uploadError.message}` }, { status: 500 })
+      return apiError("api/variations", uploadError, "Photo upload failed.")
     }
 
     const records = workerEntries.map(({ workerId, workerRole, hours }) => ({
@@ -126,15 +125,12 @@ export async function POST(request: NextRequest) {
     const { error: insertError } = await supabase.from('variation_claims').insert(records)
     if (insertError) {
       await supabase.storage.from('worker-documents').remove([path])
-      return NextResponse.json({ error: insertError.message }, { status: 500 })
+      return apiError("api/variations", insertError)
     }
 
     return NextResponse.json({ success: true, lines: records.length })
   } catch (err) {
     console.error('[variations] submit failed:', err)
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/variations", err)
   }
 }

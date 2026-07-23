@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyJetwashMarkAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { markPlotWashedById } from '@/lib/jetwash/queries'
@@ -38,9 +39,6 @@ export async function POST(
 
     return NextResponse.json({ success: true, washed_at: result.washed_at })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not mark plot washed.' },
-      { status: 500 }
-    )
+    return apiError("api/jetwash/sites/[siteId]/plots/[plotNumber]", err)
   }
 }

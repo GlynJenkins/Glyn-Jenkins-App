@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { needsPortalLogin } from '@/lib/worker-access'
@@ -113,7 +114,7 @@ export async function PATCH(
       if (portalLoginCreated && authUserId) {
         await supabase.auth.admin.deleteUser(authUserId)
       }
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
+      return apiError("api/admin/workers/[workerId]", updateError)
     }
 
     return NextResponse.json({
@@ -125,9 +126,6 @@ export async function PATCH(
       previousRole:   worker.role,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/admin/workers/[workerId]", err)
   }
 }

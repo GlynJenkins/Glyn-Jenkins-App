@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyJetwashViewAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchJetwashPlots } from '@/lib/jetwash/queries'
@@ -41,9 +42,6 @@ export async function GET(
       canMark:  true,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to load plots.' },
-      { status: 500 }
-    )
+    return apiError("api/jetwash/sites/[siteId]", err)
   }
 }

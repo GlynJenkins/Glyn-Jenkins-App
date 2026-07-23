@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -43,7 +44,7 @@ export async function POST(
       .order('stage_order')
 
     if (stagesErr) {
-      return NextResponse.json({ error: stagesErr.message }, { status: 500 })
+      return apiError("api/sites/[siteId]/stages", stagesErr)
     }
     if (!existingStages?.length) {
       return NextResponse.json(
@@ -69,10 +70,8 @@ export async function POST(
       .single()
 
     if (insertStageErr || !stage) {
-      return NextResponse.json(
-        { error: insertStageErr?.message ?? 'Failed to create column.' },
-        { status: 500 },
-      )
+      console.error('[api/sites/stages] Stage insert failed:', insertStageErr)
+      return NextResponse.json({ error: 'Failed to create column.' }, { status: 500 })
     }
 
     const plotNumbers = new Set<string>()
@@ -87,7 +86,7 @@ export async function POST(
 
       if (plotsErr) {
         await supabase.from('site_stages').delete().eq('id', stage.id)
-        return NextResponse.json({ error: plotsErr.message }, { status: 500 })
+        return apiError("api/sites/[siteId]/stages", plotsErr)
       }
       if (!page?.length) break
 
@@ -120,7 +119,7 @@ export async function POST(
       if (cellsErr) {
         await supabase.from('price_grid').delete().eq('site_id', siteId).eq('stage_id', stage.id)
         await supabase.from('site_stages').delete().eq('id', stage.id)
-        return NextResponse.json({ error: cellsErr.message }, { status: 500 })
+        return apiError("api/sites/[siteId]/stages", cellsErr)
       }
     }
 
@@ -132,9 +131,6 @@ export async function POST(
       cells_created: cells.length,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 },
-    )
+    return apiError("api/sites/[siteId]/stages", err)
   }
 }

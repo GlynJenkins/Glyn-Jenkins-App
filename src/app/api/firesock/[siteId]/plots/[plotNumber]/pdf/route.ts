@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { firesockPlotPdfFilename, loadFiresockPlotPdf } from '@/lib/firesock/load-plot-pdf'
 
@@ -31,9 +32,6 @@ export async function GET(
       },
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not generate PDF.' },
-      { status: 500 },
-    )
+    return apiError("api/firesock/[siteId]/plots/[plotNumber]/pdf", err)
   }
 }

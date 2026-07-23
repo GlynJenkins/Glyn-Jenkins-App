@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyJetwashViewAccess } from '@/lib/auth/portal-access'
 import { fetchJetwashSiteSummaries } from '@/lib/jetwash/queries'
 
@@ -12,9 +13,6 @@ export async function GET() {
     const sites = await fetchJetwashSiteSummaries()
     return NextResponse.json({ sites })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to load sites.' },
-      { status: 500 }
-    )
+    return apiError("api/jetwash/sites", err)
   }
 }

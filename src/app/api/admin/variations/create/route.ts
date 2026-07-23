@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
@@ -93,10 +94,8 @@ export async function POST(request: NextRequest) {
         const raw = Buffer.from(await photo.arrayBuffer())
         normalized = await normalizePhotoForPdf(raw)
       } catch (err) {
-        return NextResponse.json(
-          { error: err instanceof Error ? err.message : 'Could not process photo.' },
-          { status: 400 }
-        )
+        console.error('[api/admin/variations/create] Photo processing failed:', err)
+        return NextResponse.json({ error: 'Could not process photo. Please try a different image.' }, { status: 400 })
       }
 
       photoPath = `variations/admin/${siteId}/${Date.now()}.jpg`
@@ -105,7 +104,7 @@ export async function POST(request: NextRequest) {
         .upload(photoPath, normalized.buffer, { contentType: normalized.mime, upsert: false })
 
       if (uploadError) {
-        return NextResponse.json({ error: `Photo upload failed: ${uploadError.message}` }, { status: 500 })
+        return apiError("api/admin/variations/create", uploadError, "Photo upload failed.")
       }
     }
 
@@ -123,9 +122,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, lines: result.lineCount })
   } catch (err) {
     console.error('[admin/variations/create]', err)
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/admin/variations/create", err)
   }
 }

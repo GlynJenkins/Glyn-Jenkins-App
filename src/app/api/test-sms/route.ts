@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 
 export async function POST(request: NextRequest) {
@@ -32,9 +33,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, sid: message.sid })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/test-sms", err)
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchFiresockSiteGrid } from '@/lib/firesock/queries'
@@ -22,7 +23,7 @@ export async function DELETE(
       .eq('id', photoId)
       .maybeSingle()
 
-    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
+    if (fetchErr) return apiError("api/firesock/photos/[photoId]", fetchErr)
     if (!photo) return NextResponse.json({ error: 'Photo not found.' }, { status: 404 })
 
     const { data: assignment } = await supabase
@@ -43,16 +44,13 @@ export async function DELETE(
       .delete()
       .eq('id', photoId)
 
-    if (deleteErr) return NextResponse.json({ error: deleteErr.message }, { status: 500 })
+    if (deleteErr) return apiError("api/firesock/photos/[photoId]", deleteErr)
 
     const grid = await fetchFiresockSiteGrid(photo.site_id)
     const plot = grid.plots.find((p) => p.plot_number === photo.plot_number)
 
     return NextResponse.json({ success: true, plot, grid })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 },
-    )
+    return apiError("api/firesock/photos/[photoId]", err)
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -21,7 +22,7 @@ export async function DELETE(
       .delete()
       .eq('site_id', siteId)
 
-    if (cellsErr) return NextResponse.json({ error: cellsErr.message }, { status: 500 })
+    if (cellsErr) return apiError("api/sites/[siteId]/clear", cellsErr)
 
     // Then delete stages
     const { error: stagesErr } = await supabase
@@ -29,13 +30,10 @@ export async function DELETE(
       .delete()
       .eq('site_id', siteId)
 
-    if (stagesErr) return NextResponse.json({ error: stagesErr.message }, { status: 500 })
+    if (stagesErr) return apiError("api/sites/[siteId]/clear", stagesErr)
 
     return NextResponse.json({ success: true })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/sites/[siteId]/clear", err)
   }
 }

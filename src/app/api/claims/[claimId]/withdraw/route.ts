@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { deleteClaimPeriod } from '@/lib/claims/delete-claim-period'
@@ -54,9 +55,6 @@ export async function POST(
       cellsParam,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/claims/[claimId]/withdraw", err)
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { foremanHasClaimSiteAccess } from '@/lib/auth/foreman-sites'
 import { createServiceClient } from '@/lib/supabase/server'
@@ -132,7 +133,8 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         )
       }
-      return NextResponse.json({ error: claimErr?.message ?? 'Failed to create claim.' }, { status: 500 })
+      console.error('[api/claims] Claim insert failed:', claimErr)
+      return NextResponse.json({ error: 'Failed to create claim.' }, { status: 500 })
     }
 
     // ── Worker allocations ───────────────────────────────────────────────
@@ -146,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     if (allocationRows.length > 0) {
       const { error: allocErr } = await supabase.from('claim_allocations').insert(allocationRows)
-      if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 })
+      if (allocErr) return apiError("api/claims", allocErr)
     }
 
     // ── Apprentice day ledger entries (server-configured rates) ──────────
@@ -200,9 +202,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, claimId: claim.id })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/claims", err)
   }
 }

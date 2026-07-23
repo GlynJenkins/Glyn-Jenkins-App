@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid, getQaInspectionById } from '@/lib/qa/queries'
@@ -45,7 +46,7 @@ export async function DELETE(
       .eq('id', inspectionId)
 
     if (deleteErr) {
-      return NextResponse.json({ error: deleteErr.message }, { status: 500 })
+      return apiError("api/qa/inspections/[inspectionId]", deleteErr)
     }
 
     if (storagePaths.length > 0) {
@@ -56,9 +57,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, grid })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 },
-    )
+    return apiError("api/qa/inspections/[inspectionId]", err)
   }
 }

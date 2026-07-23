@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { validateHolidayRequest } from '@/lib/holidays/queries'
@@ -56,13 +57,10 @@ export async function POST(request: NextRequest) {
       .select('id')
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiError("api/admin/holidays/requests", error)
 
     return NextResponse.json({ success: true, requestId: data.id })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/admin/holidays/requests", err)
   }
 }

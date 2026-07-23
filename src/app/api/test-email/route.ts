@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 
 export async function POST(request: NextRequest) {
@@ -82,13 +83,10 @@ export async function POST(request: NextRequest) {
       html,
     })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiError("api/test-email", error)
 
     return NextResponse.json({ success: true, id: data?.id })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/test-email", err)
   }
 }

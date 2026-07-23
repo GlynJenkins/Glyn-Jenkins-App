@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -19,10 +20,10 @@ export async function POST(
       .from('foreman_site_assignments')
       .insert({ id: crypto.randomUUID(), foreman_id: foremanId, site_id: siteId })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiError("api/admin/sites/[siteId]/foremen", error)
     return NextResponse.json({ success: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unexpected error.' }, { status: 500 })
+    return apiError("api/admin/sites/[siteId]/foremen", err)
   }
 }
 
@@ -45,9 +46,9 @@ export async function DELETE(
       .eq('foreman_id', foremanId)
       .eq('site_id', siteId)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiError("api/admin/sites/[siteId]/foremen", error)
     return NextResponse.json({ success: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unexpected error.' }, { status: 500 })
+    return apiError("api/admin/sites/[siteId]/foremen", err)
   }
 }

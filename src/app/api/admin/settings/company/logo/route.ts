@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
       .upload(path, buffer, { contentType: mime, upsert: true })
 
     if (uploadError) {
-      return NextResponse.json({ error: uploadError.message }, { status: 500 })
+      return apiError("api/admin/settings/company/logo", uploadError)
     }
 
     const { data: existing } = await supabase
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       ? await supabase.from('admin_settings').update(payload).eq('id', existing.id)
       : await supabase.from('admin_settings').insert({ ...payload, company_name: 'Glyn Jenkins LTD' })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiError("api/admin/settings/company/logo", error)
 
     const { data: signed } = await supabase.storage
       .from('worker-documents')
@@ -64,9 +65,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, logo_url: signed?.signedUrl ?? null })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Upload failed.' },
-      { status: 500 }
-    )
+    return apiError("api/admin/settings/company/logo", err)
   }
 }

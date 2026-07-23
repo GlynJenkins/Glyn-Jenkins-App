@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateSubcontractPdf } from '@/lib/generate-subcontract-pdf'
 import { needsPortalLogin } from '@/lib/worker-access'
@@ -174,15 +175,12 @@ export async function POST(request: NextRequest) {
       if (authUserId) {
         await supabase.auth.admin.deleteUser(authUserId)
       }
-      return NextResponse.json({ error: `Registration failed: ${insertError.message}` }, { status: 500 })
+      return apiError("api/induction", insertError, "Registration failed.")
     }
 
     return NextResponse.json({ success: true, workerId, portalLoginCreated: createPortalLogin })
   } catch (err) {
     console.error('[Induction API Error]', err)
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'An unexpected error occurred.' },
-      { status: 500 }
-    )
+    return apiError("api/induction", err)
   }
 }

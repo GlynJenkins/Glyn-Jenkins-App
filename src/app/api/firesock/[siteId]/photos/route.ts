@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
@@ -80,7 +81,7 @@ export async function POST(
         .upload(photoPath, normalized.buffer, { contentType: normalized.mime, upsert: false })
 
       if (uploadErr) {
-        return NextResponse.json({ error: `Photo upload failed: ${uploadErr.message}` }, { status: 500 })
+        return apiError("api/firesock/[siteId]/photos", uploadErr, "Photo upload failed.")
       }
 
       const { error: insertErr } = await supabase.from('firesock_plot_photos').insert({
@@ -92,7 +93,7 @@ export async function POST(
       })
 
       if (insertErr) {
-        return NextResponse.json({ error: insertErr.message }, { status: 500 })
+        return apiError("api/firesock/[siteId]/photos", insertErr)
       }
     }
 
@@ -105,9 +106,6 @@ export async function POST(
       grid:    refreshed,
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 },
-    )
+    return apiError("api/firesock/[siteId]/photos", err)
   }
 }

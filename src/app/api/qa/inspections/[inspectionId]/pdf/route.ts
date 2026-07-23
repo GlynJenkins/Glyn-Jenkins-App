@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { generateQaInspectionPdf } from '@/lib/qa/generate-inspection-pdf'
 import { loadQaInspectionPdfData } from '@/lib/qa/load-qa-inspection-pdf'
@@ -34,9 +35,6 @@ export async function GET(
       },
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not generate PDF.' },
-      { status: 500 },
-    )
+    return apiError("api/qa/inspections/[inspectionId]/pdf", err)
   }
 }

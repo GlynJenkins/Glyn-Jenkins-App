@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
@@ -100,16 +101,13 @@ export async function POST(
       })
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return apiError("api/claims/[claimId]/regenerate-ledger", error)
       }
       count++
     }
 
     return NextResponse.json({ success: true, count })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError("api/claims/[claimId]/regenerate-ledger", err)
   }
 }

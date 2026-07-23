@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError } from '@/lib/api/route-error'
 import * as XLSX from 'xlsx'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
@@ -56,9 +57,6 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Export failed.' },
-      { status: 500 },
-    )
+    return apiError("api/admin/claims/export", err)
   }
 }
