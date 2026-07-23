@@ -25,6 +25,7 @@ type ClaimRow = {
   approved_at: string | null
   claimed_in_period_id: string | null
   developer_paid_at?: string | null
+  vo_number?: number | null
   site_id: string
   sites: { name: string; site_code: string | null } | { name: string; site_code: string | null }[] | null
   foremen: { first_name: string; surname: string } | { first_name: string; surname: string }[] | null
@@ -48,6 +49,7 @@ type Group = {
   claimed: boolean
   developerPaid: boolean
   developerPaidAt: string | null
+  voNumber: number | null
 }
 
 function buildGroups(claims: ClaimRow[]): Group[] {
@@ -75,11 +77,15 @@ function buildGroups(claims: ClaimRow[]): Group[] {
         claimed:         !!raw.claimed_in_period_id,
         developerPaid:   true,
         developerPaidAt: null,
+        voNumber:        null,
       })
     }
 
     const g = groupMap.get(key)!
     g.claimIds.push(raw.id)
+    if (raw.vo_number != null && (g.voNumber == null || raw.vo_number < g.voNumber)) {
+      g.voNumber = raw.vo_number
+    }
     g.foremanTotal += Number(raw.total_amount ?? 0)
     if (raw.approved_at && (!g.approvedAt || raw.approved_at < g.approvedAt)) {
       g.approvedAt = raw.approved_at
@@ -98,7 +104,16 @@ function buildGroups(claims: ClaimRow[]): Group[] {
 }
 
 function assignReferences(groups: Group[]): VariationRegisterRow[] {
+  // Stored vo_number is the source of truth. Groups without one (legacy rows
+  // before the migration ran) get sequential fallback numbers AFTER the
+  // highest stored number for their site, so nothing is ever renumbered.
   const voCounter = new Map<string, number>()
+  for (const g of groups) {
+    if (g.voNumber != null) {
+      voCounter.set(g.siteId, Math.max(voCounter.get(g.siteId) ?? 0, g.voNumber))
+    }
+  }
+
   const sortedForNumbering = [...groups].sort((a, b) => {
     const ta = a.approvedAt ? new Date(a.approvedAt).getTime() : 0
     const tb = b.approvedAt ? new Date(b.approvedAt).getTime() : 0
@@ -107,6 +122,10 @@ function assignReferences(groups: Group[]): VariationRegisterRow[] {
 
   const referenceById = new Map<string, string>()
   for (const g of sortedForNumbering) {
+    if (g.voNumber != null) {
+      referenceById.set(g.id, formatVariationReference(g.siteCode, g.voNumber))
+      continue
+    }
     const next = (voCounter.get(g.siteId) ?? 0) + 1
     voCounter.set(g.siteId, next)
     referenceById.set(g.id, formatVariationReference(g.siteCode, next))
@@ -130,7 +149,7 @@ export async function loadVariationRegisterRows(): Promise<VariationRegisterRow[
 
   const withPaid = `
       id, description, total_amount, photo_urls, approved_at, claimed_in_period_id,
-      developer_paid_at, site_id,
+      developer_paid_at, vo_number, site_id,
       sites ( name, site_code ),
       foremen:workers!variation_claims_foreman_id_fkey ( first_name, surname )
     `

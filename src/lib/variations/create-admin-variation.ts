@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { VARIATION_RATES } from '@/lib/variations/rates'
+import { allocateVoNumbersForClaims } from '@/lib/variations/vo-reference'
 
 const ALLOWED_ROLES = Object.keys(VARIATION_RATES)
 
@@ -46,7 +47,11 @@ export async function createAdminVariation(input: CreateAdminVariationInput) {
   let records: Record<string, unknown>[]
 
   if (input.payType === 'lump_sum') {
-    const amount = input.lumpSumAmount ?? 0
+    const amount = input.lumpSumAmount
+    // ?? 0 does not catch NaN — reject anything that isn't a real positive number.
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Invalid lump sum amount.')
+    }
     records = [{
       ...base,
       worker_id:     null,
@@ -57,7 +62,22 @@ export async function createAdminVariation(input: CreateAdminVariationInput) {
       lump_sum_label: 'Agreed foreman pay',
     }]
   } else {
-    records = (input.workers ?? []).map(({ workerId, workerRole, hours }) => ({
+    const workers = input.workers ?? []
+
+    // Verify every worker actually exists and is active — a UUID-shaped
+    // value is not enough for a pay-affecting record.
+    const workerIds = [...new Set(workers.map((w) => w.workerId))]
+    const { data: foundWorkers, error: workersError } = await supabase
+      .from('workers')
+      .select('id')
+      .in('id', workerIds)
+      .eq('status', 'active')
+    if (workersError) throw new Error(workersError.message)
+    if ((foundWorkers ?? []).length !== workerIds.length) {
+      throw new Error('One or more selected workers could not be found.')
+    }
+
+    records = workers.map(({ workerId, workerRole, hours }) => ({
       ...base,
       worker_id:     workerId,
       worker_role:   workerRole,
@@ -67,16 +87,23 @@ export async function createAdminVariation(input: CreateAdminVariationInput) {
     }))
   }
 
-  const { error } = await supabase.from('variation_claims').insert(records)
+  const { data: inserted, error } = await supabase
+    .from('variation_claims')
+    .insert(records)
+    .select('id')
 
   if (error?.message.includes('is_lump_sum') || error?.message.includes('assigned_foreman_id')) {
     const legacyRecords = records.map(({ is_lump_sum, assigned_foreman_id, lump_sum_label, ...rest }) => rest)
-    const legacy = await supabase.from('variation_claims').insert(legacyRecords)
+    const legacy = await supabase.from('variation_claims').insert(legacyRecords).select('id')
     if (legacy.error) throw new Error(legacy.error.message)
+    await allocateVoNumbersForClaims(supabase, (legacy.data ?? []).map((r) => r.id))
     return { lineCount: legacyRecords.length }
   }
 
   if (error) throw new Error(error.message)
+
+  // Admin variations are approved immediately — allocate their VO number now.
+  await allocateVoNumbersForClaims(supabase, (inserted ?? []).map((r) => r.id))
 
   return { lineCount: records.length }
 }
@@ -94,7 +121,12 @@ export function validateAdminVariationPayload(body: {
   if (body.payType !== 'lump_sum' && body.payType !== 'daywork') return 'Select a pay type.'
 
   if (body.payType === 'lump_sum') {
-    if (typeof body.lumpSumAmount !== 'number' || body.lumpSumAmount <= 0) {
+    if (
+      typeof body.lumpSumAmount !== 'number' ||
+      !Number.isFinite(body.lumpSumAmount) ||
+      body.lumpSumAmount <= 0 ||
+      body.lumpSumAmount > 1_000_000
+    ) {
       return 'Enter a valid lump sum amount.'
     }
     return null
@@ -104,7 +136,14 @@ export function validateAdminVariationPayload(body: {
   for (const entry of body.workers) {
     if (!entry.workerId) return 'Select a worker for each line.'
     if (!ALLOWED_ROLES.includes(entry.workerRole)) return 'Invalid worker role.'
-    if (typeof entry.hours !== 'number' || entry.hours <= 0) return 'Enter valid hours for each worker.'
+    if (
+      typeof entry.hours !== 'number' ||
+      !Number.isFinite(entry.hours) ||
+      entry.hours <= 0 ||
+      entry.hours > 1000
+    ) {
+      return 'Enter valid hours for each worker.'
+    }
   }
   return null
 }

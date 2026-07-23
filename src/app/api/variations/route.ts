@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
-      if (typeof entry.hours !== 'number' || entry.hours <= 0) {
+      if (typeof entry.hours !== 'number' || !Number.isFinite(entry.hours) || entry.hours <= 0 || entry.hours > 1000) {
         return NextResponse.json({ error: 'Enter valid hours for each worker.' }, { status: 400 })
       }
     }
@@ -74,6 +74,21 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createServiceClient()
+
+    // Every worker on a pay-affecting line must actually exist and be active —
+    // a UUID-shaped value is not enough.
+    const workerIds = [...new Set(workerEntries.map((w) => w.workerId))]
+    const { data: foundWorkers } = await supabase
+      .from('workers')
+      .select('id')
+      .in('id', workerIds)
+      .eq('status', 'active')
+    if ((foundWorkers ?? []).length !== workerIds.length) {
+      return NextResponse.json(
+        { error: 'One or more selected workers could not be found. Please refresh and try again.' },
+        { status: 400 }
+      )
+    }
 
     let normalized: { buffer: Buffer; mime: string }
     try {
