@@ -96,9 +96,18 @@ export async function fetchDescriptionLabels(siteId: string): Promise<string[]> 
   return labelOrder
 }
 
+/**
+ * Ensure a firesock status row exists for every plot that requires evidence.
+ *
+ * INSERT-ONLY by default: read paths (site grid, summaries, claim gate) call
+ * this and must never destroy uploaded evidence. Stale rows are only removed
+ * when `removeStale` is explicitly set (e.g. after a grid re-import), and even
+ * then plots that already have photos attached are always kept.
+ */
 export async function syncFiresockPlots(
   siteId: string,
   plotNumbers?: string[],
+  opts?: { removeStale?: boolean },
 ): Promise<string[]> {
   const supabase = createServiceClient()
   const plots    = plotNumbers ?? await fetchDistinctPlotNumbers(siteId)
@@ -132,22 +141,30 @@ export async function syncFiresockPlots(
     if (insertErr) throw insertErr
   }
 
-  const removePlots = (existing ?? [])
-    .filter((r) => !allPlotsSet.has(r.plot_number) || !requiredSet.has(r.plot_number))
-    .map((r) => r.plot_number)
+  if (opts?.removeStale) {
+    const staleCandidates = (existing ?? [])
+      .filter((r) => !allPlotsSet.has(r.plot_number) || !requiredSet.has(r.plot_number))
+      .map((r) => r.plot_number)
 
-  if (removePlots.length > 0) {
-    await supabase
-      .from('firesock_plot_photos')
-      .delete()
-      .eq('site_id', siteId)
-      .in('plot_number', removePlots)
+    if (staleCandidates.length > 0) {
+      // Never remove a plot that has evidence photos attached.
+      const { data: photoRows } = await supabase
+        .from('firesock_plot_photos')
+        .select('plot_number')
+        .eq('site_id', siteId)
+        .in('plot_number', staleCandidates)
 
-    await supabase
-      .from('firesock_plot_status')
-      .delete()
-      .eq('site_id', siteId)
-      .in('plot_number', removePlots)
+      const plotsWithEvidence = new Set((photoRows ?? []).map((r) => r.plot_number))
+      const removable = staleCandidates.filter((p) => !plotsWithEvidence.has(p))
+
+      if (removable.length > 0) {
+        await supabase
+          .from('firesock_plot_status')
+          .delete()
+          .eq('site_id', siteId)
+          .in('plot_number', removable)
+      }
+    }
   }
 
   return requiredPlots

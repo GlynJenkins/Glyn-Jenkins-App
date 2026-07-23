@@ -287,7 +287,9 @@ export async function POST(
     }
 
     try {
-      await syncFiresockPlots(siteId, plotList)
+      // Re-import is an explicit admin action — stale plots may be removed,
+      // but plots with evidence photos are always preserved.
+      await syncFiresockPlots(siteId, plotList, { removeStale: true })
     } catch (syncErr) {
       console.error('[Firesock sync]', syncErr)
     }
