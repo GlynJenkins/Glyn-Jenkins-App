@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
+import { apiError } from '@/lib/api/route-error'
+
+// Sensible ceilings so a fat-fingered value (e.g. 99999) is rejected.
+const SETTING_LIMITS: Record<string, number> = {
+  global_admin_fee: 100,  // £ per pay period
+  insurance_fee:    100,  // £ per pay period
+  holiday_day_rate: 500,  // £ per day
+  college_day_rate: 500,  // £ per day
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +26,7 @@ export async function GET() {
     .limit(1)
     .maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return apiError('admin/settings GET', error)
   return NextResponse.json(data ?? {
     global_admin_fee:       6,
     insurance_fee:          3,
@@ -31,6 +40,12 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   const auth = await verifyAdminApiAccess()
   if (!auth.ok) return auth.response
+
+  // Pay-affecting settings (fees, day rates, pay-cycle dates) are admin-only —
+  // the same boundary as holiday allowances. Management can still read them.
+  if (auth.worker && auth.worker.role !== 'admin') {
+    return NextResponse.json({ error: 'Only admin can change pay settings.' }, { status: 403 })
+  }
 
   try {
     const body = await request.json() as {
@@ -48,8 +63,11 @@ export async function PATCH(request: NextRequest) {
     } = body
 
     for (const [key, val] of Object.entries({ global_admin_fee, insurance_fee, holiday_day_rate, college_day_rate })) {
-      if (typeof val !== 'number' || val < 0) {
-        return NextResponse.json({ error: `Invalid value for ${key}.` }, { status: 400 })
+      if (typeof val !== 'number' || !Number.isFinite(val) || val < 0 || val > SETTING_LIMITS[key]) {
+        return NextResponse.json(
+          { error: `Invalid value for ${key} (must be between 0 and ${SETTING_LIMITS[key]}).` },
+          { status: 400 }
+        )
       }
     }
 
@@ -92,12 +110,9 @@ export async function PATCH(request: NextRequest) {
         .insert(updatePayload))
     }
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiError('admin/settings PATCH', error)
     return NextResponse.json({ success: true })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unexpected error.' },
-      { status: 500 }
-    )
+    return apiError('admin/settings PATCH', err)
   }
 }
