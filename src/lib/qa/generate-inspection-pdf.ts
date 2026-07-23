@@ -1,4 +1,5 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, rgb } from 'pdf-lib'
+import { embedPdfFonts } from '@/lib/documents/pdf-fonts'
 import { drawPdfLetterhead } from '@/lib/documents/pdf-letterhead'
 import type { CompanyBranding, SiteDocumentDetails } from '@/lib/documents/company-branding'
 import { qaStageLabel } from './stages'
@@ -79,8 +80,7 @@ export type QaInspectionPdfInput = {
 
 export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Promise<Buffer> {
   const pdf      = await PDFDocument.create()
-  const font     = await pdf.embedFont(StandardFonts.Helvetica)
-  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const { font, fontBold } = await embedPdfFonts(pdf)
   let page       = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   let y          = PAGE_HEIGHT - MARGIN
   const maxWidth = PAGE_WIDTH - 2 * MARGIN

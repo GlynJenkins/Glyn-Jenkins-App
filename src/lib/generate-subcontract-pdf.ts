@@ -1,4 +1,5 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { embedPdfFonts } from '@/lib/documents/pdf-fonts'
 import { SUBCONTRACT_AGREEMENT_LINES } from './subcontract-agreement'
 
 const PAGE_WIDTH  = 595.28  // A4
@@ -80,8 +81,7 @@ export async function generateSubcontractPdf(params: {
   signaturePng: Buffer
 }): Promise<Buffer> {
   const pdf      = await PDFDocument.create()
-  const font     = await pdf.embedFont(StandardFonts.Helvetica)
-  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const { font, fontBold } = await embedPdfFonts(pdf)
   const writer   = createWriter(pdf, font, fontBold)
   const maxWidth = PAGE_WIDTH - 2 * MARGIN
 
