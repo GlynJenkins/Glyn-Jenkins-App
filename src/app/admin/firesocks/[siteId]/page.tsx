@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { fetchFiresockSiteGrid } from '@/lib/firesock/queries'
 import FiresockPlotList from '@/app/foreman/sites/[siteId]/firesocks/_components/FiresockPlotList'
 
@@ -11,7 +11,7 @@ export default async function AdminFiresockSitePage({
 }: {
   params: Promise<{ siteId: string }>
 }) {
-  await requireAdminAccess()
+  await requireManagementAreaAccess()
   const { siteId } = await params
 
   let grid: Awaited<ReturnType<typeof fetchFiresockSiteGrid>> | null = null

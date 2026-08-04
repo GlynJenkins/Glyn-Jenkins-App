@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid, getQaInspectionById } from '@/lib/qa/queries'
 import { storagePathsFromFormData } from '@/lib/qa/inspection-photos'
@@ -23,7 +23,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ inspectionId: string }> },
 ) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

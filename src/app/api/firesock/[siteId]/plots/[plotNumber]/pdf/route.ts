@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { firesockPlotPdfFilename, loadFiresockPlotPdf } from '@/lib/firesock/load-plot-pdf'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +10,7 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ siteId: string; plotNumber: string }> },
 ) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

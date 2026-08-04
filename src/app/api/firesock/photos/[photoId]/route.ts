@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
+import {
+  verifyForemanApiAccess,
+  verifyManagementAreaApiAccess,
+} from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchFiresockSiteGrid } from '@/lib/firesock/queries'
 
@@ -10,9 +13,6 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ photoId: string }> },
 ) {
-  const auth = await verifyForemanApiAccess()
-  if (!auth.ok) return auth.response
-
   try {
     const { photoId } = await params
     const supabase = createServiceClient()
@@ -23,18 +23,24 @@ export async function DELETE(
       .eq('id', photoId)
       .maybeSingle()
 
-    if (fetchErr) return apiError("api/firesock/photos/[photoId]", fetchErr)
+    if (fetchErr) return apiError('api/firesock/photos/[photoId]', fetchErr)
     if (!photo) return NextResponse.json({ error: 'Photo not found.' }, { status: 404 })
 
-    const { data: assignment } = await supabase
-      .from('foreman_site_assignments')
-      .select('site_id')
-      .eq('foreman_id', auth.worker.id)
-      .eq('site_id', photo.site_id)
-      .maybeSingle()
+    const mgmtAuth = await verifyManagementAreaApiAccess()
+    if (!mgmtAuth.ok) {
+      const foremanAuth = await verifyForemanApiAccess()
+      if (!foremanAuth.ok) return mgmtAuth.response
 
-    if (!assignment) {
-      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+      const { data: assignment } = await supabase
+        .from('foreman_site_assignments')
+        .select('site_id')
+        .eq('foreman_id', foremanAuth.worker.id)
+        .eq('site_id', photo.site_id)
+        .maybeSingle()
+
+      if (!assignment) {
+        return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+      }
     }
 
     await supabase.storage.from('worker-documents').remove([photo.photo_path])
@@ -44,13 +50,13 @@ export async function DELETE(
       .delete()
       .eq('id', photoId)
 
-    if (deleteErr) return apiError("api/firesock/photos/[photoId]", deleteErr)
+    if (deleteErr) return apiError('api/firesock/photos/[photoId]', deleteErr)
 
     const grid = await fetchFiresockSiteGrid(photo.site_id)
     const plot = grid.plots.find((p) => p.plot_number === photo.plot_number)
 
     return NextResponse.json({ success: true, plot, grid })
   } catch (err) {
-    return apiError("api/firesock/photos/[photoId]", err)
+    return apiError('api/firesock/photos/[photoId]', err)
   }
 }

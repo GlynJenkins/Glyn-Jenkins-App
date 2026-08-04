@@ -1,12 +1,12 @@
 import Link from 'next/link'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { fetchJetwashSiteSummaries } from '@/lib/jetwash/queries'
 import JetwashSiteList from '@/app/jetwash/_components/JetwashSiteList'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminJetwashPage() {
-  await requireAdminAccess()
+  await requireManagementAreaAccess()
 
   let sites: Awaited<ReturnType<typeof fetchJetwashSiteSummaries>> = []
   let setupRequired = false

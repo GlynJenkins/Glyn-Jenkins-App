@@ -1,12 +1,12 @@
 import Link from 'next/link'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { fetchQaSiteSummaries } from '@/lib/qa/queries'
 import QaSiteList from './_components/QaSiteList'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminQaPage() {
-  await requireAdminAccess()
+  await requireManagementAreaAccess()
 
   let sites: Awaited<ReturnType<typeof fetchQaSiteSummaries>> = []
   let setupRequired = false

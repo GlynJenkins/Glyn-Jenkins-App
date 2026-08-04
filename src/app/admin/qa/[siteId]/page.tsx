@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { fetchQaSiteGrid } from '@/lib/qa/queries'
 import QaInspectionGrid from './_components/QaInspectionGrid'
 
@@ -11,7 +11,7 @@ export default async function AdminQaSitePage({
 }: {
   params: Promise<{ siteId: string }>
 }) {
-  const { worker } = await requireAdminAccess()
+  const { worker } = await requireManagementAreaAccess()
   const { siteId } = await params
 
   let grid: Awaited<ReturnType<typeof fetchQaSiteGrid>> | null = null

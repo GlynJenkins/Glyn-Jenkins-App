@@ -1,12 +1,12 @@
 import Link from 'next/link'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { fetchFiresockSiteSummaries } from '@/lib/firesock/queries'
 import FiresockSiteList from './_components/FiresockSiteList'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminFiresocksPage() {
-  await requireAdminAccess()
+  await requireManagementAreaAccess()
 
   let sites: Awaited<ReturnType<typeof fetchFiresockSiteSummaries>> = []
   let setupRequired = false

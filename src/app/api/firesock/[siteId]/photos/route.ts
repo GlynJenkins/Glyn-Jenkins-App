@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
+import {
+  verifyForemanApiAccess,
+  verifyManagementAreaApiAccess,
+} from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import { fetchFiresockSiteGrid } from '@/lib/firesock/queries'
@@ -21,23 +24,34 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ siteId: string }> },
 ) {
-  const auth = await verifyForemanApiAccess()
-  if (!auth.ok) return auth.response
+  // Admins / supervisors: all sites. Foremen: assigned sites only.
+  const mgmtAuth = await verifyManagementAreaApiAccess()
+  let uploaderId: string | null = null
 
-  try {
+  if (mgmtAuth.ok) {
+    uploaderId = mgmtAuth.worker?.id ?? null
+  } else {
+    const foremanAuth = await verifyForemanApiAccess()
+    if (!foremanAuth.ok) return mgmtAuth.response
+
     const { siteId } = await params
     const supabase = createServiceClient()
-
     const { data: assignment } = await supabase
       .from('foreman_site_assignments')
       .select('site_id')
-      .eq('foreman_id', auth.worker.id)
+      .eq('foreman_id', foremanAuth.worker.id)
       .eq('site_id', siteId)
       .maybeSingle()
 
     if (!assignment) {
       return NextResponse.json({ error: 'Forbidden — site not assigned to you.' }, { status: 403 })
     }
+    uploaderId = foremanAuth.worker.id
+  }
+
+  try {
+    const { siteId } = await params
+    const supabase = createServiceClient()
 
     const formData   = await request.formData()
     const plotNumber = (formData.get('plotNumber') as string | null)?.trim()
@@ -89,7 +103,7 @@ export async function POST(
         plot_number:  plotNumber,
         photo_path:   photoPath,
         sort_order:   sortOrder++,
-        uploaded_by:  auth.worker.id,
+        uploaded_by:  uploaderId,
       })
 
       if (insertErr) {

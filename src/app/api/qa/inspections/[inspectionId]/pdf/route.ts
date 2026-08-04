@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { generateQaInspectionPdf } from '@/lib/qa/generate-inspection-pdf'
 import { loadQaInspectionPdfData } from '@/lib/qa/load-qa-inspection-pdf'
 import { qaStageLabel } from '@/lib/qa/stages'
@@ -12,7 +12,7 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ inspectionId: string }> }
 ) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid } from '@/lib/qa/queries'
 import { loadCompanyBranding, parseSiteDocumentDetails } from '@/lib/documents/company-branding'
@@ -28,7 +28,7 @@ function isPngBuffer(buffer: Buffer): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

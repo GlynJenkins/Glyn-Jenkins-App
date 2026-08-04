@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyAdminApiAccess, verifyForemanApiAccess } from '@/lib/auth/portal-access'
+import {
+  verifyForemanApiAccess,
+  verifyManagementAreaApiAccess,
+} from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchFiresockSiteGrid } from '@/lib/firesock/queries'
 
@@ -23,6 +26,14 @@ export async function GET(
   try {
     const { siteId } = await params
 
+    // Admins, management, contracts manager, site supervisor — all sites.
+    const mgmtAuth = await verifyManagementAreaApiAccess()
+    if (mgmtAuth.ok) {
+      const grid = await fetchFiresockSiteGrid(siteId)
+      return NextResponse.json(grid)
+    }
+
+    // Foremen — assigned sites only.
     const foremanAuth = await verifyForemanApiAccess()
     if (foremanAuth.ok) {
       const allowed = await foremanHasSite(foremanAuth.worker.id, siteId)
@@ -33,13 +44,7 @@ export async function GET(
       return NextResponse.json(grid)
     }
 
-    const adminAuth = await verifyAdminApiAccess()
-    if (adminAuth.ok) {
-      const grid = await fetchFiresockSiteGrid(siteId)
-      return NextResponse.json(grid)
-    }
-
-    return foremanAuth.response
+    return mgmtAuth.response
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unexpected error.'
     if (/relation|does not exist/i.test(msg)) {
