@@ -15,6 +15,7 @@ import {
   Loader2,
   ArrowRight,
   KeyRound,
+  ShieldCheck,
 } from 'lucide-react'
 import { needsPortalLogin } from '@/lib/worker-access'
 import PortalHeader from '@/components/PortalHeader'
@@ -266,6 +267,8 @@ export default function InductionPage() {
   const [insuranceCert,   setInsuranceCert]   = useState<File | null>(null)
   const [signatureBlob,   setSignatureBlob]   = useState<Blob | null>(null)
   const [agreedToTerms,   setAgreedToTerms]   = useState(false)
+  const [privacyConsent,  setPrivacyConsent]  = useState(false)
+  const [showPrivacy,     setShowPrivacy]     = useState(false)
   const [fileErrors,      setFileErrors]      = useState<Record<string, string>>({})
   const [submitting,      setSubmitting]      = useState(false)
   const [submitted,       setSubmitted]       = useState(false)
@@ -317,6 +320,7 @@ export default function InductionPage() {
                           errs.insuranceCert = 'Insurance certificate is required'
     if (!signatureBlob)   errs.signature     = 'Please sign the agreement before submitting'
     if (!agreedToTerms)   errs.agreed        = 'You must confirm you have read and agree to the agreement'
+    if (!privacyConsent)  errs.privacy       = 'You must confirm the privacy notice and consent to continue'
     setFileErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -337,6 +341,7 @@ export default function InductionPage() {
       fd.append('idDocument', idDocument!)
       if (insuranceCert)  fd.append('insuranceCert', insuranceCert)
       if (signatureBlob)  fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
+      fd.append('privacyConsent', privacyConsent ? 'true' : 'false')
 
       const res  = await fetch('/api/induction', { method: 'POST', body: fd })
       const json = await res.json()
@@ -864,6 +869,51 @@ export default function InductionPage() {
           {fileErrors.agreed && (
             <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
               <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.agreed}
+            </p>
+          )}
+        </SectionCard>
+
+        {/* Privacy notice + consent (UK GDPR) */}
+        <SectionCard icon={ShieldCheck} title="Privacy & consent">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Glyn Jenkins Ltd collects your personal, bank, tax and ID details so we can set you up for
+            CIS payroll and site access. We share relevant information with HMRC and our payroll
+            process as required by law. Records are kept for as long as needed for payroll, tax and
+            employment compliance. Contact the office if you have questions about your data.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowPrivacy((v) => !v)}
+            className="text-xs text-orange-700 font-medium underline text-left"
+          >
+            {showPrivacy ? 'Hide full privacy notice' : 'Read full privacy notice'}
+          </button>
+          {showPrivacy && (
+            <div className="text-xs text-slate-600 leading-relaxed space-y-2 bg-slate-50 border border-slate-100 rounded-xl p-3">
+              <p><strong>Who we are:</strong> Glyn Jenkins Ltd is the data controller for information you submit on this form.</p>
+              <p><strong>What we collect:</strong> name, contact details, National Insurance number, UTR, tax status, bank sort code and account number, CSCS details, ID documents, insurance certificate (if provided), and your signature on the subcontract agreement.</p>
+              <p><strong>Why:</strong> to enrol you as a subcontractor/worker, verify right-to-work and CIS status, pay you correctly, and meet legal and site compliance duties.</p>
+              <p><strong>Who we share with:</strong> HMRC (CIS / tax), our payroll and banking providers, and site clients only where required for your work.</p>
+              <p><strong>How long:</strong> we keep payroll and tax records for the periods required by UK law (typically up to 6 years after the relevant tax year), and ID/compliance copies for as long as needed for site and employment checks.</p>
+              <p><strong>Your rights:</strong> you can ask for a copy of your data, corrections, or (where applicable) deletion by contacting the office. This notice is a summary — ask the office for the latest company privacy policy if you need more detail.</p>
+            </div>
+          )}
+          <label className={`flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${
+            privacyConsent ? 'border-orange-500 bg-orange-50' : fileErrors.privacy ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+          }`}>
+            <input
+              type="checkbox"
+              checked={privacyConsent}
+              onChange={(e) => setPrivacyConsent(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-orange-600 shrink-0"
+            />
+            <span className="text-xs font-medium text-slate-700 leading-relaxed">
+              I confirm the information is accurate and I consent to Glyn Jenkins Ltd storing it for payroll and compliance.
+            </span>
+          </label>
+          {fileErrors.privacy && (
+            <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
+              <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.privacy}
             </p>
           )}
         </SectionCard>

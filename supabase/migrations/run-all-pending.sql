@@ -230,3 +230,7 @@ BEGIN
       GENERATED ALWAYS AS (round((COALESCE(hours, 0) * COALESCE(rate_per_hour, 0))::numeric, 2)) STORED;
   END IF;
 END $$;
+
+-- 12. Registration privacy consent timestamp (pre-enrolment hardening, Task 3).
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS consent_given_at timestamptz;
