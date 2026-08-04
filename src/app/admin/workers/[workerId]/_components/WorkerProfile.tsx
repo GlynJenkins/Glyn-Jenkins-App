@@ -91,9 +91,9 @@ const ASSIGNABLE_ROLES = [
   { value: 'apprentice',         label: 'Apprentice' },
   { value: 'foreman',            label: 'Foreman' },
   { value: 'management',         label: 'Management' },
-  { value: 'jetwasher',          label: 'Jetwasher' },
   { value: 'contracts_manager',  label: 'Contracts Manager' },
   { value: 'site_supervisor',    label: 'Site Supervisor' },
+  { value: 'jetwasher',          label: 'Jetwasher' },
 ] as const
 
 const STATUS_COLORS: Record<string, string> = {
@@ -495,6 +495,10 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
+          <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+            Portal logins: Foreman, Management, Contracts Manager, Site Supervisor, Jetwasher.
+            These are not on the public induction form — only set here by admin.
+          </p>
         </div>
 
         {worker.email && (
