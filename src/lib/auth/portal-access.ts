@@ -4,7 +4,12 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import { canAccessAdmin, canAccessJetwash } from '@/lib/worker-access'
+import {
+  canAccessAdmin,
+  canAccessJetwash,
+  canAccessManagementArea,
+  isSupervisorRole,
+} from '@/lib/worker-access'
 import { allowLegacyAdmin } from '@/lib/auth/production'
 
 export type PortalWorker = {
@@ -105,6 +110,53 @@ export async function verifyAdminApiAccess(): Promise<
   return { ok: true, user, worker }
 }
 
+/**
+ * Cut-down management area: full admins OR contracts manager / site supervisor.
+ * Use for QA, Jetwash (admin view), Firesock, Holidays pages — never for wages/settings.
+ */
+export async function requireManagementAreaAccess(): Promise<{ user: User; worker: PortalWorker | null }> {
+  const user = await getAuthUser()
+  if (!user) redirect('/login')
+
+  const worker = await getWorkerForUser(user.id)
+  if (!worker) {
+    if (!allowLegacyAdmin()) redirect('/access-denied')
+    return { user, worker: null }
+  }
+
+  if (worker.status !== 'active') redirect('/pending-approval')
+  if (!canAccessManagementArea(worker.role)) redirect('/access-denied')
+
+  return { user, worker }
+}
+
+export async function verifyManagementAreaApiAccess(): Promise<
+  | { ok: true; user: User; worker: PortalWorker | null }
+  | { ok: false; response: NextResponse }
+> {
+  const user = await getAuthUser()
+  if (!user) {
+    return { ok: false, response: NextResponse.json({ error: 'Unauthorized.' }, { status: 401 }) }
+  }
+
+  const worker = await getWorkerForUser(user.id)
+  if (!worker) {
+    if (!allowLegacyAdmin()) {
+      return { ok: false, response: NextResponse.json({ error: 'Forbidden.' }, { status: 403 }) }
+    }
+    return { ok: true, user, worker: null }
+  }
+
+  if (worker.status !== 'active') {
+    return { ok: false, response: NextResponse.json({ error: 'Account pending approval.' }, { status: 403 }) }
+  }
+  if (!canAccessManagementArea(worker.role)) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden.' }, { status: 403 }) }
+  }
+
+  return { ok: true, user, worker }
+}
+
 /** Jetwasher portal: `jetwasher` role only. */
 export async function requireJetwasherAccess(): Promise<{ user: User; worker: PortalWorker }> {
   const user = await getAuthUser()
@@ -159,7 +211,11 @@ export async function verifyJetwashViewAccess(): Promise<
     return { ok: false, response: NextResponse.json({ error: 'Account pending approval.' }, { status: 403 }) }
   }
 
-  if (canAccessJetwash(worker.role) || canAccessAdmin(worker.role)) {
+  if (
+    canAccessJetwash(worker.role) ||
+    canAccessAdmin(worker.role) ||
+    isSupervisorRole(worker.role)
+  ) {
     return { ok: true, user, worker, isAdmin: canAccessAdmin(worker.role) }
   }
 
