@@ -16,5 +16,14 @@ function requirePublicSupabaseEnv() {
 
 export const createClient = () => {
   const { url, key } = requirePublicSupabaseEnv()
-  return createBrowserClient(url, key)
+  // Explicit cookie options help Chrome keep the session across visits
+  // (Safari is more forgiving with defaults).
+  return createBrowserClient(url, key, {
+    cookieOptions: {
+      path: '/',
+      sameSite: 'lax',
+      secure: typeof window !== 'undefined' ? window.location.protocol === 'https:' : true,
+      maxAge: 60 * 60 * 24 * 400, // ~400 days — matches modern browser cookie caps
+    },
+  })
 }

@@ -80,6 +80,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
+    // Already signed in — don't sit on the login form (Chrome + Safari).
+    if (pathname === '/login' && user) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
     return response
   } catch {
     return NextResponse.next()

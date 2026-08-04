@@ -18,6 +18,18 @@ export default function LoginPage() {
       setSuccess('Password updated successfully. Sign in with your new password.')
       window.history.replaceState({}, '', '/login')
     }
+
+    // If a session cookie already exists, skip the form (Safari often keeps this;
+    // Chrome needs a proper cookie + this redirect to feel like "auto login").
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) window.location.replace('/dashboard')
+      } catch {
+        // Ignore — show the login form.
+      }
+    })()
   }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -98,12 +110,14 @@ export default function LoginPage() {
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 <input
                   id="email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   required
-                  autoComplete="email"
+                  autoComplete="username"
+                  inputMode="email"
                   className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm
                              text-slate-800 placeholder:text-slate-400 outline-none
                              focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-shadow"
@@ -126,6 +140,7 @@ export default function LoginPage() {
               <div className="relative">
                 <input
                   id="password"
+                  name="password"
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
