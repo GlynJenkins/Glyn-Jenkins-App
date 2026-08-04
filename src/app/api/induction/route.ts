@@ -50,11 +50,26 @@ export async function POST(request: NextRequest) {
     const signature     = formData.get('signature')     as File | null
 
     // ── Basic server-side validation ───────────────────────────
+    const ALLOWED_INDUCTION_ROLES = [
+      'foreman',
+      'bricklayer',
+      'labourer',
+      'apprentice',
+      'management',
+      'contracts_manager',
+      'site_supervisor',
+      'jetwasher',
+    ] as const
+
     const isApprentice = role === 'apprentice'
 
     if (!firstName || !surname || !phone || !email || !bankSortCode || !bankAccountNumber ||
         !role || !hasPersonalInsurance || !niNumber) {
       return NextResponse.json({ error: 'All required fields must be filled in.' }, { status: 400 })
+    }
+
+    if (!(ALLOWED_INDUCTION_ROLES as readonly string[]).includes(role)) {
+      return NextResponse.json({ error: 'Invalid job role.' }, { status: 400 })
     }
 
     if (!privacyConsent) {

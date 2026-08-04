@@ -497,7 +497,6 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
           </select>
           <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
             Portal logins: Foreman, Management, Contracts Manager, Site Supervisor, Jetwasher.
-            These are not on the public induction form — only set here by admin.
           </p>
         </div>
 
