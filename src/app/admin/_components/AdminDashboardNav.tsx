@@ -34,7 +34,47 @@ type NavSection = {
   items: NavItem[]
 }
 
-function buildSections(counts: AdminNavCounts): NavSection[] {
+function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[] {
+  // Contracts Manager / Site Supervisor — only the four permitted areas.
+  if (restricted) {
+    return [
+      {
+        title: 'Site quality & evidence',
+        items: [
+          {
+            href:        '/admin/qa',
+            icon:        ClipboardList,
+            label:       'Quality checks',
+            description: 'Stage inspections by plot',
+          },
+          {
+            href:        '/admin/jetwash',
+            icon:        Droplets,
+            label:       'Jetwash',
+            description: 'Plot washing progress',
+          },
+          {
+            href:        '/admin/firesocks',
+            icon:        Shield,
+            label:       'Roof firesocks',
+            description: 'Evidence photos & developer PDF',
+          },
+        ],
+      },
+      {
+        title: 'Team',
+        items: [
+          {
+            href:        '/admin/holidays',
+            icon:        Sun,
+            label:       'Holidays',
+            description: 'Team calendar & your leave',
+          },
+        ],
+      },
+    ]
+  }
+
   return [
     {
       title: 'Bookings & pay',
@@ -206,12 +246,19 @@ function ActionBanner({ counts }: { counts: AdminNavCounts }) {
   )
 }
 
-export default function AdminDashboardNav({ counts }: { counts: AdminNavCounts }) {
-  const sections = buildSections(counts)
+export default function AdminDashboardNav({
+  counts,
+  restricted = false,
+}: {
+  counts: AdminNavCounts
+  /** When true, show only QA / Jetwash / Firesocks / Holidays. */
+  restricted?: boolean
+}) {
+  const sections = buildSections(counts, restricted)
 
   return (
     <div className="space-y-6">
-      <ActionBanner counts={counts} />
+      {!restricted && <ActionBanner counts={counts} />}
 
       {sections.map((section) => (
         <section key={section.title}>

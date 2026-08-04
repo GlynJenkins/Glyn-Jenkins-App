@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
+import { canAccessAdmin, isSupervisorRole } from '@/lib/worker-access'
 import LogoutButton from './_components/LogoutButton'
 import AdminDashboardNav from './_components/AdminDashboardNav'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
@@ -7,41 +8,53 @@ import { countPendingHolidayRequests } from '@/lib/holidays/queries'
 export const dynamic = 'force-dynamic'
 
 export default async function AdminPage() {
-  const { worker } = await requireAdminAccess()
+  const { worker } = await requireManagementAreaAccess()
+
+  const isFullAdmin = !worker || canAccessAdmin(worker.role)
+  const restricted  = !!worker && isSupervisorRole(worker.role)
 
   const supabase = createServiceClient()
 
-  const { count: pendingWorkerCount } = await supabase
-    .from('workers')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending_verification')
-
-  const { count: pendingClaimCount } = await supabase
-    .from('claim_periods')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending')
-
-  const { data: pendingVariationRows } = await supabase
-    .from('variation_claims')
-    .select('id, photo_urls')
-    .eq('status', 'pending')
-
-  const pendingVariationCount = new Set(
-    (pendingVariationRows ?? []).map((v) => (v.photo_urls ?? [])[0] ?? v.id)
-  ).size
-
+  let pendingWorkerCount = 0
+  let pendingClaimCount = 0
+  let pendingVariationCount = 0
   let pendingHolidayCount = 0
-  try {
-    pendingHolidayCount = await countPendingHolidayRequests()
-  } catch {
-    // table may not exist until migration runs
+
+  // Supervisors must not load admin-only summary data they cannot act on.
+  if (isFullAdmin) {
+    const { count: workers } = await supabase
+      .from('workers')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending_verification')
+    pendingWorkerCount = workers ?? 0
+
+    const { count: claims } = await supabase
+      .from('claim_periods')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+    pendingClaimCount = claims ?? 0
+
+    const { data: pendingVariationRows } = await supabase
+      .from('variation_claims')
+      .select('id, photo_urls')
+      .eq('status', 'pending')
+
+    pendingVariationCount = new Set(
+      (pendingVariationRows ?? []).map((v) => (v.photo_urls ?? [])[0] ?? v.id)
+    ).size
+
+    try {
+      pendingHolidayCount = await countPendingHolidayRequests()
+    } catch {
+      // table may not exist until migration runs
+    }
   }
 
   const navCounts = {
-    pendingClaims:     pendingClaimCount ?? 0,
+    pendingClaims:     pendingClaimCount,
     pendingVariations: pendingVariationCount,
     pendingHolidays:   pendingHolidayCount,
-    pendingWorkers:    pendingWorkerCount ?? 0,
+    pendingWorkers:    pendingWorkerCount,
   }
 
   const displayName = worker
@@ -65,7 +78,7 @@ export default async function AdminPage() {
 
       <main className="max-w-5xl mx-auto px-4 -mt-5 pb-16">
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
-          <AdminDashboardNav counts={navCounts} />
+          <AdminDashboardNav counts={navCounts} restricted={restricted} />
         </section>
       </main>
     </div>
