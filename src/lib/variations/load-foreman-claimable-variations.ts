@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { variationLineTotal } from '@/lib/variations/line-total'
 
 export type ForemanClaimableVariationGroup = {
   groupKey:    string
@@ -18,12 +19,12 @@ export async function loadForemanClaimableVariations(
   const supabase = createServiceClient()
 
   const fullSelect = `
-      id, description, total_amount, photo_urls, site_id, is_lump_sum,
+      id, description, hours, rate_per_hour, total_amount, photo_urls, site_id, is_lump_sum,
       assigned_foreman_id, foreman_id,
       workers!variation_claims_worker_id_fkey(first_name, surname, role)
     `
   const legacySelect = `
-      id, description, total_amount, photo_urls, site_id, foreman_id,
+      id, description, hours, rate_per_hour, total_amount, photo_urls, site_id, foreman_id,
       workers!variation_claims_worker_id_fkey(first_name, surname, role)
     `
 
@@ -83,7 +84,11 @@ export async function loadForemanClaimableVariations(
     }
 
     const g = groupMap.get(key)!
-    const amount = Number(v.total_amount ?? 0)
+    const amount = variationLineTotal({
+      hours:         v.hours as number | null,
+      rate_per_hour: v.rate_per_hour as number | null,
+      total_amount:  v.total_amount as number | null,
+    })
     g.lines.push({ id: v.id as string, workerName, amount })
     g.total += amount
   }

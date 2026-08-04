@@ -209,3 +209,24 @@ WHERE c.status = 'approved'
   AND c.vo_number IS NULL
   AND c.site_id = n.site_id
   AND COALESCE(c.photo_urls[1], c.id::text) = n.grp;
+
+-- 11. Make variation_claims.total_amount a generated column (hours × rate).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'variation_claims'
+      AND column_name  = 'total_amount'
+      AND is_generated = 'ALWAYS'
+  ) THEN
+    RAISE NOTICE 'variation_claims.total_amount is already a generated column — skipping.';
+  ELSE
+    ALTER TABLE variation_claims DROP COLUMN IF EXISTS total_amount;
+
+    ALTER TABLE variation_claims
+      ADD COLUMN total_amount numeric(12, 2)
+      GENERATED ALWAYS AS (round((COALESCE(hours, 0) * COALESCE(rate_per_hour, 0))::numeric, 2)) STORED;
+  END IF;
+END $$;

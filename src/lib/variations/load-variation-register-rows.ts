@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { variationLineTotal } from '@/lib/variations/line-total'
 import { formatVariationReference } from '@/lib/variations/vo-reference'
 
 export type VariationRegisterRow = {
@@ -20,6 +21,8 @@ export type VariationRegisterRow = {
 type ClaimRow = {
   id: string
   description: string
+  hours: number | null
+  rate_per_hour: number | null
   total_amount: number | null
   photo_urls: string[] | null
   approved_at: string | null
@@ -86,7 +89,7 @@ function buildGroups(claims: ClaimRow[]): Group[] {
     if (raw.vo_number != null && (g.voNumber == null || raw.vo_number < g.voNumber)) {
       g.voNumber = raw.vo_number
     }
-    g.foremanTotal += Number(raw.total_amount ?? 0)
+    g.foremanTotal += variationLineTotal(raw)
     if (raw.approved_at && (!g.approvedAt || raw.approved_at < g.approvedAt)) {
       g.approvedAt = raw.approved_at
     }
@@ -148,13 +151,13 @@ export async function loadVariationRegisterRows(): Promise<VariationRegisterRow[
   const supabase = createServiceClient()
 
   const withPaid = `
-      id, description, total_amount, photo_urls, approved_at, claimed_in_period_id,
+      id, description, hours, rate_per_hour, total_amount, photo_urls, approved_at, claimed_in_period_id,
       developer_paid_at, vo_number, site_id,
       sites ( name, site_code ),
       foremen:workers!variation_claims_foreman_id_fkey ( first_name, surname )
     `
   const legacy = `
-      id, description, total_amount, photo_urls, approved_at, claimed_in_period_id, site_id,
+      id, description, hours, rate_per_hour, total_amount, photo_urls, approved_at, claimed_in_period_id, site_id,
       sites ( name, site_code ),
       foremen:workers!variation_claims_foreman_id_fkey ( first_name, surname )
     `

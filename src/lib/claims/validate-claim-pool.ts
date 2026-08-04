@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getForemanSiteIds } from '@/lib/auth/foreman-sites'
+import { variationLineTotal } from '@/lib/variations/line-total'
 
 export type ClaimPoolItem = {
   type:       string
@@ -124,8 +125,8 @@ export async function validateClaimPool(
   const uniqueVariationIds = [...new Set(variationIds ?? [])]
 
   if (uniqueVariationIds.length > 0) {
-    const fullSelect   = 'id, total_amount, site_id, status, claimed_in_period_id, foreman_id, assigned_foreman_id, is_lump_sum'
-    const legacySelect = 'id, total_amount, site_id, status, claimed_in_period_id, foreman_id'
+    const fullSelect   = 'id, hours, rate_per_hour, total_amount, site_id, status, claimed_in_period_id, foreman_id, assigned_foreman_id, is_lump_sum'
+    const legacySelect = 'id, hours, rate_per_hour, total_amount, site_id, status, claimed_in_period_id, foreman_id'
 
     let rows: Record<string, unknown>[] | null = null
     const full = await supabase.from('variation_claims').select(fullSelect).in('id', uniqueVariationIds)
@@ -161,7 +162,11 @@ export async function validateClaimPool(
         return { ok: false, status: 403, error: 'A variation in this claim belongs to another foreman.' }
       }
 
-      variationTotal += Number(v.total_amount ?? 0)
+      variationTotal += variationLineTotal({
+        hours:         v.hours as number | null,
+        rate_per_hour: v.rate_per_hour as number | null,
+        total_amount:  v.total_amount as number | null,
+      })
     }
   }
 

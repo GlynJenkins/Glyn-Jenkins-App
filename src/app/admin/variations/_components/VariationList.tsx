@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle, XCircle, Clock, Loader2, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
+import { variationLineTotal } from '@/lib/variations/line-total'
 
 type Claim = {
   id:                     string
@@ -63,7 +64,7 @@ function buildGroups(claims: Claim[]): Group[] {
     }
     const g = map.get(key)!
     g.claims.push(c)
-    g.total += c.total_amount ?? 0
+    g.total += variationLineTotal(c)
   }
   return Array.from(map.values()).sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -151,7 +152,7 @@ function GroupCard({
                         : `${ROLE_LABELS[c.workers?.role ?? ''] ?? c.workers?.role} · ${c.hours}hrs @ £${c.rate_per_hour}/hr`}
                     </p>
                   </div>
-                  <p className="font-semibold text-slate-800 text-sm shrink-0 ml-2">{fmt(c.total_amount)}</p>
+                  <p className="font-semibold text-slate-800 text-sm shrink-0 ml-2">{fmt(variationLineTotal(c))}</p>
                 </div>
               ))}
             </div>
