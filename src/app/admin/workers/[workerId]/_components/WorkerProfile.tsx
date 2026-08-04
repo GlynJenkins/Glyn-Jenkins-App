@@ -81,15 +81,19 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin', foreman: 'Foreman', management: 'Management',
   bricklayer: 'Bricklayer', labourer: 'Labourer', apprentice: 'Apprentice',
   jetwasher: 'Jetwasher',
+  contracts_manager: 'Contracts Manager',
+  site_supervisor: 'Site Supervisor',
 }
 
 const ASSIGNABLE_ROLES = [
-  { value: 'bricklayer', label: 'Bricklayer' },
-  { value: 'labourer',   label: 'Labourer' },
-  { value: 'apprentice', label: 'Apprentice' },
-  { value: 'foreman',    label: 'Foreman' },
-  { value: 'management', label: 'Management' },
-  { value: 'jetwasher',  label: 'Jetwasher' },
+  { value: 'bricklayer',         label: 'Bricklayer' },
+  { value: 'labourer',           label: 'Labourer' },
+  { value: 'apprentice',         label: 'Apprentice' },
+  { value: 'foreman',            label: 'Foreman' },
+  { value: 'management',         label: 'Management' },
+  { value: 'jetwasher',          label: 'Jetwasher' },
+  { value: 'contracts_manager',  label: 'Contracts Manager' },
+  { value: 'site_supervisor',    label: 'Site Supervisor' },
 ] as const
 
 const STATUS_COLORS: Record<string, string> = {

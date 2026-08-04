@@ -28,6 +28,8 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin', foreman: 'Foreman', management: 'Management',
   bricklayer: 'Bricklayer', labourer: 'Labourer', apprentice: 'Apprentice',
   jetwasher: 'Jetwasher',
+  contracts_manager: 'Contracts Manager',
+  site_supervisor: 'Site Supervisor',
 }
 
 const TAX_LABELS: Record<string, string> = {

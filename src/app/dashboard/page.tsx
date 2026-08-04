@@ -1,5 +1,5 @@
 import { getAuthUser, getWorkerForUser } from '@/lib/auth/portal-access'
-import { canAccessAdmin, canAccessJetwash } from '@/lib/worker-access'
+import { canAccessAdmin, canAccessJetwash, canAccessManagementArea } from '@/lib/worker-access'
 import { allowLegacyAdmin } from '@/lib/auth/production'
 import { redirect } from 'next/navigation'
 
@@ -26,7 +26,9 @@ export default async function DashboardPage() {
 
   if (worker.role === 'foreman') redirect('/foreman')
   if (canAccessJetwash(worker.role)) redirect('/jetwash')
-  if (canAccessAdmin(worker.role)) redirect('/admin')
+  // Full admins and Contracts Manager / Site Supervisor share /admin
+  // (supervisors get a restricted tile set on the dashboard).
+  if (canAccessManagementArea(worker.role) || canAccessAdmin(worker.role)) redirect('/admin')
 
   redirect('/access-denied')
 }

@@ -265,13 +265,15 @@ export async function loadWagesRegisterRows(
 }
 
 export const WAGES_ROLE_LABELS: Record<string, string> = {
-  admin:       'Admin',
-  foreman:     'Foreman',
-  management:  'Management',
-  bricklayer:  'Bricklayer',
-  labourer:    'Labourer',
-  apprentice:  'Apprentice',
-  jetwasher:   'Jetwasher',
+  admin:              'Admin',
+  foreman:            'Foreman',
+  management:         'Management',
+  bricklayer:         'Bricklayer',
+  labourer:           'Labourer',
+  apprentice:         'Apprentice',
+  jetwasher:          'Jetwasher',
+  contracts_manager:  'Contracts Manager',
+  site_supervisor:    'Site Supervisor',
 }
 
 export function wagesRegisterPeriodKey(row: WagesRegisterRow): string {
