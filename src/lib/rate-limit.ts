@@ -45,19 +45,31 @@ function memoryLimit(key: string, cfg: LimiterConfig): RateLimitResult {
   return { success: true, remaining: cfg.limit - recent.length }
 }
 
-// ── Upstash (preferred when env vars are present) ────────────────────────────
+// ── Upstash / Vercel Redis (preferred when env vars are present) ─────────────
+// Marketplace Upstash Redis sets UPSTASH_REDIS_REST_*.
+// Older Vercel KV / some integrations set KV_REST_API_*.
 
-const upstashReady =
-  !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
+function resolveUpstashCredentials(): { url: string; token: string } | null {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    process.env.KV_REST_API_URL?.trim() ||
+    ''
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
+    process.env.KV_REST_API_TOKEN?.trim() ||
+    ''
+  if (!url || !token) return null
+  return { url, token }
+}
 
 const upstashLimiters = new Map<string, Ratelimit>()
 
-function getUpstashLimiter(cfg: LimiterConfig): Ratelimit {
+function getUpstashLimiter(cfg: LimiterConfig, creds: { url: string; token: string }): Ratelimit {
   const existing = upstashLimiters.get(cfg.prefix)
   if (existing) return existing
 
   const limiter = new Ratelimit({
-    redis: Redis.fromEnv(),
+    redis: new Redis({ url: creds.url, token: creds.token }),
     limiter: Ratelimit.slidingWindow(cfg.limit, `${Math.ceil(cfg.windowMs / 1000)} s`),
     prefix: `gj:${cfg.prefix}`,
     analytics: false,
@@ -77,9 +89,10 @@ export async function rateLimit(
   const ip = clientIp(request)
   const key = `${cfg.prefix}:${ip}`
 
-  if (upstashReady) {
+  const creds = resolveUpstashCredentials()
+  if (creds) {
     try {
-      const result = await getUpstashLimiter(cfg).limit(key)
+      const result = await getUpstashLimiter(cfg, creds).limit(key)
       return { success: result.success, remaining: result.remaining }
     } catch (err) {
       console.error('[rate-limit] Upstash failed — falling back to memory:', err)
