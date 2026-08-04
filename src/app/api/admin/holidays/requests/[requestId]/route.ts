@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import {
+  verifyAdminApiAccess,
+  verifyManagementAreaApiAccess,
+} from '@/lib/auth/portal-access'
+import { canApproveHolidays } from '@/lib/worker-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { findHolidayConflicts, validateHolidayRequest } from '@/lib/holidays/queries'
 
@@ -11,7 +15,8 @@ export async function PATCH(
   const auth = await verifyAdminApiAccess()
   if (!auth.ok) return auth.response
 
-  if (auth.worker && auth.worker.role !== 'admin') {
+  // Approvals stay full-admin / management only — never supervisors.
+  if (auth.worker && !canApproveHolidays(auth.worker.role)) {
     return NextResponse.json({ error: 'Only admin can approve holiday requests.' }, { status: 403 })
   }
 
@@ -92,7 +97,9 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
-  const auth = await verifyAdminApiAccess()
+  // Owners (including supervisors) may cancel their own pending request;
+  // approvers may cancel any.
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {
@@ -109,10 +116,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Request not found.' }, { status: 404 })
     }
 
-    const isAdmin = !auth.worker || auth.worker.role === 'admin'
+    const canApprove = !auth.worker || canApproveHolidays(auth.worker.role)
     const isOwner = auth.worker?.id === existing.worker_id
 
-    if (!isAdmin && !(isOwner && existing.status === 'pending')) {
+    if (!canApprove && !(isOwner && existing.status === 'pending')) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 

@@ -9,7 +9,7 @@ import {
 } from '@/lib/holidays/management'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 
-const TEAM_ROLES = ['admin', 'management'] as const
+const TEAM_ROLES = ['admin', 'management', 'contracts_manager', 'site_supervisor'] as const
 
 export async function fetchHolidayTeamMembers() {
   const supabase = createServiceClient()

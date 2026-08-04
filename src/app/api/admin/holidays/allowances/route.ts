@@ -35,8 +35,13 @@ export async function PATCH(request: NextRequest) {
       .eq('id', workerId)
       .maybeSingle()
 
-    if (!worker || !['admin', 'management'].includes(worker.role)) {
-      return NextResponse.json({ error: 'Allowances apply to admin/management only.' }, { status: 400 })
+    if (
+      !worker ||
+      !['admin', 'management', 'contracts_manager', 'site_supervisor'].includes(worker.role)
+    ) {
+      return NextResponse.json({
+        error: 'Allowances apply to admin, management, and supervisor roles only.',
+      }, { status: 400 })
     }
 
     const { error } = await supabase

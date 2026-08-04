@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
+import { canApproveHolidays } from '@/lib/worker-access'
 import {
   fetchHolidayAllowances,
   fetchHolidayRequests,
@@ -9,7 +10,7 @@ import { currentHolidayYear } from '@/lib/holidays/management'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   const year = currentHolidayYear()
@@ -18,7 +19,7 @@ export async function GET() {
     fetchHolidayRequests(),
   ])
 
-  const isAdmin = auth.worker?.role === 'admin' || auth.worker === null
+  const isAdmin = !auth.worker || canApproveHolidays(auth.worker.role)
 
   return NextResponse.json({
     year,

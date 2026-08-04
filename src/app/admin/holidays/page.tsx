@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
+import { canApproveHolidays } from '@/lib/worker-access'
 import {
   fetchHolidayAllowances,
   fetchHolidayRequests,
@@ -10,9 +11,10 @@ import HolidayTracker from './_components/HolidayTracker'
 export const dynamic = 'force-dynamic'
 
 export default async function AdminHolidaysPage() {
-  const { worker } = await requireAdminAccess()
+  const { worker } = await requireManagementAreaAccess()
   const year = currentHolidayYear()
-  const isAdmin = worker?.role === 'admin' || !worker
+  // Approve/reject + allowance edits — full admin/management only (not supervisors).
+  const isAdmin = !worker || canApproveHolidays(worker.role)
 
   let allowances: Awaited<ReturnType<typeof fetchHolidayAllowances>> = []
   let requests: Awaited<ReturnType<typeof fetchHolidayRequests>> = []

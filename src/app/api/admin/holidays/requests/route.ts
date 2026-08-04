@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
+import { canAccessManagementArea } from '@/lib/worker-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { validateHolidayRequest } from '@/lib/holidays/queries'
 
 export async function POST(request: NextRequest) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   if (!auth.worker) {
@@ -17,6 +18,7 @@ export async function POST(request: NextRequest) {
       startDate?: string
       endDate?: string
       note?: string
+      workerId?: string
     }
 
     const startDate = body.startDate?.trim()
@@ -27,12 +29,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Start and end dates are required.' }, { status: 400 })
     }
 
-    if (!['admin', 'management'].includes(auth.worker.role)) {
-      return NextResponse.json({ error: 'Holiday requests are for admin/management staff.' }, { status: 403 })
+    if (!canAccessManagementArea(auth.worker.role)) {
+      return NextResponse.json({ error: 'Holiday requests are for management staff.' }, { status: 403 })
     }
 
+    // Always request leave for the logged-in user — never trust a body workerId.
+    const workerId = auth.worker.id
+
     const validation = await validateHolidayRequest({
-      workerId: auth.worker.id,
+      workerId,
       startDate,
       endDate,
     })
@@ -47,7 +52,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('management_holiday_requests')
       .insert({
-        worker_id:      auth.worker.id,
+        worker_id:      workerId,
         start_date:     startDate,
         end_date:       endDate,
         days_requested: validation.days,
