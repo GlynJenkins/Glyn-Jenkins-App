@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { createServiceClient } from '@/lib/supabase/server'
+import { FORGOT_PASSWORD_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,14 @@ function redirectUrlError(redirectTo: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, FORGOT_PASSWORD_RATE_LIMIT)
+  if (!limited.success) {
+    return NextResponse.json(
+      { error: 'Too many attempts. Please try again shortly.' },
+      { status: 429 },
+    )
+  }
+
   try {
     const body = await request.json() as { email?: string; origin?: string }
     const email  = body.email?.trim().toLowerCase()
