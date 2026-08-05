@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import type { HolidayAllowanceRow, HolidayRequestRow } from '@/lib/holidays/management'
+import type { BankHoliday } from '@/lib/holidays/bank-holidays'
 import {
   WEEKDAY_LABELS,
   bookingsForDate,
@@ -18,6 +19,7 @@ type Props = {
   year: number
   allowances: HolidayAllowanceRow[]
   requests: HolidayRequestRow[]
+  bankHolidays: BankHoliday[]
   currentWorkerId?: string | null
 }
 
@@ -25,6 +27,7 @@ export default function HolidayTeamCalendar({
   year,
   allowances,
   requests,
+  bankHolidays,
   currentWorkerId,
 }: Props) {
   const today = new Date()
@@ -37,6 +40,12 @@ export default function HolidayTeamCalendar({
   )
   const personColors = useMemo(() => buildPersonColors(members), [members])
   const cells = useMemo(() => monthGrid(viewYear, viewMonth), [viewYear, viewMonth])
+
+  const bankByDate = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const bh of bankHolidays) map.set(bh.date, bh.title)
+    return map
+  }, [bankHolidays])
 
   const shiftMonth = (delta: number) => {
     const d = new Date(viewYear, viewMonth + delta, 1)
@@ -54,23 +63,25 @@ export default function HolidayTeamCalendar({
       </div>
 
       {/* Legend */}
-      {personColors.length > 0 && (
-        <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-x-4 gap-y-2">
-          {personColors.map((p) => (
-            <div key={p.id} className="flex items-center gap-1.5 text-xs">
-              <span className={`w-3 h-3 rounded-full ${p.solid} shrink-0`} />
-              <span className={`font-medium ${p.text}`}>
-                {p.label}
-                {p.id === currentWorkerId && ' (you)'}
-              </span>
-            </div>
-          ))}
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <span className="w-3 h-3 rounded border-2 border-dashed border-slate-300 bg-slate-50 shrink-0" />
-            Pending approval
+      <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-x-4 gap-y-2">
+        {personColors.map((p) => (
+          <div key={p.id} className="flex items-center gap-1.5 text-xs">
+            <span className={`w-3 h-3 rounded-full ${p.solid} shrink-0`} />
+            <span className={`font-medium ${p.text}`}>
+              {p.label}
+              {p.id === currentWorkerId && ' (you)'}
+            </span>
           </div>
+        ))}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <span className="w-3 h-3 rounded border-2 border-dashed border-slate-300 bg-slate-50 shrink-0" />
+          Pending approval
         </div>
-      )}
+        <div className="flex items-center gap-1.5 text-xs text-red-700">
+          <span className="w-3 h-3 rounded bg-red-100 border border-red-300 shrink-0" />
+          Bank holiday
+        </div>
+      </div>
 
       {/* Month nav */}
       <div className="px-5 py-3 flex items-center justify-between">
@@ -116,24 +127,43 @@ export default function HolidayTeamCalendar({
             const pending = bookings.filter((b) => b.status === 'pending')
             const isToday = dateKey === todayKey
             const isWeekend = idx % 7 >= 5
+            const bankTitle = bankByDate.get(dateKey)
+            const isBankHoliday = !!bankTitle
             const hasBookings = bookings.length > 0
 
             return (
               <div
                 key={dateKey}
-                className={`relative bg-white p-0.5 flex flex-col ${
-                  hasBookings ? 'min-h-[76px]' : 'min-h-[56px]'
-                } ${isWeekend ? 'bg-slate-50/80' : ''} ${
-                  isToday ? 'ring-2 ring-inset ring-orange-400 z-[1]' : ''
+                title={isBankHoliday ? `Bank Holiday — ${bankTitle}` : undefined}
+                className={`relative p-0.5 flex flex-col ${
+                  hasBookings || isBankHoliday ? 'min-h-[76px]' : 'min-h-[56px]'
+                } ${
+                  isBankHoliday
+                    ? 'bg-red-50'
+                    : isWeekend
+                    ? 'bg-slate-50/80'
+                    : 'bg-white'
+                } ${isToday ? 'ring-2 ring-inset ring-orange-400 z-[1]' : ''} ${
+                  isBankHoliday ? 'ring-1 ring-inset ring-red-200' : ''
                 }`}
               >
                 <span
                   className={`text-[10px] font-medium px-1 shrink-0 ${
-                    isToday ? 'text-orange-600' : 'text-slate-500'
+                    isBankHoliday
+                      ? 'text-red-700'
+                      : isToday
+                      ? 'text-orange-600'
+                      : 'text-slate-500'
                   }`}
                 >
                   {day}
                 </span>
+
+                {isBankHoliday && (
+                  <p className="px-1 text-[8px] font-semibold text-red-700 leading-tight truncate">
+                    {bankTitle}
+                  </p>
+                )}
 
                 <div className="flex-1 flex flex-col gap-0.5 mt-0.5 overflow-hidden">
                   {approved.map((b) => {
@@ -171,6 +201,7 @@ export default function HolidayTeamCalendar({
 
       <p className="px-5 pb-4 text-[11px] text-slate-400 leading-relaxed">
         Names on solid blocks = approved holiday (blocked). Dashed = pending approval.
+        Red tint = England &amp; Wales bank holiday (not bookable).
         {viewYear !== year && ` Showing ${viewYear} — allowance year is ${year}.`}
       </p>
     </div>

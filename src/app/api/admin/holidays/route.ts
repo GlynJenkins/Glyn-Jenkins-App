@@ -6,6 +6,7 @@ import {
   fetchHolidayRequests,
 } from '@/lib/holidays/queries'
 import { currentHolidayYear } from '@/lib/holidays/management'
+import { getBankHolidays } from '@/lib/holidays/bank-holidays'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,9 +15,10 @@ export async function GET() {
   if (!auth.ok) return auth.response
 
   const year = currentHolidayYear()
-  const [allowances, requests] = await Promise.all([
+  const [allowances, requests, bankHolidays] = await Promise.all([
     fetchHolidayAllowances(year),
     fetchHolidayRequests(),
+    getBankHolidays(year),
   ])
 
   const isAdmin = !auth.worker || canApproveHolidays(auth.worker.role)
@@ -27,5 +29,6 @@ export async function GET() {
     currentWorkerId: auth.worker?.id ?? null,
     allowances,
     requests,
+    bankHolidays,
   })
 }

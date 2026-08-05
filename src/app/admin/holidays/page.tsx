@@ -6,6 +6,7 @@ import {
   fetchHolidayRequests,
 } from '@/lib/holidays/queries'
 import { currentHolidayYear } from '@/lib/holidays/management'
+import { getBankHolidays, type BankHoliday } from '@/lib/holidays/bank-holidays'
 import HolidayTracker from './_components/HolidayTracker'
 
 export const dynamic = 'force-dynamic'
@@ -18,12 +19,14 @@ export default async function AdminHolidaysPage() {
 
   let allowances: Awaited<ReturnType<typeof fetchHolidayAllowances>> = []
   let requests: Awaited<ReturnType<typeof fetchHolidayRequests>> = []
+  let bankHolidays: BankHoliday[] = []
   let setupRequired = false
 
   try {
-    ;[allowances, requests] = await Promise.all([
+    ;[allowances, requests, bankHolidays] = await Promise.all([
       fetchHolidayAllowances(year),
       fetchHolidayRequests(),
+      getBankHolidays(year),
     ])
   } catch (err) {
     console.error('[Holidays] Failed to load:', err)
@@ -68,6 +71,7 @@ export default async function AdminHolidaysPage() {
               currentWorkerId: worker?.id ?? null,
               allowances,
               requests,
+              bankHolidays,
             }}
           />
         )}

@@ -1,16 +1,17 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Calendar, Loader2, CheckCircle, XCircle, Trash2, Sun, Users,
 } from 'lucide-react'
 import {
-  daysInclusive,
+  countWorkingDays,
   formatHolidayRange,
   type HolidayAllowanceRow,
   type HolidayRequestRow,
 } from '@/lib/holidays/management'
+import type { BankHoliday } from '@/lib/holidays/bank-holidays'
 import HolidayTeamCalendar from './HolidayTeamCalendar'
 
 type Payload = {
@@ -19,6 +20,7 @@ type Payload = {
   currentWorkerId: string | null
   allowances: HolidayAllowanceRow[]
   requests: HolidayRequestRow[]
+  bankHolidays: BankHoliday[]
 }
 
 function fmtDays(n: number) {
@@ -37,6 +39,11 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
   const [note, setNote] = useState('')
   const [editingAllowance, setEditingAllowance] = useState<Record<string, string>>({})
 
+  const bankDateSet = useMemo(
+    () => new Set(data.bankHolidays.map((b) => b.date)),
+    [data.bankHolidays],
+  )
+
   const reload = useCallback(async () => {
     const res = await fetch('/api/admin/holidays', { cache: 'no-store' })
     const json = await res.json()
@@ -44,7 +51,8 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
   }, [])
 
   const myAllowance = data.allowances.find((a) => a.worker_id === data.currentWorkerId)
-  const previewDays = startDate && endDate ? daysInclusive(startDate, endDate) : 0
+  const previewDays =
+    startDate && endDate ? countWorkingDays(startDate, endDate, bankDateSet) : 0
 
   const teamCalendar = data.requests.filter(
     (r) => r.status === 'approved' || r.status === 'pending'
@@ -148,6 +156,7 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
         year={data.year}
         allowances={data.allowances}
         requests={data.requests}
+        bankHolidays={data.bankHolidays}
         currentWorkerId={data.currentWorkerId}
       />
 
@@ -160,8 +169,10 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
               <h2 className="font-semibold text-slate-900">Set holiday allowance</h2>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Admin only — enter total days for each person for {data.year}, then tap Save.
-              Default is 25 days if not set.
+              Admin only — enter the <strong>total entitlement including bank holidays</strong> for {data.year}
+              (e.g. 35). Bank holidays are deducted automatically
+              ({data.bankHolidays.length} England &amp; Wales days this year).
+              Default total is 25 if not set.
             </p>
           </div>
           <div className="divide-y divide-gray-50">
@@ -172,16 +183,23 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
                     <p className="text-sm font-medium text-slate-900">
                       {a.worker.first_name} {a.worker.surname}
                     </p>
-                    <p className="text-xs text-slate-500 capitalize">{a.worker.role}</p>
+                    <p className="text-xs text-slate-500 capitalize">{a.worker.role.replace(/_/g, ' ')}</p>
                   </div>
                   <div className="text-right text-xs text-slate-500">
-                    <p>Used {fmtDays(a.used_days)}</p>
-                    <p className="text-emerald-600 font-medium">{fmtDays(a.remaining_days)} left</p>
+                    <p className="text-emerald-600 font-medium">{fmtDays(a.remaining_days)} bookable left</p>
                   </div>
                 </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Allocated (total) {fmtDays(a.allocated_days)}
+                  {' · '}Bank holidays {fmtDays(a.bank_holiday_days)}
+                  {' · '}Bookable {fmtDays(a.bookable_days)}
+                  {' · '}Used {fmtDays(a.used_days)}
+                  {' · '}Pending {fmtDays(a.pending_days)}
+                  {' · '}Remaining {fmtDays(a.remaining_days)}
+                </p>
                 <div className="flex gap-2 items-center">
                   <label className="sr-only" htmlFor={`allowance-${a.worker_id}`}>
-                    Days for {a.worker.first_name} {a.worker.surname}
+                    Total entitlement for {a.worker.first_name} {a.worker.surname}
                   </label>
                   <input
                     id={`allowance-${a.worker_id}`}
@@ -191,9 +209,9 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
                     value={editingAllowance[a.worker_id] ?? String(a.allocated_days)}
                     onChange={(e) => setEditingAllowance((p) => ({ ...p, [a.worker_id]: e.target.value }))}
                     className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
-                    placeholder="Days"
+                    placeholder="Total days"
                   />
-                  <span className="text-xs text-slate-400 shrink-0">days</span>
+                  <span className="text-xs text-slate-400 shrink-0">total days</span>
                   <button
                     type="button"
                     disabled={busy}
@@ -217,9 +235,10 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
             <h2 className="font-semibold text-slate-900">Request holiday</h2>
           </div>
           {myAllowance && (
-            <p className="text-xs text-slate-500">
-              {data.year} allowance: {fmtDays(myAllowance.allocated_days)} days ·{' '}
-              {fmtDays(myAllowance.remaining_days)} remaining
+            <p className="text-xs text-slate-500 leading-relaxed">
+              {data.year}: {fmtDays(myAllowance.bookable_days)} bookable days
+              (total {fmtDays(myAllowance.allocated_days)} − {fmtDays(myAllowance.bank_holiday_days)} bank holidays)
+              · <span className="font-medium text-emerald-700">{fmtDays(myAllowance.remaining_days)} remaining</span>
               {myAllowance.pending_days > 0 && ` (${fmtDays(myAllowance.pending_days)} pending approval)`}
             </p>
           )}
@@ -247,9 +266,11 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
               />
             </label>
           </div>
-          {previewDays > 0 && (
+          {startDate && endDate && (
             <p className="text-xs text-slate-600">
-              {previewDays} day{previewDays === 1 ? '' : 's'} requested
+              {previewDays > 0
+                ? `${previewDays} working day${previewDays === 1 ? '' : 's'} requested (weekends & bank holidays excluded)`
+                : 'Those dates are non-working days (weekend/bank holiday).'}
             </p>
           )}
           <textarea
@@ -261,14 +282,15 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
           />
           <button
             type="button"
-            disabled={busy || !startDate}
+            disabled={busy || !startDate || previewDays < 1}
             onClick={submitRequest}
             className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl disabled:opacity-50"
           >
             {busy ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Submit for approval'}
           </button>
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            The system blocks dates that overlap another manager&apos;s pending or approved holiday.
+            Leave is counted in working days only. The system also blocks dates that overlap another
+            manager&apos;s pending or approved holiday.
           </p>
         </div>
       )}
@@ -287,7 +309,7 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
                     {r.worker.first_name} {r.worker.surname}
                   </p>
                   <p className="text-sm text-slate-600">{formatHolidayRange(r.start_date, r.end_date)}</p>
-                  <p className="text-xs text-slate-500">{fmtDays(r.days_requested)} days</p>
+                  <p className="text-xs text-slate-500">{fmtDays(r.days_requested)} working days</p>
                   {r.note && <p className="text-xs text-slate-500 mt-1">{r.note}</p>}
                 </div>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
@@ -334,7 +356,7 @@ export default function HolidayTracker({ initial }: { initial: Payload }) {
                     {r.worker.first_name} {r.worker.surname}
                   </p>
                   <p className="text-xs text-slate-600">{formatHolidayRange(r.start_date, r.end_date)}</p>
-                  <p className="text-xs text-slate-400">{fmtDays(r.days_requested)} days</p>
+                  <p className="text-xs text-slate-400">{fmtDays(r.days_requested)} working days</p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
