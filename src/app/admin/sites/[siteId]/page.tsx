@@ -9,8 +9,13 @@ import ClearGridButton from './_components/ClearGridButton'
 import AddStageColumnButton from './_components/AddStageColumnButton'
 import SiteDocumentDetailsForm from './_components/SiteDocumentDetailsForm'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
+import { computeCostToCompleteFromCells } from '@/lib/production/cost-to-complete'
 
 export const dynamic = 'force-dynamic'
+
+function fmtMoney(n: number) {
+  return '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
 
 export default async function AdminSitePage({
   params,
@@ -84,6 +89,8 @@ export default async function AdminSitePage({
 
   const availableForemen = (allForemen ?? []).filter((f) => !assignedIds.includes(f.id))
 
+  const costToComplete = computeCostToCompleteFromCells(allCells)
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -124,6 +131,26 @@ export default async function AdminSitePage({
 
       {/* Grid */}
       <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-5">
+
+        {hasData && (
+          <div className="bg-white border border-orange-200 rounded-2xl px-5 py-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">
+              Cost to complete
+            </p>
+            <p className="text-sm text-slate-800 mt-1 leading-relaxed">
+              <span className="font-bold text-orange-900">{fmtMoney(costToComplete.remaining)}</span>
+              {' '}remaining of{' '}
+              <span className="font-semibold">{fmtMoney(costToComplete.siteTotal)}</span>
+              {' '}({costToComplete.pctComplete}% complete · {fmtMoney(costToComplete.claimed)} claimed)
+            </p>
+            <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-orange-500"
+                style={{ width: `${Math.min(100, costToComplete.pctComplete)}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <ForemanAssignments
           siteId={siteId}
