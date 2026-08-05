@@ -236,6 +236,7 @@ ALTER TABLE workers
   ADD COLUMN IF NOT EXISTS consent_given_at timestamptz;
 
 -- 13. Contracts Manager & Site Supervisor roles.
+-- Prefer section 15 for management/jetwasher — those were historically missing.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'worker_role') THEN
@@ -285,3 +286,9 @@ ALTER TABLE workers
 
 ALTER TABLE workers
   ADD COLUMN IF NOT EXISTS hs_qualification_na boolean NOT NULL DEFAULT false;
+
+-- 15. Add missing worker_role enum values (management + jetwasher).
+-- Run add_management_enum_value.sql on its own in Supabase if this batch fails
+-- (ALTER TYPE ... ADD VALUE prefers not to sit inside a larger transaction).
+ALTER TYPE worker_role ADD VALUE IF NOT EXISTS 'management';
+ALTER TYPE worker_role ADD VALUE IF NOT EXISTS 'jetwasher';
