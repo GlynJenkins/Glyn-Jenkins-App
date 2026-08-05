@@ -275,3 +275,13 @@ BEGIN
       ));
   END IF;
 END $$;
+
+-- 14. Induction qualifications (bricklayer trade quals + SSSTS/SMSTS for all roles).
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS bricklayer_qualification text;
+
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS hs_qualification_url text;
+
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS hs_qualification_na boolean NOT NULL DEFAULT false;

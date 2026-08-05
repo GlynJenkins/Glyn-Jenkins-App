@@ -40,14 +40,17 @@ export async function POST(request: NextRequest) {
     const niNumber             = (formData.get('niNumber')            as string)?.trim().toUpperCase()
     const cscsNumber           = (formData.get('cscsNumber')          as string)?.trim()
     const cscsExpiryDate       = (formData.get('cscsExpiryDate')      as string)?.trim()
+    const bricklayerQualification = (formData.get('bricklayerQualification') as string)?.trim() || ''
     const password             = (formData.get('password')             as string) ?? ''
     const privacyConsent       = formData.get('privacyConsent') === 'true' || formData.get('privacyConsent') === 'on'
+    const hsQualificationNa    = formData.get('hsQualificationNa') === 'true' || formData.get('hsQualificationNa') === 'on'
 
     // ── Extract files ──────────────────────────────────────────
-    const cscsCard      = formData.get('cscsCard')      as File | null
-    const idDocument    = formData.get('idDocument')    as File | null
-    const insuranceCert = formData.get('insuranceCert') as File | null
-    const signature     = formData.get('signature')     as File | null
+    const cscsCard        = formData.get('cscsCard')        as File | null
+    const idDocument      = formData.get('idDocument')      as File | null
+    const insuranceCert   = formData.get('insuranceCert')   as File | null
+    const hsQualification = formData.get('hsQualification') as File | null
+    const signature       = formData.get('signature')       as File | null
 
     // ── Basic server-side validation ───────────────────────────
     const ALLOWED_INDUCTION_ROLES = [
@@ -95,6 +98,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Insurance certificate is required when you have personal insurance.' }, { status: 400 })
     }
 
+    if (role === 'bricklayer' && !bricklayerQualification) {
+      return NextResponse.json(
+        { error: 'Bricklaying qualification details are required for bricklayers.' },
+        { status: 400 },
+      )
+    }
+
+    if (!hsQualificationNa && !hsQualification) {
+      return NextResponse.json(
+        { error: 'Upload your SSSTS/SMSTS certificate or select N/A.' },
+        { status: 400 },
+      )
+    }
+
+    if (hsQualificationNa && hsQualification) {
+      return NextResponse.json(
+        { error: 'Choose either an SSSTS/SMSTS upload or N/A, not both.' },
+        { status: 400 },
+      )
+    }
+
     const createPortalLogin = needsPortalLogin(role)
 
     if (createPortalLogin) {
@@ -118,6 +142,14 @@ export async function POST(request: NextRequest) {
       insuranceCheck = await validateUpload(insuranceCert, 'document', 'Insurance certificate')
       if (!insuranceCheck.ok) {
         return NextResponse.json({ error: insuranceCheck.error }, { status: 400 })
+      }
+    }
+
+    let hsCheck: Awaited<ReturnType<typeof validateUpload>> | null = null
+    if (!hsQualificationNa && hsQualification) {
+      hsCheck = await validateUpload(hsQualification, 'document', 'SSSTS/SMSTS certificate')
+      if (!hsCheck.ok) {
+        return NextResponse.json({ error: hsCheck.error }, { status: 400 })
       }
     }
 
@@ -192,6 +224,11 @@ export async function POST(request: NextRequest) {
       insuranceUrl = await uploadBuffer(insuranceCheck.buffer, insuranceCheck.mime, 'insurance')
     }
 
+    let hsQualificationUrl: string | null = null
+    if (hsCheck && hsCheck.ok) {
+      hsQualificationUrl = await uploadBuffer(hsCheck.buffer, hsCheck.mime, 'hs-qualifications')
+    }
+
     // ── Create portal login for foreman / management ───────────
     let authUserId: string | null = null
 
@@ -216,68 +253,57 @@ export async function POST(request: NextRequest) {
 
     const consentGivenAt = signedAt.toISOString()
 
+    const workerRow = {
+      id:                        workerId,
+      first_name:                firstName,
+      surname,
+      phone,
+      email,
+      ni_number:                 niNumber       || null,
+      bank_sort_code:            bankSortCode,
+      bank_account_number:       bankAccountNumber,
+      utr_number:                isApprentice ? null : utrNumber,
+      tax_type:                  isApprentice ? null : taxType,
+      role,
+      has_personal_insurance:    hasPersonalInsurance === 'yes',
+      bricklayer_qualification:  role === 'bricklayer' ? bricklayerQualification : null,
+      hs_qualification_url:      hsQualificationUrl,
+      hs_qualification_na:       hsQualificationNa,
+      cscs_card_url:             cscsUrl,
+      cscs_number:               cscsNumber     || null,
+      cscs_expiry_date:          cscsExpiryDate || null,
+      id_document_url:           idUrl,
+      insurance_certificate_url: insuranceUrl,
+      subcontract_signature_url: signatureUrl,
+      subcontract_agreement_pdf_url: pdfPath,
+      status:                    'pending_verification' as const,
+      auth_user_id:              authUserId,
+      consent_given_at:          consentGivenAt,
+    }
+
     // ── Insert worker record ───────────────────────────────────
     const { error: insertError } = await supabase
       .from('workers')
-      .insert({
-        id:                        workerId,
-        first_name:                firstName,
-        surname,
-        phone,
-        email,
-        ni_number:                 niNumber       || null,
-        bank_sort_code:            bankSortCode,
-        bank_account_number:       bankAccountNumber,
-        utr_number:                isApprentice ? null : utrNumber,
-        tax_type:                  isApprentice ? null : taxType,
-        role,
-        has_personal_insurance:    hasPersonalInsurance === 'yes',
-        cscs_card_url:             cscsUrl,
-        cscs_number:               cscsNumber     || null,
-        cscs_expiry_date:          cscsExpiryDate || null,
-        id_document_url:           idUrl,
-        insurance_certificate_url: insuranceUrl,
-        subcontract_signature_url: signatureUrl,
-        subcontract_agreement_pdf_url: pdfPath,
-        status:                    'pending_verification',
-        auth_user_id:              authUserId,
-        consent_given_at:          consentGivenAt,
-      })
+      .insert(workerRow)
 
     if (insertError) {
-      // Column may not exist yet if the migration hasn't been run —
-      // retry once without consent_given_at so registration isn't blocked.
-      const missingConsentCol =
-        /consent_given_at/i.test(insertError.message) ||
+      // Older DBs may be missing newer columns — retry without them so registration isn't blocked.
+      const missingOptionalCol =
+        /consent_given_at|bricklayer_qualification|hs_qualification/i.test(insertError.message) ||
         insertError.code === 'PGRST204'
 
-      if (missingConsentCol) {
-        console.warn('[Induction] consent_given_at column missing — insert without it. Run the migration.')
+      if (missingOptionalCol) {
+        console.warn('[Induction] Optional column missing — insert without newer qualification/consent fields. Run the migration.')
+        const {
+          consent_given_at: _c,
+          bricklayer_qualification: _b,
+          hs_qualification_url: _h,
+          hs_qualification_na: _n,
+          ...legacyRow
+        } = workerRow
         const { error: retryError } = await supabase
           .from('workers')
-          .insert({
-            id:                        workerId,
-            first_name:                firstName,
-            surname,
-            phone,
-            email,
-            ni_number:                 niNumber       || null,
-            bank_sort_code:            bankSortCode,
-            bank_account_number:       bankAccountNumber,
-            utr_number:                isApprentice ? null : utrNumber,
-            tax_type:                  isApprentice ? null : taxType,
-            role,
-            has_personal_insurance:    hasPersonalInsurance === 'yes',
-            cscs_card_url:             cscsUrl,
-            cscs_number:               cscsNumber     || null,
-            cscs_expiry_date:          cscsExpiryDate || null,
-            id_document_url:           idUrl,
-            insurance_certificate_url: insuranceUrl,
-            subcontract_signature_url: signatureUrl,
-            subcontract_agreement_pdf_url: pdfPath,
-            status:                    'pending_verification',
-            auth_user_id:              authUserId,
-          })
+          .insert(legacyRow)
 
         if (!retryError) {
           return NextResponse.json({ success: true, workerId, portalLoginCreated: createPortalLogin })

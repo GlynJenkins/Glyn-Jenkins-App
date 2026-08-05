@@ -45,6 +45,7 @@ const schema = z.object({
   taxType:              z.string().optional(),
   cscsNumber:           z.string().min(1, 'CSCS number is required'),
   cscsExpiryDate:       z.string().min(1, 'CSCS expiry date is required'),
+  bricklayerQualification: z.string().optional(),
   password:             z.string().optional(),
   confirmPassword:        z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -54,6 +55,15 @@ const schema = z.object({
     }
     if (!data.taxType || !['cis_20', 'gross'].includes(data.taxType)) {
       ctx.addIssue({ code: 'custom', path: ['taxType'], message: 'Select a tax type' })
+    }
+  }
+  if (data.role === 'bricklayer') {
+    if (!data.bricklayerQualification?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bricklayerQualification'],
+        message: 'Tell us what bricklaying qualification you have',
+      })
     }
   }
   if (needsPortalLogin(data.role)) {
@@ -274,6 +284,8 @@ export default function InductionPage() {
   const [cscsCard,        setCscsCard]        = useState<File | null>(null)
   const [idDocument,      setIdDocument]      = useState<File | null>(null)
   const [insuranceCert,   setInsuranceCert]   = useState<File | null>(null)
+  const [hsQualification, setHsQualification] = useState<File | null>(null)
+  const [hsQualificationNa, setHsQualificationNa] = useState(false)
   const [signatureBlob,   setSignatureBlob]   = useState<Blob | null>(null)
   const [agreedToTerms,   setAgreedToTerms]   = useState(false)
   const [privacyConsent,  setPrivacyConsent]  = useState(false)
@@ -303,6 +315,7 @@ export default function InductionPage() {
   const hasInsurance  = watch('hasPersonalInsurance')
   const selectedRole  = watch('role')
   const isApprentice  = selectedRole === 'apprentice'
+  const isBricklayer  = selectedRole === 'bricklayer'
   const needsLogin    = needsPortalLogin(selectedRole ?? '')
 
   // Clear UTR and tax type when apprentice is selected — not applicable
@@ -313,7 +326,14 @@ export default function InductionPage() {
     }
   }, [isApprentice, setValue])
 
-  // Clear portal passwords when role changes away from foreman / management
+  // Clear bricklayer qualification when role changes away from bricklayer
+  useEffect(() => {
+    if (!isBricklayer) {
+      setValue('bricklayerQualification', '')
+    }
+  }, [isBricklayer, setValue])
+
+  // Clear portal passwords when role changes away from portal roles
   useEffect(() => {
     if (!needsLogin) {
       setValue('password', '')
@@ -327,6 +347,8 @@ export default function InductionPage() {
     if (!idDocument)      errs.idDocument    = 'ID document is required'
     if (hasInsurance === 'yes' && !insuranceCert)
                           errs.insuranceCert = 'Insurance certificate is required'
+    if (!hsQualification && !hsQualificationNa)
+                          errs.hsQualification = 'Upload your SSSTS/SMSTS certificate or select N/A'
     if (!signatureBlob)   errs.signature     = 'Please sign the agreement before submitting'
     if (!agreedToTerms)   errs.agreed        = 'You must confirm you have read and agree to the agreement'
     if (!privacyConsent)  errs.privacy       = 'You must confirm the privacy notice and consent to continue'
@@ -349,6 +371,8 @@ export default function InductionPage() {
       fd.append('cscsCard',   cscsCard!)
       fd.append('idDocument', idDocument!)
       if (insuranceCert)  fd.append('insuranceCert', insuranceCert)
+      if (hsQualification) fd.append('hsQualification', hsQualification)
+      fd.append('hsQualificationNa', hsQualificationNa ? 'true' : 'false')
       if (signatureBlob)  fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
       fd.append('privacyConsent', privacyConsent ? 'true' : 'false')
 
@@ -515,6 +539,24 @@ export default function InductionPage() {
             </select>
             <FieldError message={errors.role?.message} />
           </div>
+
+          {isBricklayer && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Bricklaying qualification <span className="text-red-500">*</span>
+              </label>
+              <p className="text-xs text-slate-500 mb-2">
+                Tell us what qualification you hold (for example NVQ Level 2 Bricklaying, City &amp; Guilds).
+              </p>
+              <textarea
+                {...register('bricklayerQualification')}
+                rows={3}
+                placeholder="e.g. NVQ Level 2 Bricklaying"
+                className={`${inputCls(!!errors.bricklayerQualification)} resize-y min-h-[88px]`}
+              />
+              <FieldError message={errors.bricklayerQualification?.message} />
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -716,6 +758,41 @@ export default function InductionPage() {
               error={fileErrors.insuranceCert}
             />
           )}
+
+          <div className="space-y-2">
+            <FileUploadArea
+              label="Health & Safety qualification (SSSTS / SMSTS)"
+              required={!hsQualificationNa}
+              file={hsQualification}
+              onChange={(f) => {
+                setHsQualification(f)
+                if (f) setHsQualificationNa(false)
+              }}
+              error={fileErrors.hsQualification}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setHsQualificationNa((prev) => {
+                  const next = !prev
+                  if (next) setHsQualification(null)
+                  return next
+                })
+              }}
+              className={`w-full text-sm font-medium py-2.5 rounded-xl border transition-all ${
+                hsQualificationNa
+                  ? 'border-orange-500 bg-orange-50 text-orange-700'
+                  : 'border-gray-200 bg-white text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {hsQualificationNa ? '✓ N/A — I do not have SSSTS/SMSTS' : 'N/A — I do not have SSSTS/SMSTS'}
+            </button>
+            {hsQualificationNa && (
+              <p className="text-xs text-slate-500">
+                You&apos;ve marked this as not applicable. Upload a certificate instead if you have one.
+              </p>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   User, Phone, FileText, Building2,
   TrendingUp, Download, ChevronDown, ChevronUp,
-  Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle,
+  Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle, ShieldCheck,
 } from 'lucide-react'
 import { needsPortalLogin } from '@/lib/worker-access'
 
@@ -53,6 +53,9 @@ type Worker = {
   bank_account_number:             string | null
   subcontract_agreement_pdf_url:   string | null
   subcontract_signature_url:       string | null
+  bricklayer_qualification:        string | null
+  hs_qualification_url:            string | null
+  hs_qualification_na:             boolean | null
 }
 
 interface Props {
@@ -437,6 +440,26 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             <span>Inducted: {fmtDate(worker.created_at)}</span>
           </div>
+          {worker.bricklayer_qualification && (
+            <div className="flex items-start gap-2 py-2">
+              <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+              <span>
+                <span className="text-slate-400 text-xs block">Bricklaying qualification</span>
+                {worker.bricklayer_qualification}
+              </span>
+            </div>
+          )}
+          {(worker.hs_qualification_url || worker.hs_qualification_na) && (
+            <div className="flex items-start gap-2 py-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+              <span>
+                <span className="text-slate-400 text-xs block">SSSTS / SMSTS</span>
+                {worker.hs_qualification_na
+                  ? 'N/A — not provided'
+                  : 'Certificate uploaded'}
+              </span>
+            </div>
+          )}
         </div>
 
         {worker.subcontract_agreement_pdf_url && (
