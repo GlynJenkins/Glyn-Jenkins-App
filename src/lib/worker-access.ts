@@ -10,6 +10,13 @@ export const ADMIN_PORTAL_ROLES = ['admin', 'management'] as const
 
 export const SUPERVISOR_ROLES = ['contracts_manager', 'site_supervisor'] as const
 
+/** Roles that sign an employed (PAYE) contract — not the self-employed subcontract. */
+export const EMPLOYED_CONTRACT_ROLES = ['management', 'contracts_manager'] as const
+
+export function isEmployedContractRole(role: string): boolean {
+  return role === 'management' || role === 'contracts_manager'
+}
+
 export function needsPortalLogin(role: string): boolean {
   return (
     role === 'foreman' ||

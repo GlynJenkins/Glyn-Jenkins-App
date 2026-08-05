@@ -53,6 +53,7 @@ type Worker = {
   bank_account_number:             string | null
   subcontract_agreement_pdf_url:   string | null
   subcontract_signature_url:       string | null
+  employed_contract_signed:        boolean | null
   bricklayer_qualification:        string | null
   hs_qualification_url:            string | null
   hs_qualification_na:             boolean | null
@@ -462,7 +463,11 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
           )}
         </div>
 
-        {worker.subcontract_agreement_pdf_url && (
+        {worker.employed_contract_signed ? (
+          <p className="text-sm font-medium text-emerald-700 bg-emerald-50 rounded-xl px-4 py-3">
+            Employed contract: Signed ✓
+          </p>
+        ) : worker.subcontract_agreement_pdf_url ? (
           <button
             type="button"
             onClick={downloadAgreement}
@@ -474,7 +479,7 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
             <Download className="w-4 h-4" />
             {downloadingAgreement ? 'Opening…' : 'Download Signed Subcontract (PDF)'}
           </button>
-        )}
+        ) : null}
       </div>
 
       {/* Job role & portal access */}

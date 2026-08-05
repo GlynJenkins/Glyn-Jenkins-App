@@ -292,3 +292,7 @@ ALTER TABLE workers
 -- (ALTER TYPE ... ADD VALUE prefers not to sit inside a larger transaction).
 ALTER TYPE worker_role ADD VALUE IF NOT EXISTS 'management';
 ALTER TYPE worker_role ADD VALUE IF NOT EXISTS 'jetwasher';
+
+-- 16. Employed contract attestation (Management / Contracts Manager enrolment).
+ALTER TABLE workers
+  ADD COLUMN IF NOT EXISTS employed_contract_signed boolean NOT NULL DEFAULT false;

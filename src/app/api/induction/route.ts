@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { createServiceClient } from '@/lib/supabase/server'
 import { generateSubcontractPdf } from '@/lib/generate-subcontract-pdf'
-import { needsPortalLogin } from '@/lib/worker-access'
+import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
 import { INDUCTION_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
 import { isTradeQualification } from '@/lib/induction/qualifications'
 import {
@@ -47,6 +47,8 @@ export async function POST(request: NextRequest) {
     const password             = (formData.get('password')             as string) ?? ''
     const privacyConsent       = formData.get('privacyConsent') === 'true' || formData.get('privacyConsent') === 'on'
     const hsQualificationNa    = formData.get('hsQualificationNa') === 'true' || formData.get('hsQualificationNa') === 'on'
+    const employedContractSigned =
+      formData.get('employedContractSigned') === 'true' || formData.get('employedContractSigned') === 'on'
 
     // ── Extract files ──────────────────────────────────────────
     const cscsCard        = formData.get('cscsCard')        as File | null
@@ -68,6 +70,8 @@ export async function POST(request: NextRequest) {
     ] as const
 
     const isApprentice = role === 'apprentice'
+    const isEmployedContract = isEmployedContractRole(role)
+    const needsCisFields = !isApprentice && !isEmployedContract
 
     if (!firstName || !surname || !phone || !email || !bankSortCode || !bankAccountNumber ||
         !role || !hasPersonalInsurance || !niNumber) {
@@ -85,7 +89,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!isApprentice && (!utrNumber || !taxType)) {
+    if (needsCisFields && (!utrNumber || !taxType)) {
       return NextResponse.json({ error: 'UTR number and tax type are required for subcontractors.' }, { status: 400 })
     }
 
@@ -93,7 +97,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CSCS card and ID document are both required.' }, { status: 400 })
     }
 
-    if (!signature) {
+    if (isEmployedContract) {
+      if (!employedContractSigned) {
+        return NextResponse.json(
+          { error: 'Please confirm you have signed your employed contract.' },
+          { status: 400 },
+        )
+      }
+    } else if (!signature) {
       return NextResponse.json({ error: 'Signed subcontract agreement is required.' }, { status: 400 })
     }
 
@@ -137,8 +148,11 @@ export async function POST(request: NextRequest) {
     const idCheck = await validateUpload(idDocument, 'document', 'ID document')
     if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 })
 
-    const sigCheck = await validateUpload(signature, 'signature', 'Signature')
-    if (!sigCheck.ok) return NextResponse.json({ error: sigCheck.error }, { status: 400 })
+    let sigCheck: Awaited<ReturnType<typeof validateUpload>> | null = null
+    if (!isEmployedContract && signature) {
+      sigCheck = await validateUpload(signature, 'signature', 'Signature')
+      if (!sigCheck.ok) return NextResponse.json({ error: sigCheck.error }, { status: 400 })
+    }
 
     let insuranceCheck: Awaited<ReturnType<typeof validateUpload>> | null = null
     if (hasPersonalInsurance === 'yes' && insuranceCert) {
@@ -195,32 +209,38 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Upload required documents ──────────────────────────────
-    const [cscsUrl, idUrl, signatureUrl] = await Promise.all([
+    const [cscsUrl, idUrl] = await Promise.all([
       uploadBuffer(cscsCheck.buffer, cscsCheck.mime, 'cscs'),
       uploadBuffer(idCheck.buffer,   idCheck.mime,   'id-documents'),
-      uploadBuffer(sigCheck.buffer,  sigCheck.mime,  'signatures'),
     ])
 
-    // ── Generate signed subcontract agreement PDF ──────────────
+    let signatureUrl: string | null = null
+    let pdfPath: string | null = null
     const signedAt = new Date()
-    const pdfBuffer = await generateSubcontractPdf({
-      firstName,
-      surname,
-      email,
-      signedAt,
-      signaturePng: sigCheck.buffer,
-    })
 
-    const pdfPath = `subcontract-agreements/${workerId}/${Date.now()}.pdf`
-    const { error: pdfUploadError } = await supabase.storage
-      .from('worker-documents')
-      .upload(pdfPath, pdfBuffer, { contentType: 'application/pdf', upsert: false })
+    if (sigCheck && sigCheck.ok) {
+      signatureUrl = await uploadBuffer(sigCheck.buffer, sigCheck.mime, 'signatures')
 
-    if (pdfUploadError) {
-      await cleanupUploads()
-      throw new Error(`PDF upload failed: ${pdfUploadError.message}`)
+      // ── Generate signed subcontract agreement PDF ──────────────
+      const pdfBuffer = await generateSubcontractPdf({
+        firstName,
+        surname,
+        email,
+        signedAt,
+        signaturePng: sigCheck.buffer,
+      })
+
+      pdfPath = `subcontract-agreements/${workerId}/${Date.now()}.pdf`
+      const { error: pdfUploadError } = await supabase.storage
+        .from('worker-documents')
+        .upload(pdfPath, pdfBuffer, { contentType: 'application/pdf', upsert: false })
+
+      if (pdfUploadError) {
+        await cleanupUploads()
+        throw new Error(`PDF upload failed: ${pdfUploadError.message}`)
+      }
+      uploadedPaths.push(pdfPath)
     }
-    uploadedPaths.push(pdfPath)
 
     let insuranceUrl: string | null = null
     if (insuranceCheck && insuranceCheck.ok) {
@@ -265,8 +285,8 @@ export async function POST(request: NextRequest) {
       ni_number:                 niNumber       || null,
       bank_sort_code:            bankSortCode,
       bank_account_number:       bankAccountNumber,
-      utr_number:                isApprentice ? null : utrNumber,
-      tax_type:                  isApprentice ? null : taxType,
+      utr_number:                needsCisFields ? utrNumber : null,
+      tax_type:                  needsCisFields ? taxType : null,
       role,
       has_personal_insurance:    hasPersonalInsurance === 'yes',
       bricklayer_qualification:  bricklayerQualification,
@@ -279,6 +299,7 @@ export async function POST(request: NextRequest) {
       insurance_certificate_url: insuranceUrl,
       subcontract_signature_url: signatureUrl,
       subcontract_agreement_pdf_url: pdfPath,
+      employed_contract_signed:  isEmployedContract ? true : false,
       status:                    'pending_verification' as const,
       auth_user_id:              authUserId,
       consent_given_at:          consentGivenAt,
@@ -292,7 +313,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       // Older DBs may be missing newer columns — retry without them so registration isn't blocked.
       const missingOptionalCol =
-        /consent_given_at|bricklayer_qualification|hs_qualification/i.test(insertError.message) ||
+        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed/i.test(insertError.message) ||
         insertError.code === 'PGRST204'
 
       if (missingOptionalCol) {
@@ -302,6 +323,7 @@ export async function POST(request: NextRequest) {
           bricklayer_qualification: _b,
           hs_qualification_url: _h,
           hs_qualification_na: _n,
+          employed_contract_signed: _e,
           ...legacyRow
         } = workerRow
         const { error: retryError } = await supabase

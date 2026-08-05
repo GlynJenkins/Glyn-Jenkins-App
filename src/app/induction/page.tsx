@@ -17,12 +17,12 @@ import {
   KeyRound,
   ShieldCheck,
 } from 'lucide-react'
-import { needsPortalLogin } from '@/lib/worker-access'
+import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
 import { TRADE_QUALIFICATIONS } from '@/lib/induction/qualifications'
 import PortalHeader from '@/components/PortalHeader'
 
 // ── Validation schema ──────────────────────────────────────────────────────────
-// UTR and tax type are only required for non-apprentices
+// UTR and tax type are only required for self-employed (non-apprentice, non-employed) roles
 const schema = z.object({
   firstName:            z.string().min(1, 'First name is required'),
   surname:              z.string().min(1, 'Surname is required'),
@@ -50,7 +50,8 @@ const schema = z.object({
   password:             z.string().optional(),
   confirmPassword:        z.string().optional(),
 }).superRefine((data, ctx) => {
-  if (data.role !== 'apprentice') {
+  const needsCisFields = data.role !== 'apprentice' && !isEmployedContractRole(data.role)
+  if (needsCisFields) {
     if (!data.utrNumber || !/^\d{10}$/.test(data.utrNumber)) {
       ctx.addIssue({ code: 'custom', path: ['utrNumber'], message: 'Must be exactly 10 digits' })
     }
@@ -280,6 +281,7 @@ export default function InductionPage() {
   const [hsQualificationNa, setHsQualificationNa] = useState(false)
   const [signatureBlob,   setSignatureBlob]   = useState<Blob | null>(null)
   const [agreedToTerms,   setAgreedToTerms]   = useState(false)
+  const [employedContractSigned, setEmployedContractSigned] = useState(false)
   const [privacyConsent,  setPrivacyConsent]  = useState(false)
   const [showPrivacy,     setShowPrivacy]     = useState(false)
   const [fileErrors,      setFileErrors]      = useState<Record<string, string>>({})
@@ -307,15 +309,17 @@ export default function InductionPage() {
   const hasInsurance  = watch('hasPersonalInsurance')
   const selectedRole  = watch('role')
   const isApprentice  = selectedRole === 'apprentice'
+  const isEmployedContract = isEmployedContractRole(selectedRole ?? '')
+  const needsCisFields = !isApprentice && !isEmployedContract
   const needsLogin    = needsPortalLogin(selectedRole ?? '')
 
-  // Clear UTR and tax type when apprentice is selected — not applicable
+  // Clear UTR and tax type when not applicable (apprentice / employed PAYE roles)
   useEffect(() => {
-    if (isApprentice) {
+    if (!needsCisFields) {
       setValue('utrNumber', '')
       setValue('taxType',   '')
     }
-  }, [isApprentice, setValue])
+  }, [needsCisFields, setValue])
 
   // Clear portal passwords when role changes away from portal roles
   useEffect(() => {
@@ -325,6 +329,16 @@ export default function InductionPage() {
     }
   }, [needsLogin, setValue])
 
+  // Clear agreement state when switching between employed / subcontract paths
+  useEffect(() => {
+    if (isEmployedContract) {
+      setSignatureBlob(null)
+      setAgreedToTerms(false)
+    } else {
+      setEmployedContractSigned(false)
+    }
+  }, [isEmployedContract])
+
   const validateFiles = (): boolean => {
     const errs: Record<string, string> = {}
     if (!cscsCard)        errs.cscsCard      = 'CSCS card photo is required'
@@ -333,8 +347,13 @@ export default function InductionPage() {
                           errs.insuranceCert = 'Insurance certificate is required'
     if (!hsQualification && !hsQualificationNa)
                           errs.hsQualification = 'Upload your SSSTS/SMSTS certificate or select N/A'
-    if (!signatureBlob)   errs.signature     = 'Please sign the agreement before submitting'
-    if (!agreedToTerms)   errs.agreed        = 'You must confirm you have read and agree to the agreement'
+    if (isEmployedContract) {
+      if (!employedContractSigned)
+        errs.employedContract = 'Please confirm you have signed your employed contract'
+    } else {
+      if (!signatureBlob) errs.signature = 'Please sign the agreement before submitting'
+      if (!agreedToTerms) errs.agreed    = 'You must confirm you have read and agree to the agreement'
+    }
     if (!privacyConsent)  errs.privacy       = 'You must confirm the privacy notice and consent to continue'
     setFileErrors(errs)
     return Object.keys(errs).length === 0
@@ -357,7 +376,11 @@ export default function InductionPage() {
       if (insuranceCert)  fd.append('insuranceCert', insuranceCert)
       if (hsQualification) fd.append('hsQualification', hsQualification)
       fd.append('hsQualificationNa', hsQualificationNa ? 'true' : 'false')
-      if (signatureBlob)  fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
+      if (isEmployedContractRole(data.role)) {
+        fd.append('employedContractSigned', employedContractSigned ? 'true' : 'false')
+      } else if (signatureBlob) {
+        fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
+      }
       fd.append('privacyConsent', privacyConsent ? 'true' : 'false')
 
       const res  = await fetch('/api/induction', { method: 'POST', body: fd })
@@ -637,6 +660,16 @@ export default function InductionPage() {
             </div>
           )}
 
+          {isEmployedContract && (
+            <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700 leading-relaxed">
+                As employed staff, UTR number and CIS tax type are not required.
+                Tax is handled through PAYE.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               National Insurance Number <span className="text-red-500">*</span>
@@ -678,7 +711,7 @@ export default function InductionPage() {
             <FieldError message={errors.bankAccountNumber?.message} />
           </div>
 
-          {!isApprentice && (
+          {needsCisFields && (
             <>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -802,152 +835,182 @@ export default function InductionPage() {
           </div>
         </SectionCard>
 
-        {/* Section 5 — Subcontract Agreement */}
-        <SectionCard icon={Briefcase} title="Subcontract Agreement">
-          <p className="text-xs text-slate-500 -mt-1">
-            Please read the agreement in full, then sign and confirm below.
-          </p>
-
-          {/* Scrollable agreement text */}
-          <div className="h-64 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-slate-700 leading-relaxed space-y-3">
-            <p className="font-bold text-sm text-slate-900">SUBCONTRACT AGREEMENT — GLYN JENKINS LTD</p>
-
-            <p>This agreement is entered into between <strong>Glyn Jenkins LTD</strong> (the &ldquo;Company&rdquo;) and the operative named in this registration form (the &ldquo;Subcontractor&rdquo;).</p>
-
-            <p><strong>1. STATUS</strong><br />
-            The Subcontractor agrees to provide services to the Company as a self-employed subcontractor and not as an employee. The Subcontractor is responsible for their own tax affairs and National Insurance contributions, subject to the Construction Industry Scheme (CIS) where applicable.</p>
-
-            <p><strong>2. PAYMENT</strong><br />
-            Payment will be made on a fortnightly basis, subject to work being completed to the satisfaction of the Company&apos;s Foreman and approved by the Company&apos;s administration. Gross amounts are agreed per lift or stage as set out in the price schedule for each site. Deductions including CIS tax (where applicable), admin fees, and insurance fees will be applied before net payment is made.</p>
-
-            <p><strong>3. CONSTRUCTION INDUSTRY SCHEME (CIS)</strong><br />
-            Where the Subcontractor is registered under CIS at the standard 20% deduction rate, the Company will deduct 20% from the taxable element of each payment and submit this to HMRC on the Subcontractor&apos;s behalf. Gross-status subcontractors will receive payment without CIS deduction, subject to valid HMRC gross-status verification.</p>
-
-            <p><strong>4. ADMIN FEE</strong><br />
-            A fortnightly administration fee as set by the Company will be deducted from each payment to cover payroll processing and administrative costs.</p>
-
-            <p><strong>5. INSURANCE</strong><br />
-            The Subcontractor declares whether they hold their own public liability insurance. Where they do not, a company insurance fee as set by the Company will be deducted from each payment.</p>
-
-            <p><strong>6. CSCS COMPLIANCE</strong><br />
-            The Subcontractor confirms their CSCS card is valid and will remain valid throughout their engagement. The Company reserves the right to suspend access to site if the CSCS card expires.</p>
-
-            <p><strong>7. RIGHT TO WORK</strong><br />
-            The Subcontractor confirms they have the legal right to work in the United Kingdom and that all documents submitted are genuine and belong to them.</p>
-
-            <p><strong>8. CONDUCT & SAFETY</strong><br />
-            The Subcontractor agrees to comply with all site health and safety rules, follow instructions from the Foreman, and conduct themselves professionally at all times. Failure to comply may result in immediate removal from site and suspension of payment.</p>
-
-            <p><strong>9. TERMINATION & SUBSTANDARD WORK</strong><br />
-            Either party may terminate this agreement with reasonable notice. The Company reserves the right to terminate immediately in cases of gross misconduct, safety breaches, or fraudulent claims. Where work is deemed to be substandard or defective, the Company reserves the right to withhold payment, in full or in part, to cover the reasonable cost of remediation. Withheld payment will be released in full once the work has been inspected and passed to the required standard.</p>
-
-            <p><strong>10. GOVERNING LAW</strong><br />
-            This agreement is governed by the laws of England and Wales.</p>
-
-            <p className="font-bold text-sm text-slate-900 pt-3">SUBCONTRACTOR STATUS DECLARATION</p>
-            <p className="italic">This Declaration forms part of the Self-Employed Subcontractor Agreement between Glyn Jenkins Ltd and the Subcontractor.</p>
-
-            <p><strong>Self-Employment Status</strong></p>
-            <p>1. I have freely chosen to operate as a self-employed subcontractor and have not been required by Glyn Jenkins Ltd to do so.</p>
-            <p>2. I understand that I am not an employee, worker, partner, agent or representative of Glyn Jenkins Ltd.</p>
-            <p>3. I understand that I am not entitled to:</p>
-            <ul className="list-disc list-inside pl-2 space-y-0.5">
-              <li>Holiday pay;</li>
-              <li>Sick pay;</li>
-              <li>Pension contributions;</li>
-              <li>Redundancy pay;</li>
-              <li>Notice pay;</li>
-              <li>Maternity or paternity pay; or</li>
-              <li>Any other employment-related rights or benefits.</li>
-            </ul>
-
-            <p><strong>Taxation</strong></p>
-            <p>4. I confirm that I am responsible for my own Income Tax, National Insurance Contributions and any other personal tax liabilities.</p>
-            <p>5. I understand that Glyn Jenkins Ltd may make deductions under the Construction Industry Scheme (CIS) where required by law.</p>
-            <p>6. I understand that CIS deductions do not create an employment relationship between myself and Glyn Jenkins Ltd.</p>
-            <p>7. I understand that I remain responsible for submitting my own Self Assessment tax returns and dealing directly with HMRC regarding my personal tax affairs.</p>
-
-            <p><strong>Business Independence</strong></p>
-            <p>8. I am operating as an independent business undertaking.</p>
-            <p>9. I am free to work for other contractors, businesses and clients at any time.</p>
-            <p>10. I understand that Glyn Jenkins Ltd is under no obligation to offer me work.</p>
-            <p>11. I understand that I am under no obligation to accept work offered by Glyn Jenkins Ltd.</p>
-            <p>12. I acknowledge that there is no guarantee of future work.</p>
-            <p>13. I understand that each plot, phase, work package or instruction represents a separate engagement.</p>
-
-            <p><strong>Substitution</strong></p>
-            <p>14. I understand that I may provide a suitably qualified substitute in accordance with the terms of the Agreement.</p>
-            <p>15. I remain fully responsible for the performance, supervision and payment of any substitute provided by me.</p>
-
-            <p><strong>Quality, Defects and Snagging</strong></p>
-            <p>16. I understand that I remain responsible for the quality of all works completed by me.</p>
-            <p>17. I agree to rectify defective workmanship, incomplete works and snagging items attributable to my works.</p>
-            <p>18. I acknowledge that Glyn Jenkins Ltd may retain reasonable sums from monies due to me in order to:</p>
-            <ul className="list-disc list-inside pl-2 space-y-0.5">
-              <li>Complete outstanding works;</li>
-              <li>Rectify defective workmanship;</li>
-              <li>Complete snagging items;</li>
-              <li>Remedy non-compliant work; and</li>
-              <li>Recover reasonable losses arising from defective work.</li>
-            </ul>
-            <p>19. I acknowledge that any deductions made shall be limited to reasonable costs actually incurred by Glyn Jenkins Ltd.</p>
-
-            <p><strong>Insurance and Administration Charges</strong></p>
-            <p>20. I understand that I am responsible for maintaining appropriate insurance where required.</p>
-            <p>21. Where I elect to utilise insurance arrangements made available by Glyn Jenkins Ltd, I agree that a reasonable charge may be deducted from monies due to me.</p>
-            <p>22. I acknowledge that Glyn Jenkins Ltd may charge reasonable administration fees relating to:</p>
-            <ul className="list-disc list-inside pl-2 space-y-0.5">
-              <li>CIS administration;</li>
-              <li>Payment processing;</li>
-              <li>Production of payment statements;</li>
-              <li>Workforce administration;</li>
-              <li>Compliance administration; and</li>
-              <li>Digital management systems.</li>
-            </ul>
-            <p>23. I understand that such charges do not create an employment relationship between myself and Glyn Jenkins Ltd.</p>
-
-            <p><strong>General Declaration</strong></p>
-            <p>24. I have read and understood the Self-Employed Subcontractor Agreement.</p>
-            <p>25. I have been given the opportunity to seek independent legal, tax or financial advice prior to signing.</p>
-            <p>26. I confirm that all information provided by me is true and accurate.</p>
-            <p>27. I acknowledge that this Declaration forms part of the contractual arrangements between myself and Glyn Jenkins Ltd.</p>
-            <p>28. I understand and accept that failure to comply with the terms of the Agreement may result in deductions being made in accordance with the Agreement or termination of future work opportunities.</p>
-
-            <p className="pt-2 text-slate-500 italic"><strong>Confirmation:</strong> By signing this Declaration and the Self-Employed Subcontractor Agreement, I confirm that I have read, understood and voluntarily accepted all terms and conditions contained within both documents and acknowledge that I am entering into the Agreement as an independent self-employed subcontractor.</p>
-          </div>
-
-          {/* Signature pad */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Your Signature <span className="text-red-500">*</span>
-            </label>
-            <SignaturePad
-              onSigned={(blob) => setSignatureBlob(blob)}
-              onCleared={() => setSignatureBlob(null)}
-              error={fileErrors.signature}
-            />
-          </div>
-
-          {/* Agreement checkbox */}
-          <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-            agreedToTerms ? 'border-orange-500 bg-orange-50' : fileErrors.agreed ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
-          }`}>
-            <input
-              type="checkbox"
-              checked={agreedToTerms}
-              onChange={(e) => setAgreedToTerms(e.target.checked)}
-              className="accent-orange-500 mt-0.5 w-4 h-4 shrink-0"
-            />
-            <span className="text-xs font-medium text-slate-700 leading-relaxed">
-              I confirm I have read the subcontract agreement in full and I agree to be bound by its terms.
-            </span>
-          </label>
-          {fileErrors.agreed && (
-            <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
-              <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.agreed}
+        {/* Section 5 — Employed contract OR Subcontract Agreement */}
+        {isEmployedContract ? (
+          <SectionCard icon={Briefcase} title="Employed contract">
+            <p className="text-xs text-slate-500 -mt-1">
+              Your employment contract is signed separately with Glyn Jenkins Ltd. Confirm below to continue.
             </p>
-          )}
-        </SectionCard>
+            <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+              employedContractSigned
+                ? 'border-orange-500 bg-orange-50'
+                : fileErrors.employedContract
+                  ? 'border-red-300 bg-red-50'
+                  : 'border-gray-200 bg-gray-50'
+            }`}>
+              <input
+                type="checkbox"
+                checked={employedContractSigned}
+                onChange={(e) => setEmployedContractSigned(e.target.checked)}
+                className="accent-orange-500 mt-0.5 w-4 h-4 shrink-0"
+              />
+              <span className="text-xs font-medium text-slate-700 leading-relaxed">
+                I confirm I have signed my employed contract with Glyn Jenkins Ltd.
+              </span>
+            </label>
+            {fileErrors.employedContract && (
+              <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
+                <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.employedContract}
+              </p>
+            )}
+          </SectionCard>
+        ) : (
+          <SectionCard icon={Briefcase} title="Subcontract Agreement">
+            <p className="text-xs text-slate-500 -mt-1">
+              Please read the agreement in full, then sign and confirm below.
+            </p>
+
+            {/* Scrollable agreement text */}
+            <div className="h-64 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-slate-700 leading-relaxed space-y-3">
+              <p className="font-bold text-sm text-slate-900">SUBCONTRACT AGREEMENT — GLYN JENKINS LTD</p>
+
+              <p>This agreement is entered into between <strong>Glyn Jenkins LTD</strong> (the &ldquo;Company&rdquo;) and the operative named in this registration form (the &ldquo;Subcontractor&rdquo;).</p>
+
+              <p><strong>1. STATUS</strong><br />
+              The Subcontractor agrees to provide services to the Company as a self-employed subcontractor and not as an employee. The Subcontractor is responsible for their own tax affairs and National Insurance contributions, subject to the Construction Industry Scheme (CIS) where applicable.</p>
+
+              <p><strong>2. PAYMENT</strong><br />
+              Payment will be made on a fortnightly basis, subject to work being completed to the satisfaction of the Company&apos;s Foreman and approved by the Company&apos;s administration. Gross amounts are agreed per lift or stage as set out in the price schedule for each site. Deductions including CIS tax (where applicable), admin fees, and insurance fees will be applied before net payment is made.</p>
+
+              <p><strong>3. CONSTRUCTION INDUSTRY SCHEME (CIS)</strong><br />
+              Where the Subcontractor is registered under CIS at the standard 20% deduction rate, the Company will deduct 20% from the taxable element of each payment and submit this to HMRC on the Subcontractor&apos;s behalf. Gross-status subcontractors will receive payment without CIS deduction, subject to valid HMRC gross-status verification.</p>
+
+              <p><strong>4. ADMIN FEE</strong><br />
+              A fortnightly administration fee as set by the Company will be deducted from each payment to cover payroll processing and administrative costs.</p>
+
+              <p><strong>5. INSURANCE</strong><br />
+              The Subcontractor declares whether they hold their own public liability insurance. Where they do not, a company insurance fee as set by the Company will be deducted from each payment.</p>
+
+              <p><strong>6. CSCS COMPLIANCE</strong><br />
+              The Subcontractor confirms their CSCS card is valid and will remain valid throughout their engagement. The Company reserves the right to suspend access to site if the CSCS card expires.</p>
+
+              <p><strong>7. RIGHT TO WORK</strong><br />
+              The Subcontractor confirms they have the legal right to work in the United Kingdom and that all documents submitted are genuine and belong to them.</p>
+
+              <p><strong>8. CONDUCT & SAFETY</strong><br />
+              The Subcontractor agrees to comply with all site health and safety rules, follow instructions from the Foreman, and conduct themselves professionally at all times. Failure to comply may result in immediate removal from site and suspension of payment.</p>
+
+              <p><strong>9. TERMINATION & SUBSTANDARD WORK</strong><br />
+              Either party may terminate this agreement with reasonable notice. The Company reserves the right to terminate immediately in cases of gross misconduct, safety breaches, or fraudulent claims. Where work is deemed to be substandard or defective, the Company reserves the right to withhold payment, in full or in part, to cover the reasonable cost of remediation. Withheld payment will be released in full once the work has been inspected and passed to the required standard.</p>
+
+              <p><strong>10. GOVERNING LAW</strong><br />
+              This agreement is governed by the laws of England and Wales.</p>
+
+              <p className="font-bold text-sm text-slate-900 pt-3">SUBCONTRACTOR STATUS DECLARATION</p>
+              <p className="italic">This Declaration forms part of the Self-Employed Subcontractor Agreement between Glyn Jenkins Ltd and the Subcontractor.</p>
+
+              <p><strong>Self-Employment Status</strong></p>
+              <p>1. I have freely chosen to operate as a self-employed subcontractor and have not been required by Glyn Jenkins Ltd to do so.</p>
+              <p>2. I understand that I am not an employee, worker, partner, agent or representative of Glyn Jenkins Ltd.</p>
+              <p>3. I understand that I am not entitled to:</p>
+              <ul className="list-disc list-inside pl-2 space-y-0.5">
+                <li>Holiday pay;</li>
+                <li>Sick pay;</li>
+                <li>Pension contributions;</li>
+                <li>Redundancy pay;</li>
+                <li>Notice pay;</li>
+                <li>Maternity or paternity pay; or</li>
+                <li>Any other employment-related rights or benefits.</li>
+              </ul>
+
+              <p><strong>Taxation</strong></p>
+              <p>4. I confirm that I am responsible for my own Income Tax, National Insurance Contributions and any other personal tax liabilities.</p>
+              <p>5. I understand that Glyn Jenkins Ltd may make deductions under the Construction Industry Scheme (CIS) where required by law.</p>
+              <p>6. I understand that CIS deductions do not create an employment relationship between myself and Glyn Jenkins Ltd.</p>
+              <p>7. I understand that I remain responsible for submitting my own Self Assessment tax returns and dealing directly with HMRC regarding my personal tax affairs.</p>
+
+              <p><strong>Business Independence</strong></p>
+              <p>8. I am operating as an independent business undertaking.</p>
+              <p>9. I am free to work for other contractors, businesses and clients at any time.</p>
+              <p>10. I understand that Glyn Jenkins Ltd is under no obligation to offer me work.</p>
+              <p>11. I understand that I am under no obligation to accept work offered by Glyn Jenkins Ltd.</p>
+              <p>12. I acknowledge that there is no guarantee of future work.</p>
+              <p>13. I understand that each plot, phase, work package or instruction represents a separate engagement.</p>
+
+              <p><strong>Substitution</strong></p>
+              <p>14. I understand that I may provide a suitably qualified substitute in accordance with the terms of the Agreement.</p>
+              <p>15. I remain fully responsible for the performance, supervision and payment of any substitute provided by me.</p>
+
+              <p><strong>Quality, Defects and Snagging</strong></p>
+              <p>16. I understand that I remain responsible for the quality of all works completed by me.</p>
+              <p>17. I agree to rectify defective workmanship, incomplete works and snagging items attributable to my works.</p>
+              <p>18. I acknowledge that Glyn Jenkins Ltd may retain reasonable sums from monies due to me in order to:</p>
+              <ul className="list-disc list-inside pl-2 space-y-0.5">
+                <li>Complete outstanding works;</li>
+                <li>Rectify defective workmanship;</li>
+                <li>Complete snagging items;</li>
+                <li>Remedy non-compliant work; and</li>
+                <li>Recover reasonable losses arising from defective work.</li>
+              </ul>
+              <p>19. I acknowledge that any deductions made shall be limited to reasonable costs actually incurred by Glyn Jenkins Ltd.</p>
+
+              <p><strong>Insurance and Administration Charges</strong></p>
+              <p>20. I understand that I am responsible for maintaining appropriate insurance where required.</p>
+              <p>21. Where I elect to utilise insurance arrangements made available by Glyn Jenkins Ltd, I agree that a reasonable charge may be deducted from monies due to me.</p>
+              <p>22. I acknowledge that Glyn Jenkins Ltd may charge reasonable administration fees relating to:</p>
+              <ul className="list-disc list-inside pl-2 space-y-0.5">
+                <li>CIS administration;</li>
+                <li>Payment processing;</li>
+                <li>Production of payment statements;</li>
+                <li>Workforce administration;</li>
+                <li>Compliance administration; and</li>
+                <li>Digital management systems.</li>
+              </ul>
+              <p>23. I understand that such charges do not create an employment relationship between myself and Glyn Jenkins Ltd.</p>
+
+              <p><strong>General Declaration</strong></p>
+              <p>24. I have read and understood the Self-Employed Subcontractor Agreement.</p>
+              <p>25. I have been given the opportunity to seek independent legal, tax or financial advice prior to signing.</p>
+              <p>26. I confirm that all information provided by me is true and accurate.</p>
+              <p>27. I acknowledge that this Declaration forms part of the contractual arrangements between myself and Glyn Jenkins Ltd.</p>
+              <p>28. I understand and accept that failure to comply with the terms of the Agreement may result in deductions being made in accordance with the Agreement or termination of future work opportunities.</p>
+
+              <p className="pt-2 text-slate-500 italic"><strong>Confirmation:</strong> By signing this Declaration and the Self-Employed Subcontractor Agreement, I confirm that I have read, understood and voluntarily accepted all terms and conditions contained within both documents and acknowledge that I am entering into the Agreement as an independent self-employed subcontractor.</p>
+            </div>
+
+            {/* Signature pad */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Your Signature <span className="text-red-500">*</span>
+              </label>
+              <SignaturePad
+                onSigned={(blob) => setSignatureBlob(blob)}
+                onCleared={() => setSignatureBlob(null)}
+                error={fileErrors.signature}
+              />
+            </div>
+
+            {/* Agreement checkbox */}
+            <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+              agreedToTerms ? 'border-orange-500 bg-orange-50' : fileErrors.agreed ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+            }`}>
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="accent-orange-500 mt-0.5 w-4 h-4 shrink-0"
+              />
+              <span className="text-xs font-medium text-slate-700 leading-relaxed">
+                I confirm I have read the subcontract agreement in full and I agree to be bound by its terms.
+              </span>
+            </label>
+            {fileErrors.agreed && (
+              <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
+                <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.agreed}
+              </p>
+            )}
+          </SectionCard>
+        )}
 
         {/* Privacy notice + consent (UK GDPR) */}
         <SectionCard icon={ShieldCheck} title="Privacy & consent">

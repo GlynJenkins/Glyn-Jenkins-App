@@ -27,6 +27,7 @@ export default async function WorkerProfilePage({
       tax_type, role, status, has_personal_insurance, created_at,
       auth_user_id, bank_sort_code, bank_account_number,
       subcontract_agreement_pdf_url, subcontract_signature_url,
+      employed_contract_signed,
       bricklayer_qualification, hs_qualification_url, hs_qualification_na
     `)
     .eq('id', workerId)
