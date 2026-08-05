@@ -10,7 +10,12 @@ export type HolidayTeamMember = {
 export type HolidayAllowanceRow = {
   worker_id: string
   year: number
+  /** Total entitlement including bank holidays (what admin enters). */
   allocated_days: number
+  /** England & Wales bank holidays in this year (auto-deducted). */
+  bank_holiday_days: number
+  /** Days staff can book: allocated − bank holidays. */
+  bookable_days: number
   used_days: number
   pending_days: number
   remaining_days: number
@@ -37,6 +42,41 @@ export function daysInclusive(startDate: string, endDate: string): number {
   const end = new Date(`${endDate}T12:00:00`)
   const diff = Math.round((end.getTime() - start.getTime()) / 86_400_000)
   return diff + 1
+}
+
+function dateKeyLocal(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * Count Mon–Fri days from start to end inclusive, excluding bank holidays.
+ * Weekends and bank holidays do not consume leave allowance.
+ */
+export function countWorkingDays(
+  startDate: string,
+  endDate: string,
+  bankHolidayDates: Set<string> | ReadonlySet<string> = new Set(),
+): number {
+  const start = new Date(`${startDate}T12:00:00`)
+  const end = new Date(`${endDate}T12:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return 0
+  }
+
+  let count = 0
+  const cur = new Date(start)
+  while (cur.getTime() <= end.getTime()) {
+    const weekday = cur.getDay() // 0 Sun … 6 Sat
+    const key = dateKeyLocal(cur)
+    if (weekday !== 0 && weekday !== 6 && !bankHolidayDates.has(key)) {
+      count += 1
+    }
+    cur.setDate(cur.getDate() + 1)
+  }
+  return count
 }
 
 export function rangesOverlap(
