@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { createServiceClient } from '@/lib/supabase/server'
+import { generateApprenticePdf } from '@/lib/generate-apprentice-pdf'
 import { generateSubcontractPdf } from '@/lib/generate-subcontract-pdf'
 import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
 import { INDUCTION_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
@@ -105,7 +106,11 @@ export async function POST(request: NextRequest) {
         )
       }
     } else if (!signature) {
-      return NextResponse.json({ error: 'Signed subcontract agreement is required.' }, { status: 400 })
+      return NextResponse.json({
+        error: isApprentice
+          ? 'Signed apprenticeship agreement is required.'
+          : 'Signed subcontract agreement is required.',
+      }, { status: 400 })
     }
 
     if (hasPersonalInsurance === 'yes' && !insuranceCert) {
@@ -221,16 +226,25 @@ export async function POST(request: NextRequest) {
     if (sigCheck && sigCheck.ok) {
       signatureUrl = await uploadBuffer(sigCheck.buffer, sigCheck.mime, 'signatures')
 
-      // ── Generate signed subcontract agreement PDF ──────────────
-      const pdfBuffer = await generateSubcontractPdf({
-        firstName,
-        surname,
-        email,
-        signedAt,
-        signaturePng: sigCheck.buffer,
-      })
+      // ── Generate signed agreement PDF (apprentice or subcontract) ──
+      const pdfBuffer = isApprentice
+        ? await generateApprenticePdf({
+            firstName,
+            surname,
+            email,
+            signedAt,
+            signaturePng: sigCheck.buffer,
+          })
+        : await generateSubcontractPdf({
+            firstName,
+            surname,
+            email,
+            signedAt,
+            signaturePng: sigCheck.buffer,
+          })
 
-      pdfPath = `subcontract-agreements/${workerId}/${Date.now()}.pdf`
+      const folder = isApprentice ? 'apprenticeship-agreements' : 'subcontract-agreements'
+      pdfPath = `${folder}/${workerId}/${Date.now()}.pdf`
       const { error: pdfUploadError } = await supabase.storage
         .from('worker-documents')
         .upload(pdfPath, pdfBuffer, { contentType: 'application/pdf', upsert: false })

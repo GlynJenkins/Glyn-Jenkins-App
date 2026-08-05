@@ -18,6 +18,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
+import { APPRENTICE_AGREEMENT_LINES } from '@/lib/apprentice-agreement'
 import { TRADE_QUALIFICATIONS } from '@/lib/induction/qualifications'
 import PortalHeader from '@/components/PortalHeader'
 
@@ -105,6 +106,32 @@ function SectionCard({
         <h2 className="font-semibold text-slate-800 text-base">{title}</h2>
       </div>
       {children}
+    </div>
+  )
+}
+
+/** Renders ##-heading agreement line arrays (apprentice / shared text sources). */
+function AgreementLinesBlock({
+  title,
+  lines,
+}: {
+  title: string
+  lines: string[]
+}) {
+  return (
+    <div className="h-64 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-slate-700 leading-relaxed space-y-3">
+      <p className="font-bold text-sm text-slate-900">{title}</p>
+      {lines.map((block, i) => {
+        if (block === '') return <div key={i} className="h-1" />
+        if (block.startsWith('## ')) {
+          return (
+            <p key={i} className="font-bold text-sm text-slate-900 pt-1">
+              {block.slice(3)}
+            </p>
+          )
+        }
+        return <p key={i}>{block}</p>
+      })}
     </div>
   )
 }
@@ -835,7 +862,7 @@ export default function InductionPage() {
           </div>
         </SectionCard>
 
-        {/* Section 5 — Employed contract OR Subcontract Agreement */}
+        {/* Section 5 — Employed tick / Apprenticeship agreement / Subcontract */}
         {isEmployedContract ? (
           <SectionCard icon={Briefcase} title="Employed contract">
             <p className="text-xs text-slate-500 -mt-1">
@@ -861,6 +888,47 @@ export default function InductionPage() {
             {fileErrors.employedContract && (
               <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
                 <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.employedContract}
+              </p>
+            )}
+          </SectionCard>
+        ) : isApprentice ? (
+          <SectionCard icon={Briefcase} title="Apprenticeship Agreement">
+            <p className="text-xs text-slate-500 -mt-1">
+              Please read the apprenticeship agreement in full, then sign and confirm below.
+            </p>
+
+            <AgreementLinesBlock
+              title="APPRENTICESHIP AGREEMENT — GLYN JENKINS LTD"
+              lines={APPRENTICE_AGREEMENT_LINES}
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Your Signature <span className="text-red-500">*</span>
+              </label>
+              <SignaturePad
+                onSigned={(blob) => setSignatureBlob(blob)}
+                onCleared={() => setSignatureBlob(null)}
+                error={fileErrors.signature}
+              />
+            </div>
+
+            <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+              agreedToTerms ? 'border-orange-500 bg-orange-50' : fileErrors.agreed ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+            }`}>
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="accent-orange-500 mt-0.5 w-4 h-4 shrink-0"
+              />
+              <span className="text-xs font-medium text-slate-700 leading-relaxed">
+                I confirm I have read the apprenticeship agreement in full and I agree to be bound by its terms.
+              </span>
+            </label>
+            {fileErrors.agreed && (
+              <p className="flex items-center gap-1 text-xs text-red-500 -mt-2">
+                <AlertCircle className="w-3 h-3 shrink-0" />{fileErrors.agreed}
               </p>
             )}
           </SectionCard>

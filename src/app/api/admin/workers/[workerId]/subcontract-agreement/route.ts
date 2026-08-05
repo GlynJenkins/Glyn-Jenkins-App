@@ -19,7 +19,7 @@ export async function GET(
 
     const { data: worker } = await supabase
       .from('workers')
-      .select('first_name, surname, subcontract_agreement_pdf_url')
+      .select('first_name, surname, role, subcontract_agreement_pdf_url')
       .eq('id', workerId)
       .maybeSingle()
 
@@ -35,7 +35,8 @@ export async function GET(
       return NextResponse.json({ error: 'Could not generate download link.' }, { status: 500 })
     }
 
-    const filename = `${worker.first_name}-${worker.surname}-subcontract-agreement.pdf`
+    const kind = worker.role === 'apprentice' ? 'apprenticeship-agreement' : 'subcontract-agreement'
+    const filename = `${worker.first_name}-${worker.surname}-${kind}.pdf`
       .replace(/\s+/g, '-')
       .toLowerCase()
 

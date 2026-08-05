@@ -477,7 +477,11 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
                        text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            {downloadingAgreement ? 'Opening…' : 'Download Signed Subcontract (PDF)'}
+            {downloadingAgreement
+              ? 'Opening…'
+              : worker.role === 'apprentice'
+                ? 'Download Signed Apprenticeship Agreement (PDF)'
+                : 'Download Signed Subcontract (PDF)'}
           </button>
         ) : null}
       </div>
