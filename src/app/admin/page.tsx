@@ -4,6 +4,7 @@ import { canAccessAdmin, isSupervisorRole } from '@/lib/worker-access'
 import LogoutButton from './_components/LogoutButton'
 import AdminDashboardNav from './_components/AdminDashboardNav'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
+import { loadTrainingMatrix } from '@/lib/training/load-training-matrix'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,7 @@ export default async function AdminPage() {
   let pendingClaimCount = 0
   let pendingVariationCount = 0
   let pendingHolidayCount = 0
+  let expiredCscsCount = 0
 
   // Supervisors must not load admin-only summary data they cannot act on.
   if (isFullAdmin) {
@@ -48,6 +50,13 @@ export default async function AdminPage() {
     } catch {
       // table may not exist until migration runs
     }
+
+    try {
+      const { summary } = await loadTrainingMatrix()
+      expiredCscsCount = summary.expired
+    } catch {
+      // columns may not exist until migration runs
+    }
   }
 
   const navCounts = {
@@ -55,6 +64,7 @@ export default async function AdminPage() {
     pendingVariations: pendingVariationCount,
     pendingHolidays:   pendingHolidayCount,
     pendingWorkers:    pendingWorkerCount,
+    expiredCscs:       expiredCscsCount,
   }
 
   const displayName = worker

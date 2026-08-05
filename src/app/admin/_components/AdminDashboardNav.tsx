@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Droplets,
   FileUp,
+  GraduationCap,
   Settings,
   Shield,
   Sun,
@@ -18,6 +19,7 @@ export type AdminNavCounts = {
   pendingVariations: number
   pendingHolidays:   number
   pendingWorkers:    number
+  expiredCscs:       number
 }
 
 type NavItem = {
@@ -141,6 +143,14 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
           description: 'Inductions, profiles & activation',
           badge:       counts.pendingWorkers,
           accent:      counts.pendingWorkers > 0,
+        },
+        {
+          href:        '/admin/training',
+          icon:        GraduationCap,
+          label:       'Training Matrix',
+          description: 'CSCS, quals & SSSTS/SMSTS',
+          badge:       counts.expiredCscs,
+          accent:      counts.expiredCscs > 0,
         },
         {
           href:        '/admin/holidays',
