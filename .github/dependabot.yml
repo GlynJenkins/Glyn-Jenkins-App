@@ -1,0 +1,23 @@
+# Dependabot — automatic dependency maintenance for the Glyn Jenkins portal.
+# This opens monthly pull requests to keep npm packages up to date.
+# Security fixes (for known vulnerabilities) are delivered separately and
+# immediately once "Dependabot security updates" is enabled in the repo
+# Settings → Advanced Security (see docs/maintenance-checklist.md).
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # Bundle low-risk patch + minor updates into ONE easy-to-review PR.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    # Major-version updates come as separate PRs — review these carefully,
+    # they can contain breaking changes.
