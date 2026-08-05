@@ -21,26 +21,16 @@ const COLOR_MUTED  = rgb(0.4, 0.4, 0.4)
 const COLOR_LINE   = rgb(0.85, 0.85, 0.85)
 const COLOR_HEADER = rgb(0.95, 0.95, 0.95)
 
-type Col = { key: keyof typeof COL_KEYS; label: string; width: number; get: (r: TrainingMatrixRow) => string }
-
-const COL_KEYS = {
-  name: true,
-  trade: true,
-  qualification: true,
-  cscsNumber: true,
-  cscsExpiry: true,
-  cscsStatus: true,
-  hs: true,
-} as const
+type Col = { label: string; width: number; get: (r: TrainingMatrixRow) => string }
 
 const COLS: Col[] = [
-  { key: 'name',          label: 'Name',          width: 90,  get: (r) => r.name },
-  { key: 'trade',         label: 'Trade',         width: 70,  get: (r) => r.trade },
-  { key: 'qualification', label: 'Qualification', width: 85,  get: (r) => r.qualification },
-  { key: 'cscsNumber',    label: 'CSCS No.',      width: 70,  get: (r) => r.cscsNumber ?? '—' },
-  { key: 'cscsExpiry',    label: 'CSCS Expiry',   width: 60,  get: (r) => formatCscsExpiry(r.cscsExpiryDate) },
-  { key: 'cscsStatus',    label: 'CSCS Status',   width: 60,  get: (r) => cscsStatusLabel(r.cscsStatus) },
-  { key: 'hs',            label: 'H&S',           width: 58,  get: (r) => hsStatusLabel(r.hsStatus) },
+  { label: 'Name',          width: 90,  get: (r) => r.name },
+  { label: 'Trade',         width: 70,  get: (r) => r.trade },
+  { label: 'Qualification', width: 85,  get: (r) => r.qualification },
+  { label: 'CSCS No.',      width: 70,  get: (r) => r.cscsNumber ?? '—' },
+  { label: 'CSCS Expiry',   width: 60,  get: (r) => formatCscsExpiry(r.cscsExpiryDate) },
+  { label: 'CSCS Status',   width: 60,  get: (r) => cscsStatusLabel(r.cscsStatus) },
+  { label: 'H&S',           width: 58,  get: (r) => hsStatusLabel(r.hsStatus) },
 ]
 
 function truncate(font: { widthOfTextAtSize: (t: string, s: number) => number }, text: string, maxWidth: number, size: number) {
