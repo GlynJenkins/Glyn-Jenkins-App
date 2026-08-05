@@ -444,7 +444,7 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
             <div className="flex items-start gap-2 py-2">
               <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
               <span>
-                <span className="text-slate-400 text-xs block">Bricklaying qualification</span>
+                <span className="text-slate-400 text-xs block">Qualification</span>
                 {worker.bricklayer_qualification}
               </span>
             </div>

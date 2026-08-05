@@ -18,6 +18,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { needsPortalLogin } from '@/lib/worker-access'
+import { TRADE_QUALIFICATIONS } from '@/lib/induction/qualifications'
 import PortalHeader from '@/components/PortalHeader'
 
 // ── Validation schema ──────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ const schema = z.object({
   taxType:              z.string().optional(),
   cscsNumber:           z.string().min(1, 'CSCS number is required'),
   cscsExpiryDate:       z.string().min(1, 'CSCS expiry date is required'),
-  bricklayerQualification: z.string().optional(),
+  qualification:        z.enum(TRADE_QUALIFICATIONS, { error: 'Select your qualification' }),
   password:             z.string().optional(),
   confirmPassword:        z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -55,15 +56,6 @@ const schema = z.object({
     }
     if (!data.taxType || !['cis_20', 'gross'].includes(data.taxType)) {
       ctx.addIssue({ code: 'custom', path: ['taxType'], message: 'Select a tax type' })
-    }
-  }
-  if (data.role === 'bricklayer') {
-    if (!data.bricklayerQualification?.trim()) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['bricklayerQualification'],
-        message: 'Tell us what bricklaying qualification you have',
-      })
     }
   }
   if (needsPortalLogin(data.role)) {
@@ -315,7 +307,6 @@ export default function InductionPage() {
   const hasInsurance  = watch('hasPersonalInsurance')
   const selectedRole  = watch('role')
   const isApprentice  = selectedRole === 'apprentice'
-  const isBricklayer  = selectedRole === 'bricklayer'
   const needsLogin    = needsPortalLogin(selectedRole ?? '')
 
   // Clear UTR and tax type when apprentice is selected — not applicable
@@ -325,13 +316,6 @@ export default function InductionPage() {
       setValue('taxType',   '')
     }
   }, [isApprentice, setValue])
-
-  // Clear bricklayer qualification when role changes away from bricklayer
-  useEffect(() => {
-    if (!isBricklayer) {
-      setValue('bricklayerQualification', '')
-    }
-  }, [isBricklayer, setValue])
 
   // Clear portal passwords when role changes away from portal roles
   useEffect(() => {
@@ -540,23 +524,21 @@ export default function InductionPage() {
             <FieldError message={errors.role?.message} />
           </div>
 
-          {isBricklayer && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Bricklaying qualification <span className="text-red-500">*</span>
-              </label>
-              <p className="text-xs text-slate-500 mb-2">
-                Tell us what qualification you hold (for example NVQ Level 2 Bricklaying, City &amp; Guilds).
-              </p>
-              <textarea
-                {...register('bricklayerQualification')}
-                rows={3}
-                placeholder="e.g. NVQ Level 2 Bricklaying"
-                className={`${inputCls(!!errors.bricklayerQualification)} resize-y min-h-[88px]`}
-              />
-              <FieldError message={errors.bricklayerQualification?.message} />
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Qualification <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-slate-500 mb-2">
+              Select the option that best matches your trade or training qualification.
+            </p>
+            <select {...register('qualification')} className={inputCls(!!errors.qualification)}>
+              <option value="">Select your qualification...</option>
+              {TRADE_QUALIFICATIONS.map((q) => (
+                <option key={q} value={q}>{q}</option>
+              ))}
+            </select>
+            <FieldError message={errors.qualification?.message} />
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">

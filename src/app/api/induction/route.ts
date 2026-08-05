@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { generateSubcontractPdf } from '@/lib/generate-subcontract-pdf'
 import { needsPortalLogin } from '@/lib/worker-access'
 import { INDUCTION_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
+import { isTradeQualification } from '@/lib/induction/qualifications'
 import {
   extensionForMime,
   validateUpload,
@@ -40,7 +41,9 @@ export async function POST(request: NextRequest) {
     const niNumber             = (formData.get('niNumber')            as string)?.trim().toUpperCase()
     const cscsNumber           = (formData.get('cscsNumber')          as string)?.trim()
     const cscsExpiryDate       = (formData.get('cscsExpiryDate')      as string)?.trim()
-    const bricklayerQualification = (formData.get('bricklayerQualification') as string)?.trim() || ''
+    const bricklayerQualification = (formData.get('qualification') as string)?.trim()
+      || (formData.get('bricklayerQualification') as string)?.trim()
+      || ''
     const password             = (formData.get('password')             as string) ?? ''
     const privacyConsent       = formData.get('privacyConsent') === 'true' || formData.get('privacyConsent') === 'on'
     const hsQualificationNa    = formData.get('hsQualificationNa') === 'true' || formData.get('hsQualificationNa') === 'on'
@@ -98,9 +101,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Insurance certificate is required when you have personal insurance.' }, { status: 400 })
     }
 
-    if (role === 'bricklayer' && !bricklayerQualification) {
+    if (!isTradeQualification(bricklayerQualification)) {
       return NextResponse.json(
-        { error: 'Bricklaying qualification details are required for bricklayers.' },
+        { error: 'Select a valid qualification from the list.' },
         { status: 400 },
       )
     }
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest) {
       tax_type:                  isApprentice ? null : taxType,
       role,
       has_personal_insurance:    hasPersonalInsurance === 'yes',
-      bricklayer_qualification:  role === 'bricklayer' ? bricklayerQualification : null,
+      bricklayer_qualification:  bricklayerQualification,
       hs_qualification_url:      hsQualificationUrl,
       hs_qualification_na:       hsQualificationNa,
       cscs_card_url:             cscsUrl,
