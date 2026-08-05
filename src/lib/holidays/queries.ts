@@ -1,12 +1,13 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import {
+  countWorkingDays,
   currentHolidayYear,
-  daysInclusive,
   rangesOverlap,
   type HolidayAllowanceRow,
   type HolidayRequestRow,
   type HolidayTeamMember,
 } from '@/lib/holidays/management'
+import { bankHolidayCount, getBankHolidayDates } from '@/lib/holidays/bank-holidays'
 import { relationOne } from '@/lib/supabase/normalize-relations'
 
 const TEAM_ROLES = ['admin', 'management', 'contracts_manager', 'site_supervisor'] as const
@@ -43,6 +44,7 @@ async function sumDaysForWorker(
 export async function fetchHolidayAllowances(year = currentHolidayYear()): Promise<HolidayAllowanceRow[]> {
   const team = await fetchHolidayTeamMembers()
   const supabase = createServiceClient()
+  const bankDays = await bankHolidayCount(year)
 
   const { data: allowanceRows } = await supabase
     .from('management_holiday_allowances')
@@ -56,15 +58,18 @@ export async function fetchHolidayAllowances(year = currentHolidayYear()): Promi
   const rows: HolidayAllowanceRow[] = []
   for (const worker of team) {
     const allocated = byWorker.get(worker.id) ?? 25
+    const bookable = Math.max(0, allocated - bankDays)
     const used = await sumDaysForWorker(worker.id, year, 'approved')
     const pending = await sumDaysForWorker(worker.id, year, 'pending')
     rows.push({
-      worker_id:       worker.id,
+      worker_id:          worker.id,
       year,
-      allocated_days:  allocated,
-      used_days:       used,
-      pending_days:    pending,
-      remaining_days:  Math.max(0, allocated - used - pending),
+      allocated_days:     allocated,
+      bank_holiday_days:  bankDays,
+      bookable_days:      bookable,
+      used_days:          used,
+      pending_days:       pending,
+      remaining_days:     Math.max(0, bookable - used - pending),
       worker,
     })
   }
@@ -147,12 +152,23 @@ export async function validateHolidayRequest(input: {
   excludeRequestId?: string
 }) {
   const { workerId, startDate, endDate, excludeRequestId } = input
-  const days = daysInclusive(startDate, endDate)
-  if (days < 1) return { ok: false as const, error: 'End date must be on or after start date.' }
+
+  if (endDate < startDate) {
+    return { ok: false as const, error: 'End date must be on or after start date.' }
+  }
 
   const year = new Date(`${startDate}T12:00:00`).getFullYear()
   if (new Date(`${endDate}T12:00:00`).getFullYear() !== year) {
     return { ok: false as const, error: 'Holiday must fall within a single calendar year.' }
+  }
+
+  const bankDates = await getBankHolidayDates(year)
+  const days = countWorkingDays(startDate, endDate, bankDates)
+  if (days < 1) {
+    return {
+      ok: false as const,
+      error: 'Those dates are already non-working days (weekend/bank holiday).',
+    }
   }
 
   const conflicts = await findHolidayConflicts(workerId, startDate, endDate, excludeRequestId)
@@ -167,9 +183,9 @@ export async function validateHolidayRequest(input: {
 
   const allowances = await fetchHolidayAllowances(year)
   const mine = allowances.find((a) => a.worker_id === workerId)
-  const allocated = mine?.allocated_days ?? 25
   const used = mine?.used_days ?? 0
   const pending = mine?.pending_days ?? 0
+  const bookable = mine?.bookable_days ?? Math.max(0, (mine?.allocated_days ?? 25) - bankDates.size)
 
   let pendingAdjustment = 0
   if (excludeRequestId) {
@@ -184,11 +200,11 @@ export async function validateHolidayRequest(input: {
     }
   }
 
-  const remaining = allocated - used - pending + pendingAdjustment
+  const remaining = bookable - used - pending + pendingAdjustment
   if (days > remaining) {
     return {
       ok: false as const,
-      error: `Not enough days left (${remaining.toFixed(1)} remaining, ${days} requested).`,
+      error: `Not enough bookable days left (${remaining.toFixed(1)} remaining, ${days} requested).`,
     }
   }
 
