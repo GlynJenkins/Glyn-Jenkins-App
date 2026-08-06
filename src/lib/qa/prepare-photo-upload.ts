@@ -166,3 +166,29 @@ export function prepareVariationPhotoForUpload(file: File): Promise<File> {
 export function prepareFiresockPhotoForUpload(file: File): Promise<File> {
   return prepareVariationPhotoForUpload(file)
 }
+
+function isImageLikeFile(file: File): boolean {
+  const t = file.type.toLowerCase()
+  if (t.startsWith('image/')) return true
+  if (isHeicFile(file)) return true
+  return /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.name)
+}
+
+/**
+ * Induction registration photos — downscale + JPEG so three iPhone shots stay
+ * under Vercel's ~4.5 MB request-body limit. PDFs pass through unchanged.
+ * On failure, returns the original file so registration is not blocked.
+ */
+export async function prepareInductionImage(file: File): Promise<File> {
+  if (!isImageLikeFile(file)) return file
+  try {
+    return await preparePhotoForUpload(file, {
+      maxSide:        2000,
+      quality:        0.8,
+      alwaysReencode: true,
+      maxBytes:       1_200_000,
+    })
+  } catch {
+    return file
+  }
+}

@@ -20,6 +20,7 @@ import {
 import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
 import { APPRENTICE_AGREEMENT_LINES } from '@/lib/apprentice-agreement'
 import { TRADE_QUALIFICATIONS } from '@/lib/induction/qualifications'
+import { prepareInductionImage } from '@/lib/qa/prepare-photo-upload'
 import PortalHeader from '@/components/PortalHeader'
 
 // ── Validation schema ──────────────────────────────────────────────────────────
@@ -313,6 +314,7 @@ export default function InductionPage() {
   const [showPrivacy,     setShowPrivacy]     = useState(false)
   const [fileErrors,      setFileErrors]      = useState<Record<string, string>>({})
   const [submitting,      setSubmitting]      = useState(false)
+  const [optimisingPhotos, setOptimisingPhotos] = useState(false)
   const [submitted,       setSubmitted]       = useState(false)
   const [portalLoginCreated, setPortalLoginCreated] = useState(false)
   const [serverError,     setServerError]     = useState<string | null>(null)
@@ -390,18 +392,33 @@ export default function InductionPage() {
     if (!validateFiles()) return
 
     setSubmitting(true)
+    setOptimisingPhotos(true)
     setServerError(null)
 
     try {
+      // Shrink iPhone photos client-side before POST (Vercel ~4.5 MB body limit).
+      const [cscsReady, idReady, insuranceReady, hsReady] = await Promise.all([
+        prepareInductionImage(cscsCard!),
+        prepareInductionImage(idDocument!),
+        insuranceCert ? prepareInductionImage(insuranceCert) : Promise.resolve(null),
+        hsQualification ? prepareInductionImage(hsQualification) : Promise.resolve(null),
+      ])
+      setOptimisingPhotos(false)
+
       const fd = new FormData()
+      const cscsExpiryDate = String(data.cscsExpiryDate ?? '').slice(0, 10)
       Object.entries(data).forEach(([k, v]) => {
         if (k === 'confirmPassword') return
-        if (v != null && v !== '') fd.append(k, v as string)
+        if (k === 'cscsExpiryDate') {
+          if (cscsExpiryDate) fd.append('cscsExpiryDate', cscsExpiryDate)
+          return
+        }
+        if (v != null && v !== '') fd.append(k, String(v))
       })
-      fd.append('cscsCard',   cscsCard!)
-      fd.append('idDocument', idDocument!)
-      if (insuranceCert)  fd.append('insuranceCert', insuranceCert)
-      if (hsQualification) fd.append('hsQualification', hsQualification)
+      fd.append('cscsCard',   cscsReady)
+      fd.append('idDocument', idReady)
+      if (insuranceReady)  fd.append('insuranceCert', insuranceReady)
+      if (hsReady)         fd.append('hsQualification', hsReady)
       fd.append('hsQualificationNa', hsQualificationNa ? 'true' : 'false')
       if (isEmployedContractRole(data.role)) {
         fd.append('employedContractSigned', employedContractSigned ? 'true' : 'false')
@@ -410,15 +427,29 @@ export default function InductionPage() {
       }
       fd.append('privacyConsent', privacyConsent ? 'true' : 'false')
 
-      const res  = await fetch('/api/induction', { method: 'POST', body: fd })
-      const json = await res.json()
+      const res = await fetch('/api/induction', { method: 'POST', body: fd })
+      const json = await res.json().catch(() => null) as { error?: string; portalLoginCreated?: boolean } | null
 
-      if (!res.ok) throw new Error(json.error ?? 'Submission failed. Please try again.')
-      setPortalLoginCreated(!!json.portalLoginCreated)
+      if (!res.ok) {
+        if (res.status === 413 || json == null) {
+          setServerError(
+            'Your photos may be too large to upload. Please try smaller photos, or complete this on a computer.',
+          )
+          return
+        }
+        setServerError(json.error ?? 'Registration failed. Please try again.')
+        return
+      }
+
+      setPortalLoginCreated(!!json?.portalLoginCreated)
       setSubmitted(true)
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      console.error('[induction] submit failed', err)
+      setServerError(
+        'Something went wrong submitting your registration. Please try again, or complete it on a computer.',
+      )
     } finally {
+      setOptimisingPhotos(false)
       setSubmitting(false)
     }
   }
@@ -1145,7 +1176,8 @@ export default function InductionPage() {
         >
           {submitting ? (
             <>
-              <Loader2 className="w-5 h-5 animate-spin" /> Submitting…
+              <Loader2 className="w-5 h-5 animate-spin" />
+              {optimisingPhotos ? 'Optimising photo…' : 'Submitting…'}
             </>
           ) : (
             <>
