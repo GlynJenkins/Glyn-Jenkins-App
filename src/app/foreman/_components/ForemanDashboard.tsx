@@ -6,6 +6,7 @@ import Link from 'next/link'
 import {
   Building2, MapPin, Grid3x3, FileUp, ClipboardList,
   Clock, AlertCircle, CheckCircle2, Loader2, Lock, ChevronRight, RotateCcw, Shield,
+  CircleHelp,
 } from 'lucide-react'
 import ForemanClaimHistory from './ForemanClaimHistory'
 import type { ForemanClaimHistoryItem } from '@/lib/claims/load-foreman-claim-history'
@@ -217,6 +218,24 @@ export default function ForemanDashboard({
 
       {/* Fortnight countdown */}
       <CountdownBanner period={period} />
+
+      {/* How-to Guide — easy to find on phone */}
+      <Link
+        href="/foreman/guide"
+        className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100
+                   shadow-sm px-4 py-3.5 hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+            <CircleHelp className="w-4 h-4 text-slate-600" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800">How-to Guide</p>
+            <p className="text-xs text-slate-400">Booking in wages, sites &amp; variations</p>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+      </Link>
 
       {/* ── Single Fortnightly Claim Button ─────────────────────────── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
