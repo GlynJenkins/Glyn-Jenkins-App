@@ -336,3 +336,8 @@ create index if not exists idx_toolbox_talk_attendees_talk on toolbox_talk_atten
 alter table toolbox_talk_templates enable row level security;
 alter table toolbox_talks enable row level security;
 alter table toolbox_talk_attendees enable row level security;
+
+-- 18. Toolbox Talk amendments.
+alter table toolbox_talks
+  add column if not exists amended_at timestamptz,
+  add column if not exists amendment_count int not null default 0;

@@ -1,6 +1,9 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
-import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
+import { notFound, redirect } from 'next/navigation'
+import {
+  requireAdminAccess,
+  requireManagementAreaAccess,
+} from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import ToolboxTalkWizard from '../_components/ToolboxTalkWizard'
 
@@ -9,11 +12,15 @@ export const dynamic = 'force-dynamic'
 export default async function NewToolboxTalkPage({
   searchParams,
 }: {
-  searchParams: Promise<{ siteId?: string; talkId?: string }>
+  searchParams: Promise<{ siteId?: string; talkId?: string; amend?: string }>
 }) {
-  const { worker } = await requireManagementAreaAccess()
-  const { siteId, talkId } = await searchParams
+  const { siteId, talkId, amend } = await searchParams
   if (!siteId) notFound()
+
+  const amendMode = amend === '1' || amend === 'true'
+  const { worker } = amendMode
+    ? await requireAdminAccess()
+    : await requireManagementAreaAccess()
 
   const supabase = createServiceClient()
   const { data: site } = await supabase
@@ -42,6 +49,7 @@ export default async function NewToolboxTalkPage({
       .select(`
         id, site_id, title, description, status,
         conducted_by_name, conducted_by_role, manager_signature_path,
+        amendment_count,
         toolbox_talk_attendees (
           id, worker_id, worker_name, worker_role, signature_path, signed_at
         )
@@ -51,6 +59,9 @@ export default async function NewToolboxTalkPage({
       .maybeSingle()
 
     if (talk) {
+      if (amendMode && talk.status !== 'completed' && talk.status !== 'amending') {
+        redirect(`/admin/toolbox-talks/new?siteId=${siteId}&talkId=${talkId}`)
+      }
       initialTalk = {
         id: talk.id,
         siteId: talk.site_id,
@@ -60,7 +71,8 @@ export default async function NewToolboxTalkPage({
         status: talk.status,
         conductedByName: talk.conducted_by_name,
         conductedByRole: talk.conducted_by_role,
-        managerSigned: !!talk.manager_signature_path,
+        managerSigned: !!talk.manager_signature_path && talk.status !== 'amending',
+        amendmentCount: talk.amendment_count ?? 0,
         attendees: (talk.toolbox_talk_attendees ?? []).map((a) => ({
           id: a.id,
           workerId: a.worker_id,
@@ -70,7 +82,11 @@ export default async function NewToolboxTalkPage({
           signedAt: a.signed_at,
         })),
       }
+    } else if (amendMode) {
+      notFound()
     }
+  } else if (amendMode) {
+    notFound()
   }
 
   const managerName = worker
@@ -83,13 +99,17 @@ export default async function NewToolboxTalkPage({
         <div className="max-w-lg mx-auto flex items-start justify-between gap-4">
           <div>
             <p className="text-orange-400 text-xs font-semibold tracking-widest uppercase">
-              New Toolbox Talk
+              {amendMode ? 'Amend Toolbox Talk' : 'New Toolbox Talk'}
             </p>
             <h1 className="text-xl font-bold text-white mt-0.5">{site.name}</h1>
-            <p className="text-slate-400 text-sm mt-1">Mobile-friendly · pass-the-phone signing</p>
+            <p className="text-slate-400 text-sm mt-1">
+              {amendMode ? 'Correct wording or add missed attendees' : 'Mobile-friendly · pass-the-phone signing'}
+            </p>
           </div>
           <Link
-            href={`/admin/toolbox-talks?siteId=${site.id}`}
+            href={amendMode && talkId
+              ? `/admin/toolbox-talks/${talkId}`
+              : `/admin/toolbox-talks?siteId=${site.id}`}
             className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm
                        font-medium rounded-xl transition-colors shrink-0"
           >
@@ -106,6 +126,7 @@ export default async function NewToolboxTalkPage({
           templates={templates ?? []}
           initialTalk={initialTalk}
           managerName={managerName}
+          amendMode={amendMode}
         />
       </main>
     </div>

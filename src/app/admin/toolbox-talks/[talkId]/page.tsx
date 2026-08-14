@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
+import { canAccessAdmin } from '@/lib/worker-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { formatWorkerRole } from '@/lib/toolbox-talks/helpers'
 import DownloadToolboxTalkPdfButton from '../_components/DownloadToolboxTalkPdfButton'
@@ -21,7 +22,7 @@ export default async function ToolboxTalkDetailPage({
 }: {
   params: Promise<{ talkId: string }>
 }) {
-  await requireManagementAreaAccess()
+  const { worker } = await requireManagementAreaAccess()
   const { talkId } = await params
   const supabase = createServiceClient()
 
@@ -29,7 +30,7 @@ export default async function ToolboxTalkDetailPage({
     .from('toolbox_talks')
     .select(`
       id, title, description, status, conducted_at, conducted_by_name, conducted_by_role,
-      pdf_path, site_id,
+      pdf_path, site_id, amendment_count, amended_at,
       sites ( id, name ),
       toolbox_talk_attendees (
         id, worker_name, worker_role, signature_path, signed_at
@@ -42,6 +43,7 @@ export default async function ToolboxTalkDetailPage({
 
   const site = Array.isArray(talk.sites) ? talk.sites[0] : talk.sites
   const attendees = talk.toolbox_talk_attendees ?? []
+  const canAmend = !!worker && canAccessAdmin(worker.role) && talk.status === 'completed'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,6 +115,30 @@ export default async function ToolboxTalkDetailPage({
         </div>
 
         {talk.pdf_path && <DownloadToolboxTalkPdfButton talkId={talk.id} />}
+
+        {(talk.amendment_count ?? 0) > 0 && talk.amended_at && (
+          <p className="text-xs text-slate-500 text-center">
+            Amended {formatWhen(talk.amended_at)} · revision {(talk.amendment_count ?? 0) + 1}
+          </p>
+        )}
+
+        {canAmend && (
+          <Link
+            href={`/admin/toolbox-talks/new?siteId=${talk.site_id}&talkId=${talk.id}&amend=1`}
+            className="block text-center w-full py-3 bg-slate-900 text-white font-semibold rounded-xl"
+          >
+            Amend talk
+          </Link>
+        )}
+
+        {talk.status === 'amending' && canAmend && (
+          <Link
+            href={`/admin/toolbox-talks/new?siteId=${talk.site_id}&talkId=${talk.id}&amend=1`}
+            className="block text-center w-full py-3 bg-amber-600 text-white font-semibold rounded-xl"
+          >
+            Continue amendment
+          </Link>
+        )}
 
         {talk.status === 'draft' && (
           <Link

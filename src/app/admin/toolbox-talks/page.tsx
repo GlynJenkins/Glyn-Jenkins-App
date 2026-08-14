@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
 import { ClipboardList, Plus } from 'lucide-react'
 import DownloadToolboxTalkPdfButton from './_components/DownloadToolboxTalkPdfButton'
+import DeleteDraftTalkButton from './_components/DeleteDraftTalkButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -89,6 +90,7 @@ export default async function ToolboxTalksPage({
               {(talks ?? []).map((t) => {
                 const count = Array.isArray(t.toolbox_talk_attendees) ? t.toolbox_talk_attendees.length : 0
                 const isDraft = t.status === 'draft'
+                const isAmending = t.status === 'amending'
                 return (
                   <div
                     key={t.id}
@@ -102,18 +104,32 @@ export default async function ToolboxTalksPage({
                         </p>
                       </div>
                       <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full shrink-0 ${
-                        isDraft ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                        isDraft
+                          ? 'bg-amber-100 text-amber-700'
+                          : isAmending
+                            ? 'bg-orange-100 text-orange-800'
+                            : 'bg-emerald-100 text-emerald-700'
                       }`}>
-                        {isDraft ? 'Draft' : 'Completed'}
+                        {isDraft ? 'Draft' : isAmending ? 'Amending' : 'Completed'}
                       </span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {isDraft ? (
+                        <>
+                          <Link
+                            href={`/admin/toolbox-talks/new?siteId=${site.id}&talkId=${t.id}`}
+                            className="px-3 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg"
+                          >
+                            Continue signing
+                          </Link>
+                          <DeleteDraftTalkButton talkId={t.id} siteId={site.id} />
+                        </>
+                      ) : isAmending ? (
                         <Link
-                          href={`/admin/toolbox-talks/new?siteId=${site.id}&talkId=${t.id}`}
-                          className="px-3 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg"
+                          href={`/admin/toolbox-talks/new?siteId=${site.id}&talkId=${t.id}&amend=1`}
+                          className="px-3 py-2 bg-orange-600 text-white text-xs font-semibold rounded-lg"
                         >
-                          Continue signing
+                          Continue amendment
                         </Link>
                       ) : (
                         <>

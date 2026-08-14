@@ -30,6 +30,7 @@ type Talk = {
   conductedByRole: string | null
   attendees: Attendee[]
   managerSigned?: boolean
+  amendmentCount?: number
 }
 
 type Step = 1 | 2 | 3 | 4 | 5
@@ -50,6 +51,8 @@ type Props = {
   templates: Template[]
   initialTalk: Talk | null
   managerName: string
+  /** Opening a completed talk to amend wording / add attendees. */
+  amendMode?: boolean
 }
 
 export default function ToolboxTalkWizard({
@@ -59,14 +62,29 @@ export default function ToolboxTalkWizard({
   templates: initialTemplates,
   initialTalk,
   managerName,
+  amendMode = false,
 }: Props) {
   const router = useRouter()
-  const [step, setStep] = useState<Step>(initialTalk ? 3 : 1)
+  const isAmend = amendMode || initialTalk?.status === 'amending' || initialTalk?.status === 'completed'
+
+  const [step, setStep] = useState<Step>(() => {
+    if (amendMode) return 1
+    if (initialTalk) return initialTalk.status === 'completed' ? 5 : 3
+    return 1
+  })
   const [templates, setTemplates] = useState(initialTemplates)
 
   const [title, setTitle] = useState(initialTalk?.title ?? '')
   const [description, setDescription] = useState(initialTalk?.description ?? '')
   const [saveAsTemplate, setSaveAsTemplate] = useState(false)
+
+  const lockedWorkerIds = useMemo(() => {
+    if (!isAmend || !initialTalk) return new Set<string>()
+    // Existing attendees on a completed/amending talk cannot be removed
+    return new Set(
+      initialTalk.attendees.map((a) => a.workerId).filter(Boolean) as string[],
+    )
+  }, [isAmend, initialTalk])
 
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialTalk?.attendees.map((a) => a.workerId).filter(Boolean) as string[]),
@@ -74,11 +92,15 @@ export default function ToolboxTalkWizard({
   const [search, setSearch] = useState('')
   const [roleTab, setRoleTab] = useState<(typeof ROLE_TABS)[number]>('all')
 
-  const [talk, setTalk] = useState<Talk | null>(initialTalk)
+  const [talk, setTalk] = useState<Talk | null>(
+    initialTalk && initialTalk.status !== 'completed' ? initialTalk : (amendMode ? initialTalk : initialTalk),
+  )
   const [signingId, setSigningId] = useState<string | null>(null)
   const [sigBlob, setSigBlob] = useState<Blob | null>(null)
   const [managerBlob, setManagerBlob] = useState<Blob | null>(null)
-  const [managerSigned, setManagerSigned] = useState(!!initialTalk?.managerSigned)
+  const [managerSigned, setManagerSigned] = useState(
+    !!initialTalk?.managerSigned && !amendMode && initialTalk?.status !== 'amending',
+  )
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,15 +117,26 @@ export default function ToolboxTalkWizard({
 
   const signedCount = talk?.attendees.filter((a) => a.signaturePath || a.signedAt).length ?? 0
   const totalAttendees = talk?.attendees.length ?? 0
-  const unsignedCount = totalAttendees - signedCount
+  const unsignedAttendees = talk?.attendees.filter((a) => !(a.signaturePath || a.signedAt)) ?? []
+  const unsignedCount = unsignedAttendees.length
+  const signingList = isAmend && talk
+    ? talk.attendees.filter((a) => !(a.signaturePath || a.signedAt))
+    : (talk?.attendees ?? [])
 
   useEffect(() => {
     if (!initialTalk) return
+    if (amendMode) {
+      setTalk(initialTalk)
+      setManagerSigned(false)
+      setStep(1)
+      return
+    }
     setTalk(initialTalk)
     setStep(initialTalk.status === 'completed' ? 5 : 3)
-  }, [initialTalk])
+  }, [initialTalk, amendMode])
 
   const toggleWorker = (id: string) => {
+    if (lockedWorkerIds.has(id)) return
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -112,33 +145,84 @@ export default function ToolboxTalkWizard({
     })
   }
 
-  const createDraft = async () => {
+  const warnIfRemovingSigned = (): boolean => {
+    if (!talk || isAmend) return true
+    const removingSigned = talk.attendees.filter(
+      (a) => a.workerId && !selected.has(a.workerId) && (a.signaturePath || a.signedAt),
+    )
+    if (removingSigned.length === 0) return true
+    const names = removingSigned.map((a) => a.workerName).join(', ')
+    return window.confirm(
+      `${names} ${removingSigned.length === 1 ? 'has' : 'have'} already signed — removing them will discard their signature. Continue?`,
+    )
+  }
+
+  const saveDraft = async () => {
+    if (!warnIfRemovingSigned()) return
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/toolbox-talks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          siteId,
-          title: title.trim(),
-          description: description.trim(),
-          attendees: [...selected],
-          saveAsTemplate,
-        }),
-      })
-      const json = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(json?.error ?? 'Could not create talk.')
-      setTalk({ ...json.talk, siteName })
-      if (saveAsTemplate) {
-        const tRes = await fetch('/api/admin/toolbox-talk-templates')
-        const tJson = await tRes.json().catch(() => null)
-        if (tRes.ok && tJson?.templates) setTemplates(tJson.templates)
+      if (talk) {
+        const res = await fetch(`/api/admin/toolbox-talks/${talk.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: title.trim(),
+            description: description.trim(),
+            attendees: [...selected],
+            ...(isAmend ? { amend: true } : {}),
+          }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(json?.error ?? 'Could not update talk.')
+        setTalk({ ...json.talk, siteName })
+        setManagerSigned(!!json.talk.managerSigned)
+        setStep(3)
+      } else {
+        const res = await fetch('/api/admin/toolbox-talks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteId,
+            title: title.trim(),
+            description: description.trim(),
+            attendees: [...selected],
+            saveAsTemplate,
+          }),
+        })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(json?.error ?? 'Could not create talk.')
+        setTalk({ ...json.talk, siteName })
+        if (saveAsTemplate) {
+          const tRes = await fetch('/api/admin/toolbox-talk-templates')
+          const tJson = await tRes.json().catch(() => null)
+          if (tRes.ok && tJson?.templates) setTemplates(tJson.templates)
+        }
+        setStep(3)
       }
-      setStep(3)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create talk.')
+      setError(err instanceof Error ? err.message : 'Could not save talk.')
     } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteDraft = async () => {
+    if (!talk || talk.status !== 'draft') return
+    const ok = window.confirm(
+      'Delete this draft talk? Any signatures captured will be discarded.',
+    )
+    if (!ok) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/toolbox-talks/${talk.id}`, { method: 'DELETE' })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(json?.error ?? 'Could not delete draft.')
+      router.push(`/admin/toolbox-talks?siteId=${siteId}`)
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete draft.')
       setBusy(false)
     }
   }
@@ -160,7 +244,6 @@ export default function ToolboxTalkWizard({
       if (attendeeId === 'manager') {
         setManagerSigned(true)
         setManagerBlob(null)
-        setStep(4)
       } else {
         setTalk((prev) => {
           if (!prev) return prev
@@ -185,9 +268,15 @@ export default function ToolboxTalkWizard({
 
   const completeTalk = async () => {
     if (!talk) return
-    if (unsignedCount > 0) {
+    if (unsignedCount > 0 && !isAmend) {
       const ok = window.confirm(
         `${unsignedCount} attendee${unsignedCount === 1 ? " hasn't" : "s haven't"} signed — they'll be marked "Did not sign" on the record. Continue?`,
+      )
+      if (!ok) return
+    }
+    if (isAmend && unsignedCount > 0) {
+      const ok = window.confirm(
+        `${unsignedCount} new attendee${unsignedCount === 1 ? " hasn't" : "s haven't"} signed yet. Continue anyway?`,
       )
       if (!ok) return
     }
@@ -243,7 +332,6 @@ export default function ToolboxTalkWizard({
     }
   }
 
-  // Full-screen attendee signing
   if (signingId && talk) {
     const attendee = talk.attendees.find((a) => a.id === signingId)
     if (!attendee) return null
@@ -271,10 +359,7 @@ export default function ToolboxTalkWizard({
             <strong>{attendee.workerName}</strong> — sign below to confirm you attended this toolbox talk
             and understood its contents.
           </p>
-          <SignaturePad
-            onSigned={setSigBlob}
-            onCleared={() => setSigBlob(null)}
-          />
+          <SignaturePad onSigned={setSigBlob} onCleared={() => setSigBlob(null)} />
           {error && (
             <p className="text-sm text-red-600 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />{error}
@@ -296,8 +381,7 @@ export default function ToolboxTalkWizard({
 
   return (
     <div className="space-y-4">
-      {/* Step indicator */}
-      {!initialTalk || step < 5 ? (
+      {step < 5 && (
         <div className="flex gap-1.5">
           {[1, 2, 3, 4].map((n) => (
             <div
@@ -306,7 +390,13 @@ export default function ToolboxTalkWizard({
             />
           ))}
         </div>
-      ) : null}
+      )}
+
+      {isAmend && step < 5 && (
+        <p className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          Amending a completed talk — existing attendees and signatures stay; you can fix wording and add people.
+        </p>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -315,11 +405,10 @@ export default function ToolboxTalkWizard({
         </div>
       )}
 
-      {/* Step 1 — Topic */}
       {step === 1 && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
           <div>
-            <h2 className="font-semibold text-slate-900">Topic</h2>
+            <h2 className="font-semibold text-slate-900">{isAmend ? 'Amend topic' : 'Topic'}</h2>
             <p className="text-xs text-slate-500 mt-0.5">Pick a saved topic or write a new one</p>
           </div>
 
@@ -368,15 +457,17 @@ export default function ToolboxTalkWizard({
                          focus:ring-2 focus:ring-orange-400 resize-y"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={saveAsTemplate}
-              onChange={(e) => setSaveAsTemplate(e.target.checked)}
-              className="accent-orange-500"
-            />
-            Save as template for next time
-          </label>
+          {!isAmend && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={saveAsTemplate}
+                onChange={(e) => setSaveAsTemplate(e.target.checked)}
+                className="accent-orange-500"
+              />
+              Save as template for next time
+            </label>
+          )}
           <button
             type="button"
             disabled={!title.trim() || !description.trim()}
@@ -389,13 +480,14 @@ export default function ToolboxTalkWizard({
         </section>
       )}
 
-      {/* Step 2 — Attendees */}
       {step === 2 && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-slate-900">Attendees</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{siteName}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isAmend ? 'Existing attendees are locked — add anyone who was missed' : siteName}
+              </p>
             </div>
             <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-orange-100 text-orange-800">
               {selected.size} selected
@@ -404,18 +496,29 @@ export default function ToolboxTalkWizard({
 
           {selected.size > 0 && (
             <div className="px-4 pt-3 pb-2 flex flex-wrap gap-2 border-b border-gray-100">
-              {workers.filter((w) => selected.has(w.id)).map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  onClick={() => toggleWorker(w.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 text-orange-800
-                             text-xs font-medium rounded-full"
-                >
-                  {w.first_name} {w.surname}
-                  <span className="text-orange-500 font-bold">×</span>
-                </button>
-              ))}
+              {workers.filter((w) => selected.has(w.id)).map((w) => {
+                const locked = lockedWorkerIds.has(w.id)
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => toggleWorker(w.id)}
+                    disabled={locked}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full ${
+                      locked
+                        ? 'bg-emerald-50 text-emerald-800 cursor-default'
+                        : 'bg-orange-100 text-orange-800'
+                    }`}
+                  >
+                    {w.first_name} {w.surname}
+                    {locked ? (
+                      <span className="text-emerald-600 text-[10px] uppercase">signed</span>
+                    ) : (
+                      <span className="text-orange-500 font-bold">×</span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -450,30 +553,38 @@ export default function ToolboxTalkWizard({
           <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
             {filteredWorkers.length === 0 ? (
               <p className="text-center text-xs text-slate-400 py-6">No workers match</p>
-            ) : filteredWorkers.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => toggleWorker(w.id)}
-                className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-colors ${
-                  selected.has(w.id) ? 'bg-orange-50' : 'hover:bg-gray-50'
-                }`}
-              >
-                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                  selected.has(w.id) ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
-                }`}>
-                  {selected.has(w.id) && (
-                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-800">{w.surname}, {w.first_name}</p>
-                  <p className="text-xs text-slate-400">{formatWorkerRole(w.role)}</p>
-                </div>
-              </button>
-            ))}
+            ) : filteredWorkers.map((w) => {
+              const locked = lockedWorkerIds.has(w.id)
+              const on = selected.has(w.id)
+              return (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => toggleWorker(w.id)}
+                  disabled={locked}
+                  className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-colors ${
+                    on ? 'bg-orange-50' : 'hover:bg-gray-50'
+                  } ${locked ? 'opacity-90' : ''}`}
+                >
+                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                    on ? 'bg-orange-500 border-orange-500' : 'border-gray-300'
+                  }`}>
+                    {on && (
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800">{w.surname}, {w.first_name}</p>
+                    <p className="text-xs text-slate-400">
+                      {formatWorkerRole(w.role)}
+                      {locked ? ' · locked' : ''}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
           </div>
 
           <div className="px-4 py-4 border-t border-gray-100 flex gap-2">
@@ -487,12 +598,14 @@ export default function ToolboxTalkWizard({
             <button
               type="button"
               disabled={selected.size === 0 || busy}
-              onClick={createDraft}
+              onClick={saveDraft}
               className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-gray-200
                          disabled:text-gray-400 text-white font-semibold text-sm rounded-xl"
             >
               {busy ? (
                 <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+              ) : talk || isAmend ? (
+                `Continue signing (${selected.size})`
               ) : (
                 `Start signing (${selected.size})`
               )}
@@ -501,14 +614,17 @@ export default function ToolboxTalkWizard({
         </section>
       )}
 
-      {/* Step 3 — Pass-the-phone signatures */}
       {step === 3 && talk && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-4 border-b border-gray-100">
-            <h2 className="font-semibold text-slate-900">Attendee signatures</h2>
+            <h2 className="font-semibold text-slate-900">
+              {isAmend ? 'New attendee signatures' : 'Attendee signatures'}
+            </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Signed <strong className="text-slate-800">{signedCount} of {totalAttendees}</strong>
-              {' '}· tap a name to sign
+              {isAmend
+                ? ' · only unsigned / newly added people need to sign'
+                : ' · tap a name to sign'}
             </p>
             <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
               <div
@@ -518,7 +634,11 @@ export default function ToolboxTalkWizard({
             </div>
           </div>
           <div className="divide-y divide-gray-50">
-            {talk.attendees.map((a) => {
+            {(isAmend ? signingList : talk.attendees).length === 0 ? (
+              <p className="text-center text-xs text-slate-400 py-6">
+                {isAmend ? 'No new attendees to sign — continue to manager sign-off.' : 'No attendees'}
+              </p>
+            ) : (isAmend ? signingList : talk.attendees).map((a) => {
               const signed = !!(a.signaturePath || a.signedAt)
               return (
                 <button
@@ -544,29 +664,56 @@ export default function ToolboxTalkWizard({
               )
             })}
           </div>
-          <div className="px-4 py-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={() => setStep(4)}
-              className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl"
-            >
-              Next — Manager sign-off
-            </button>
+          <div className="px-4 py-4 border-t border-gray-100 space-y-3">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle(talk.title)
+                  setDescription(talk.description)
+                  setSelected(new Set(
+                    talk.attendees.map((a) => a.workerId).filter(Boolean) as string[],
+                  ))
+                  setStep(2)
+                }}
+                className="px-4 py-3 text-sm font-medium text-slate-600 rounded-xl hover:bg-slate-50"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(4)}
+                className="flex-1 py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl"
+              >
+                Next — Manager sign-off
+              </button>
+            </div>
+            {talk.status === 'draft' && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={deleteDraft}
+                className="w-full text-center text-sm text-red-600 hover:text-red-700 py-1"
+              >
+                Delete draft
+              </button>
+            )}
           </div>
         </section>
       )}
 
-      {/* Step 4 — Manager sign-off */}
       {step === 4 && talk && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
           <div>
             <h2 className="font-semibold text-slate-900">Manager sign-off</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Complete the talk and generate the PDF</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isAmend ? 'Re-sign to save the amendment and regenerate the PDF' : 'Complete the talk and generate the PDF'}
+            </p>
           </div>
 
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 text-sm space-y-1">
             <p><span className="text-slate-400">Site:</span> {siteName}</p>
-            <p><span className="text-slate-400">Title:</span> {talk.title}</p>
+            <p><span className="text-slate-400">Title:</span> {title || talk.title}</p>
             <p><span className="text-slate-400">Attendees:</span> {totalAttendees} ({signedCount} signed)</p>
             <p><span className="text-slate-400">Conducted by:</span> {managerName}</p>
           </div>
@@ -586,7 +733,9 @@ export default function ToolboxTalkWizard({
           ) : (
             <>
               <p className="text-sm text-slate-700">
-                Sign below to confirm you conducted this toolbox talk.
+                {isAmend
+                  ? 'Sign below to confirm this amendment.'
+                  : 'Sign below to confirm you conducted this toolbox talk.'}
               </p>
               <SignaturePad
                 onSigned={setManagerBlob}
@@ -610,20 +759,23 @@ export default function ToolboxTalkWizard({
               className="flex-1 py-3.5 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300
                          text-white font-semibold rounded-xl"
             >
-              {busy ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Complete Talk'}
+              {busy
+                ? <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                : isAmend ? 'Save amendment' : 'Complete Talk'}
             </button>
           </div>
         </section>
       )}
 
-      {/* Step 5 — Success */}
       {step === 5 && talk && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center space-y-4">
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-8 h-8 text-emerald-600" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Talk completed</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              {isAmend ? 'Amendment saved' : 'Talk completed'}
+            </h2>
             <p className="text-sm text-slate-500 mt-1">{talk.title}</p>
           </div>
           <button

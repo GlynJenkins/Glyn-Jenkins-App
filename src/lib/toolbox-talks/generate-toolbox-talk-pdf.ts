@@ -35,6 +35,8 @@ export type ToolboxTalkPdfInput = {
   conductedAt:      Date
   managerSignaturePng: Buffer
   attendees:        ToolboxTalkPdfAttendee[]
+  amendmentCount?:  number
+  amendedAt?:       Date | null
 }
 
 function wrapText(text: string, maxWidth: number, font: PDFFont, fontSize: number): string[] {
@@ -141,11 +143,23 @@ export async function generateToolboxTalkPdf(input: ToolboxTalkPdfInput): Promis
   const logo = await embedLogo(pdf, input.company)
   if (logo) {
     const scale = Math.min(90 / logo.width, 44 / logo.height)
+    const w = logo.width * scale
+    const h = logo.height * scale
+    const pad = 8
+    const logoY = PAGE_HEIGHT - headerH + 16
+    // White plate behind the logo so it never clashes with the slate band
+    page.drawRectangle({
+      x: MARGIN - pad,
+      y: logoY - pad,
+      width:  w + pad * 2,
+      height: h + pad * 2,
+      color: COLOR_WHITE,
+    })
     page.drawImage(logo, {
       x: MARGIN,
-      y: PAGE_HEIGHT - headerH + 16,
-      width:  logo.width * scale,
-      height: logo.height * scale,
+      y: logoY,
+      width: w,
+      height: h,
     })
   }
 
@@ -306,6 +320,14 @@ export async function generateToolboxTalkPdf(input: ToolboxTalkPdfInput): Promis
     drawText(input.conductedByRole.replace(/_/g, ' '), { size: 9, color: COLOR_MUTED })
   }
   drawText(formatWhen(input.conductedAt), { size: 9, color: COLOR_MUTED })
+
+  if ((input.amendmentCount ?? 0) > 0 && input.amendedAt) {
+    const rev = (input.amendmentCount ?? 0) + 1
+    drawText(
+      `Amended on ${formatWhen(input.amendedAt)} — revision ${rev}`,
+      { size: 9, color: COLOR_MUTED },
+    )
+  }
 
   // ── Footers ───────────────────────────────────────────────────
   const total = pages.length

@@ -49,6 +49,9 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (talk.status === 'completed') {
       return NextResponse.json({ error: 'This talk is already completed.' }, { status: 400 })
     }
+    if (talk.status !== 'draft' && talk.status !== 'amending') {
+      return NextResponse.json({ error: 'Signatures cannot be added in this talk state.' }, { status: 400 })
+    }
 
     const signedAt = new Date().toISOString()
 

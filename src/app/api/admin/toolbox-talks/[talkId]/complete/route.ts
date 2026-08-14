@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess, verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { loadCompanyBranding, parseSiteDocumentDetails } from '@/lib/documents/company-branding'
 import { createServiceClient } from '@/lib/supabase/server'
 import {
@@ -23,11 +23,8 @@ async function downloadBytes(
   return Buffer.from(await data.arrayBuffer())
 }
 
-/** Complete talk: require manager signature, generate PDF, mark completed. */
+/** Complete talk (or save amendment): require manager signature, generate PDF. */
 export async function POST(_request: NextRequest, { params }: Params) {
-  const auth = await verifyManagementAreaApiAccess()
-  if (!auth.ok) return auth.response
-
   try {
     const { talkId } = await params
     const supabase = createServiceClient()
@@ -35,16 +32,30 @@ export async function POST(_request: NextRequest, { params }: Params) {
     const { data: talk, error: talkError } = await supabase
       .from('toolbox_talks')
       .select(`
-        id, site_id, title, description, status,
-        conducted_by_name, conducted_by_role, manager_signature_path, pdf_path
+        id, site_id, title, description, status, conducted_at,
+        conducted_by_name, conducted_by_role, manager_signature_path, pdf_path,
+        amendment_count, amended_at
       `)
       .eq('id', talkId)
       .maybeSingle()
 
     if (talkError) return apiError('api/admin/toolbox-talks complete load', talkError)
     if (!talk) return NextResponse.json({ error: 'Talk not found.' }, { status: 404 })
-    if (talk.status === 'completed' && talk.pdf_path) {
+
+    const isAmending = talk.status === 'amending'
+    if (isAmending) {
+      const auth = await verifyAdminApiAccess()
+      if (!auth.ok) return auth.response
+    } else {
+      const auth = await verifyManagementAreaApiAccess()
+      if (!auth.ok) return auth.response
+    }
+
+    if (talk.status === 'completed' && talk.pdf_path && talk.manager_signature_path) {
       return NextResponse.json({ ok: true, talkId, alreadyCompleted: true })
+    }
+    if (talk.status !== 'draft' && talk.status !== 'amending') {
+      return NextResponse.json({ error: 'This talk cannot be completed in its current state.' }, { status: 400 })
     }
     if (!talk.manager_signature_path) {
       return NextResponse.json(
@@ -89,7 +100,14 @@ export async function POST(_request: NextRequest, { params }: Params) {
       })),
     )
 
-    const conductedAt = new Date()
+    const now = new Date()
+    const conductedAt = isAmending && talk.conducted_at
+      ? new Date(talk.conducted_at)
+      : now
+    const prevCount = talk.amendment_count ?? 0
+    const amendmentCount = isAmending ? prevCount + 1 : prevCount
+    const amendedAt = isAmending ? now : (talk.amended_at ? new Date(talk.amended_at) : null)
+
     const company = await loadCompanyBranding()
     const pdfBuffer = await generateToolboxTalkPdf({
       company,
@@ -103,6 +121,8 @@ export async function POST(_request: NextRequest, { params }: Params) {
       conductedAt,
       managerSignaturePng: managerSig,
       attendees: attendeePdfRows,
+      amendmentCount,
+      amendedAt,
     })
 
     const pdfPath = `toolbox-talks/${talkId}/toolbox-talk.pdf`
@@ -114,13 +134,21 @@ export async function POST(_request: NextRequest, { params }: Params) {
       return apiError('api/admin/toolbox-talks complete pdf', pdfUpError, 'Could not store PDF.')
     }
 
+    const updateRow: Record<string, unknown> = {
+      status:   'completed',
+      pdf_path: pdfPath,
+    }
+    if (isAmending) {
+      updateRow.amendment_count = amendmentCount
+      updateRow.amended_at = now.toISOString()
+      // keep original conducted_at
+    } else {
+      updateRow.conducted_at = conductedAt.toISOString()
+    }
+
     const { error: updError } = await supabase
       .from('toolbox_talks')
-      .update({
-        status:       'completed',
-        pdf_path:     pdfPath,
-        conducted_at: conductedAt.toISOString(),
-      })
+      .update(updateRow)
       .eq('id', talkId)
 
     if (updError) {
@@ -134,7 +162,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
       title: talk.title,
     })
 
-    return NextResponse.json({ ok: true, talkId, pdfPath, filename })
+    return NextResponse.json({ ok: true, talkId, pdfPath, filename, amendmentCount })
   } catch (err) {
     return apiError('api/admin/toolbox-talks/[talkId]/complete', err)
   }
