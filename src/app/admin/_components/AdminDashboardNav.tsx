@@ -8,6 +8,7 @@ import {
   FileUp,
   GraduationCap,
   CircleHelp,
+  Megaphone,
   Settings,
   Shield,
   Sun,
@@ -38,7 +39,7 @@ type NavSection = {
 }
 
 function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[] {
-  // Contracts Manager / Site Supervisor — only the four permitted areas.
+  // Contracts Manager / Site Supervisor — permitted management-area tiles only.
   if (restricted) {
     return [
       {
@@ -61,6 +62,12 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
             icon:        Shield,
             label:       'Roof firesocks',
             description: 'Evidence photos & developer PDF',
+          },
+          {
+            href:        '/admin/toolbox-talks',
+            icon:        Megaphone,
+            label:       'Toolbox Talks',
+            description: 'Safety talks, signatures & PDFs',
           },
         ],
       },
@@ -131,6 +138,12 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
           icon:        ClipboardList,
           label:       'Quality checks',
           description: 'Stage inspections by plot',
+        },
+        {
+          href:        '/admin/toolbox-talks',
+          icon:        Megaphone,
+          label:       'Toolbox Talks',
+          description: 'Safety talks, signatures & PDFs',
         },
       ],
     },
