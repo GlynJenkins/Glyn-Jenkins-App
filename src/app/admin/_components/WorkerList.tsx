@@ -7,6 +7,7 @@ import {
   User, Phone, FileText, CheckCircle, XCircle,
   Clock, ToggleLeft, ToggleRight, Loader2, ChevronRight,
 } from 'lucide-react'
+import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 
 type Worker = {
   id: string
@@ -21,6 +22,7 @@ type Worker = {
   cscs_card_url: string | null
   id_document_url: string | null
   insurance_certificate_url: string | null
+  firesock_certificate_url: string | null
   created_at: string
 }
 
@@ -34,6 +36,10 @@ const ROLE_LABELS: Record<string, string> = {
 
 const TAX_LABELS: Record<string, string> = {
   cis_20: 'CIS 20%', gross: 'Gross',
+}
+
+function missingRequiredFiresock(worker: Worker): boolean {
+  return firesockRequirement(worker.role) === 'required' && !worker.firesock_certificate_url
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -64,6 +70,7 @@ function WorkerCard({ worker, onStatusChange }: {
   const submitted  = new Date(worker.created_at).toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
+  const showFiresockGap = missingRequiredFiresock(worker)
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
@@ -80,7 +87,14 @@ function WorkerCard({ worker, onStatusChange }: {
             </p>
           </div>
         </div>
-        <StatusBadge status={worker.status} />
+        <div className="flex flex-col items-end gap-1">
+          <StatusBadge status={worker.status} />
+          {showFiresockGap && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+              No firesock cert
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Details */}
@@ -166,6 +180,7 @@ type Tab = 'pending' | 'active' | 'inactive'
 export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[] }) {
   const [workers, setWorkers] = useState<Worker[]>(initialWorkers)
   const [tab,     setTab]     = useState<Tab>('pending')
+  const [filterMissingFiresock, setFilterMissingFiresock] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
   const router = useRouter()
 
@@ -173,7 +188,11 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
   const active   = workers.filter((w) => w.status === 'active')
   const inactive = workers.filter((w) => w.status === 'inactive')
 
-  const listed = tab === 'pending' ? pending : tab === 'active' ? active : inactive
+  const activeMissingFiresock = active.filter(missingRequiredFiresock)
+  const listedBase = tab === 'pending' ? pending : tab === 'active' ? active : inactive
+  const listed = tab === 'active' && filterMissingFiresock
+    ? listedBase.filter(missingRequiredFiresock)
+    : listedBase
 
   const handleStatusChange = async (id: string, status: string) => {
     setError(null)
@@ -218,7 +237,10 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
         {tabs.map(({ key, label, count }) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => {
+              setTab(key)
+              if (key !== 'active') setFilterMissingFiresock(false)
+            }}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
               tab === key
                 ? 'bg-white text-slate-900 shadow-sm'
@@ -229,6 +251,24 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
           </button>
         ))}
       </div>
+
+      {activeMissingFiresock.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            setTab('active')
+            setFilterMissingFiresock((v) => !v)
+          }}
+          className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium border transition-colors ${
+            filterMissingFiresock
+              ? 'bg-amber-100 border-amber-300 text-amber-900'
+              : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+          }`}
+        >
+          {activeMissingFiresock.length} active worker{activeMissingFiresock.length === 1 ? '' : 's'} missing firesock training
+          {filterMissingFiresock ? ' · Showing filtered list (tap to clear)' : ' · Tap to filter'}
+        </button>
+      )}
 
       {/* Error */}
       {error && (
@@ -241,7 +281,9 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
       {listed.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No {tab} workers</p>
+          <p className="text-sm">
+            {filterMissingFiresock ? 'No active workers missing firesock training' : `No ${tab} workers`}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">

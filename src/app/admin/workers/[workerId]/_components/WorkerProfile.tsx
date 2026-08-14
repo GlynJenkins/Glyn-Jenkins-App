@@ -6,8 +6,10 @@ import {
   User, Phone, FileText, Building2,
   TrendingUp, Download, ChevronDown, ChevronUp,
   Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle, ShieldCheck,
+  Flame, Upload,
 } from 'lucide-react'
 import { needsPortalLogin } from '@/lib/worker-access'
+import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ type Worker = {
   bricklayer_qualification:        string | null
   hs_qualification_url:            string | null
   hs_qualification_na:             boolean | null
+  firesock_certificate_url:        string | null
 }
 
 interface Props {
@@ -279,6 +282,9 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
   const [toDate,     setToDate]     = useState(`${currentYear + 1}-04-05`)
   const [printing,   setPrinting]   = useState(false)
   const [downloadingAgreement, setDownloadingAgreement] = useState(false)
+  const [firesockUrl, setFiresockUrl] = useState(worker.firesock_certificate_url)
+  const [firesockBusy, setFiresockBusy] = useState(false)
+  const [firesockError, setFiresockError] = useState<string | null>(null)
 
   const [role,            setRole]            = useState(worker.role)
   const [portalPassword,  setPortalPassword]  = useState('')
@@ -366,6 +372,44 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
       setDownloadingAgreement(false)
     }
   }
+
+  const viewFiresockCert = async () => {
+    setFiresockBusy(true)
+    setFiresockError(null)
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}/firesock-certificate`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not open certificate.')
+      window.open(json.url, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      setFiresockError(err instanceof Error ? err.message : 'Could not open certificate.')
+    } finally {
+      setFiresockBusy(false)
+    }
+  }
+
+  const uploadFiresockCert = async (file: File | null) => {
+    if (!file) return
+    setFiresockBusy(true)
+    setFiresockError(null)
+    try {
+      const fd = new FormData()
+      fd.append('firesockCert', file)
+      const res = await fetch(`/api/admin/workers/${worker.id}/firesock-certificate`, {
+        method: 'POST',
+        body: fd,
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Upload failed.')
+      setFiresockUrl(json.firesock_certificate_url ?? 'uploaded')
+    } catch (err) {
+      setFiresockError(err instanceof Error ? err.message : 'Upload failed.')
+    } finally {
+      setFiresockBusy(false)
+    }
+  }
+
+  const firesockReq = firesockRequirement(worker.role)
 
   const filteredLedger = useMemo(() => {
     const from = new Date(fromDate)
@@ -459,6 +503,69 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
                   ? 'N/A — not provided'
                   : 'Certificate uploaded'}
               </span>
+            </div>
+          )}
+          {firesockReq !== 'hidden' && (
+            <div className="flex items-start gap-2 py-2">
+              <Flame className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0 space-y-2">
+                <span className="text-slate-400 text-xs block">Firesock training</span>
+                {firesockUrl ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-emerald-700 text-sm font-medium">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      On file
+                    </span>
+                    <button
+                      type="button"
+                      onClick={viewFiresockCert}
+                      disabled={firesockBusy}
+                      className="text-sm font-medium text-orange-700 hover:text-orange-800
+                                 underline-offset-2 hover:underline disabled:opacity-50"
+                    >
+                      View certificate
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        firesockReq === 'required'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      Not on file
+                    </span>
+                    <label
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                  font-medium transition-colors cursor-pointer
+                                  ${firesockBusy
+                                    ? 'bg-slate-100 text-slate-400 pointer-events-none'
+                                    : 'bg-orange-50 hover:bg-orange-100 text-orange-700'}`}
+                    >
+                      {firesockBusy
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Upload className="w-3.5 h-3.5" />}
+                      Upload certificate
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        disabled={firesockBusy}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null
+                          e.target.value = ''
+                          void uploadFiresockCert(f)
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+                {firesockError && (
+                  <p className="text-xs text-red-600">{firesockError}</p>
+                )}
+              </div>
             </div>
           )}
         </div>

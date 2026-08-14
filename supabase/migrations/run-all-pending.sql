@@ -341,3 +341,6 @@ alter table toolbox_talk_attendees enable row level security;
 alter table toolbox_talks
   add column if not exists amended_at timestamptz,
   add column if not exists amendment_count int not null default 0;
+
+-- 19. Firesock training certificate at enrolment.
+alter table workers add column if not exists firesock_certificate_url text;

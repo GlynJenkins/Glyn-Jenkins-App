@@ -20,6 +20,10 @@ import {
 import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
 import { APPRENTICE_AGREEMENT_LINES } from '@/lib/apprentice-agreement'
 import { TRADE_QUALIFICATIONS } from '@/lib/induction/qualifications'
+import {
+  FIRESOCK_TRAINING_URL,
+  firesockRequirement,
+} from '@/lib/induction/firesock-requirement'
 import { prepareInductionImage } from '@/lib/qa/prepare-photo-upload'
 import PortalHeader from '@/components/PortalHeader'
 
@@ -307,6 +311,7 @@ export default function InductionPage() {
   const [insuranceCert,   setInsuranceCert]   = useState<File | null>(null)
   const [hsQualification, setHsQualification] = useState<File | null>(null)
   const [hsQualificationNa, setHsQualificationNa] = useState(false)
+  const [firesockCert, setFiresockCert] = useState<File | null>(null)
   const [signatureBlob,   setSignatureBlob]   = useState<Blob | null>(null)
   const [agreedToTerms,   setAgreedToTerms]   = useState(false)
   const [employedContractSigned, setEmployedContractSigned] = useState(false)
@@ -340,6 +345,7 @@ export default function InductionPage() {
   const isApprentice  = selectedRole === 'apprentice'
   const isEmployedContract = isEmployedContractRole(selectedRole ?? '')
   const needsCisFields = !isApprentice && !isEmployedContract
+  const firesockReq = firesockRequirement(selectedRole ?? '')
   const needsLogin    = needsPortalLogin(selectedRole ?? '')
 
   // Clear UTR and tax type when not applicable (apprentice / employed PAYE roles)
@@ -349,6 +355,11 @@ export default function InductionPage() {
       setValue('taxType',   '')
     }
   }, [needsCisFields, setValue])
+
+  // Clear firesock upload when Management (hidden tier) is selected
+  useEffect(() => {
+    if (firesockReq === 'hidden') setFiresockCert(null)
+  }, [firesockReq])
 
   // Clear portal passwords when role changes away from portal roles
   useEffect(() => {
@@ -376,6 +387,8 @@ export default function InductionPage() {
                           errs.insuranceCert = 'Insurance certificate is required'
     if (!hsQualification && !hsQualificationNa)
                           errs.hsQualification = 'Upload your SSSTS/SMSTS certificate or select N/A'
+    if (firesockReq === 'required' && !firesockCert)
+      errs.firesockCert = "Upload your firesock training certificate — you can't register without it."
     if (isEmployedContract) {
       if (!employedContractSigned)
         errs.employedContract = 'Please confirm you have signed your employed contract'
@@ -397,11 +410,14 @@ export default function InductionPage() {
 
     try {
       // Shrink iPhone photos client-side before POST (Vercel ~4.5 MB body limit).
-      const [cscsReady, idReady, insuranceReady, hsReady] = await Promise.all([
+      const [cscsReady, idReady, insuranceReady, hsReady, firesockReady] = await Promise.all([
         prepareInductionImage(cscsCard!),
         prepareInductionImage(idDocument!),
         insuranceCert ? prepareInductionImage(insuranceCert) : Promise.resolve(null),
         hsQualification ? prepareInductionImage(hsQualification) : Promise.resolve(null),
+        firesockCert && firesockReq !== 'hidden'
+          ? prepareInductionImage(firesockCert)
+          : Promise.resolve(null),
       ])
       setOptimisingPhotos(false)
 
@@ -419,6 +435,7 @@ export default function InductionPage() {
       fd.append('idDocument', idReady)
       if (insuranceReady)  fd.append('insuranceCert', insuranceReady)
       if (hsReady)         fd.append('hsQualification', hsReady)
+      if (firesockReady)   fd.append('firesockCert', firesockReady)
       fd.append('hsQualificationNa', hsQualificationNa ? 'true' : 'false')
       if (isEmployedContractRole(data.role)) {
         fd.append('employedContractSigned', employedContractSigned ? 'true' : 'false')
@@ -866,6 +883,56 @@ export default function InductionPage() {
               </p>
             )}
           </div>
+
+          {firesockReq !== 'hidden' && (
+            <div className="space-y-3">
+              <div className={`rounded-xl border-2 p-4 space-y-3 ${
+                firesockReq === 'required'
+                  ? 'border-orange-300 bg-orange-50'
+                  : 'border-amber-200 bg-amber-50/60'
+              }`}>
+                <p className="text-sm font-semibold text-slate-900">
+                  {firesockReq === 'required'
+                    ? 'Firesock training — required'
+                    : 'Firesock training — optional'}
+                </p>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  {firesockReq === 'required' ? (
+                    <>
+                      All operatives must complete the free ARC Building Solutions firesock training
+                      before working on our sites. You should have received the link already — if you
+                      haven&apos;t done the training yet, complete it now (it&apos;s quick), then upload
+                      the certificate you&apos;re issued.{' '}
+                      <strong>You cannot register without it.</strong>
+                    </>
+                  ) : (
+                    <>
+                      If you already hold a firesock training certificate, upload it here so it&apos;s
+                      on your record. If not, you can complete the free training via the link below at
+                      any time.
+                    </>
+                  )}
+                </p>
+                <a
+                  href={FIRESOCK_TRAINING_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2.5
+                             bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold
+                             rounded-xl transition-colors"
+                >
+                  Open firesock training →
+                </a>
+              </div>
+              <FileUploadArea
+                label="Firesock training certificate"
+                required={firesockReq === 'required'}
+                file={firesockCert}
+                onChange={setFiresockCert}
+                error={fileErrors.firesockCert}
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">

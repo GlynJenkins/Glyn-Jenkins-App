@@ -28,7 +28,8 @@ export default async function WorkerProfilePage({
       auth_user_id, bank_sort_code, bank_account_number,
       subcontract_agreement_pdf_url, subcontract_signature_url,
       employed_contract_signed,
-      bricklayer_qualification, hs_qualification_url, hs_qualification_na
+      bricklayer_qualification, hs_qualification_url, hs_qualification_na,
+      firesock_certificate_url
     `)
     .eq('id', workerId)
     .maybeSingle()

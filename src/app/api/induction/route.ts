@@ -6,6 +6,7 @@ import { generateSubcontractPdf } from '@/lib/generate-subcontract-pdf'
 import { isEmployedContractRole, needsPortalLogin } from '@/lib/worker-access'
 import { INDUCTION_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
 import { isTradeQualification } from '@/lib/induction/qualifications'
+import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 import {
   extensionForMime,
   validateUpload,
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
     const idDocument      = formData.get('idDocument')      as File | null
     const insuranceCert   = formData.get('insuranceCert')   as File | null
     const hsQualification = formData.get('hsQualification') as File | null
+    const firesockCert    = formData.get('firesockCert')    as File | null
     const signature       = formData.get('signature')       as File | null
 
     // ── Basic server-side validation ───────────────────────────
@@ -73,6 +75,7 @@ export async function POST(request: NextRequest) {
     const isApprentice = role === 'apprentice'
     const isEmployedContract = isEmployedContractRole(role)
     const needsCisFields = !isApprentice && !isEmployedContract
+    const firesockReq = firesockRequirement(role)
 
     if (!firstName || !surname || !phone || !email || !bankSortCode || !bankAccountNumber ||
         !role || !hasPersonalInsurance || !niNumber) {
@@ -138,6 +141,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (firesockReq === 'required' && !firesockCert) {
+      return NextResponse.json(
+        { error: 'Firesock training certificate is required.' },
+        { status: 400 },
+      )
+    }
+
     const createPortalLogin = needsPortalLogin(role)
 
     if (createPortalLogin) {
@@ -172,6 +182,14 @@ export async function POST(request: NextRequest) {
       hsCheck = await validateUpload(hsQualification, 'document', 'SSSTS/SMSTS certificate')
       if (!hsCheck.ok) {
         return NextResponse.json({ error: hsCheck.error }, { status: 400 })
+      }
+    }
+
+    let firesockCheck: Awaited<ReturnType<typeof validateUpload>> | null = null
+    if (firesockReq !== 'hidden' && firesockCert) {
+      firesockCheck = await validateUpload(firesockCert, 'document', 'Firesock training certificate')
+      if (!firesockCheck.ok) {
+        return NextResponse.json({ error: firesockCheck.error }, { status: 400 })
       }
     }
 
@@ -266,6 +284,11 @@ export async function POST(request: NextRequest) {
       hsQualificationUrl = await uploadBuffer(hsCheck.buffer, hsCheck.mime, 'hs-qualifications')
     }
 
+    let firesockCertificateUrl: string | null = null
+    if (firesockCheck && firesockCheck.ok) {
+      firesockCertificateUrl = await uploadBuffer(firesockCheck.buffer, firesockCheck.mime, 'firesock-certificates')
+    }
+
     // ── Create portal login for foreman / management ───────────
     let authUserId: string | null = null
 
@@ -306,6 +329,7 @@ export async function POST(request: NextRequest) {
       bricklayer_qualification:  bricklayerQualification,
       hs_qualification_url:      hsQualificationUrl,
       hs_qualification_na:       hsQualificationNa,
+      firesock_certificate_url:  firesockCertificateUrl,
       cscs_card_url:             cscsUrl,
       cscs_number:               cscsNumber     || null,
       cscs_expiry_date:          cscsExpiryDate || null,
@@ -327,7 +351,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       // Older DBs may be missing newer columns — retry without them so registration isn't blocked.
       const missingOptionalCol =
-        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed/i.test(insertError.message) ||
+        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed|firesock_certificate/i.test(insertError.message) ||
         insertError.code === 'PGRST204'
 
       if (missingOptionalCol) {
@@ -338,6 +362,7 @@ export async function POST(request: NextRequest) {
           hs_qualification_url: _h,
           hs_qualification_na: _n,
           employed_contract_signed: _e,
+          firesock_certificate_url: _f,
           ...legacyRow
         } = workerRow
         const { error: retryError } = await supabase
