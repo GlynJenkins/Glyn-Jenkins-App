@@ -445,10 +445,19 @@ export default function InductionPage() {
       fd.append('privacyConsent', privacyConsent ? 'true' : 'false')
 
       const res = await fetch('/api/induction', { method: 'POST', body: fd })
+
+      // Prefer status before JSON — 413 bodies are often non-JSON on the edge.
+      if (res.status === 413) {
+        setServerError(
+          'Your photos may be too large to upload. Please try smaller photos, or complete this on a computer.',
+        )
+        return
+      }
+
       const json = await res.json().catch(() => null) as { error?: string; portalLoginCreated?: boolean } | null
 
       if (!res.ok) {
-        if (res.status === 413 || json == null) {
+        if (json == null) {
           setServerError(
             'Your photos may be too large to upload. Please try smaller photos, or complete this on a computer.',
           )

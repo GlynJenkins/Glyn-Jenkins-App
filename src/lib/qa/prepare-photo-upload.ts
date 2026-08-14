@@ -175,9 +175,11 @@ function isImageLikeFile(file: File): boolean {
 }
 
 /**
- * Induction registration photos — downscale + JPEG so three iPhone shots stay
- * under Vercel's ~4.5 MB request-body limit. PDFs pass through unchanged.
- * On failure, returns the original file so registration is not blocked.
+ * Induction registration photos — downscale + JPEG so up to four iPhone shots
+ * (CSCS, ID, SSSTS/SMSTS, firesock cert) stay under Vercel's ~4.5 MB request-body
+ * limit. Cap ~850 KB each (≈3.4 MB combined) with headroom for form fields +
+ * signature. PDFs pass through unchanged. On failure, returns the original file
+ * so registration is not blocked.
  */
 export async function prepareInductionImage(file: File): Promise<File> {
   if (!isImageLikeFile(file)) return file
@@ -186,7 +188,7 @@ export async function prepareInductionImage(file: File): Promise<File> {
       maxSide:        2000,
       quality:        0.8,
       alwaysReencode: true,
-      maxBytes:       1_200_000,
+      maxBytes:       850_000,
     })
   } catch {
     return file
