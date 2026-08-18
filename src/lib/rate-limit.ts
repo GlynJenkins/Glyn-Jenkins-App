@@ -102,6 +102,29 @@ export async function rateLimit(
   return memoryLimit(key, cfg)
 }
 
+/**
+ * Rate-limit by an arbitrary key (e.g. authenticated user id).
+ * Uses Upstash Redis when configured; otherwise in-memory sliding window.
+ */
+export async function rateLimitKey(
+  key: string,
+  cfg: LimiterConfig,
+): Promise<RateLimitResult> {
+  const fullKey = `${cfg.prefix}:${key}`
+
+  const creds = resolveUpstashCredentials()
+  if (creds) {
+    try {
+      const result = await getUpstashLimiter(cfg, creds).limit(fullKey)
+      return { success: result.success, remaining: result.remaining }
+    } catch (err) {
+      console.error('[rate-limit] Upstash failed — falling back to memory:', err)
+    }
+  }
+
+  return memoryLimit(fullKey, cfg)
+}
+
 /** Public registration: 5 submissions per IP per 10 minutes. */
 export const INDUCTION_RATE_LIMIT: LimiterConfig = {
   limit: 5,
@@ -114,4 +137,11 @@ export const FORGOT_PASSWORD_RATE_LIMIT: LimiterConfig = {
   limit: 5,
   windowMs: 10 * 60 * 1000,
   prefix: 'forgot-password',
+}
+
+/** Admin reveal of bank/UTR/NI: 30 per admin per 10 minutes. */
+export const SENSITIVE_REVEAL_RATE_LIMIT: LimiterConfig = {
+  limit: 30,
+  windowMs: 10 * 60 * 1000,
+  prefix: 'sensitive-reveal',
 }
