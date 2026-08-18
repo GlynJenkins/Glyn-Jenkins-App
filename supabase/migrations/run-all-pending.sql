@@ -344,3 +344,6 @@ alter table toolbox_talks
 
 -- 19. Firesock training certificate at enrolment.
 alter table workers add column if not exists firesock_certificate_url text;
+
+-- 20. Date of birth at enrolment.
+alter table workers add column if not exists date_of_birth date;
