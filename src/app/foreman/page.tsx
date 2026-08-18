@@ -3,6 +3,7 @@ import { requireForemanAccess } from '@/lib/auth/portal-access'
 import { getCurrentFortnight, toLocalDateString } from '@/lib/fortnight'
 import LogoutButton             from '../admin/_components/LogoutButton'
 import ForemanDashboard         from './_components/ForemanDashboard'
+import UnseenSiteAuditsModal    from './_components/UnseenSiteAuditsModal'
 import {
   filterPastForemanClaims,
   foremanClaimPeriodKey,
@@ -74,6 +75,35 @@ export default async function ForemanPage() {
     }
   }
 
+  // ── Site audit badges + unseen modal data ─────────────────────
+  const auditMeta: Record<string, { latestDate: string | null; hasUnseen: boolean }> = {}
+  if (siteIds.length > 0) {
+    const { data: audits } = await supabase
+      .from('site_audits')
+      .select('id, site_id, audit_date')
+      .in('site_id', siteIds)
+      .eq('status', 'completed')
+      .order('audit_date', { ascending: false })
+
+    const auditIds = (audits ?? []).map((a) => a.id)
+    const { data: views } = auditIds.length
+      ? await supabase
+          .from('site_audit_views')
+          .select('audit_id')
+          .eq('worker_id', worker.id)
+          .in('audit_id', auditIds)
+      : { data: [] as { audit_id: string }[] }
+    const seen = new Set((views ?? []).map((v) => v.audit_id))
+
+    for (const siteId of siteIds) {
+      const siteAudits = (audits ?? []).filter((a) => a.site_id === siteId)
+      auditMeta[siteId] = {
+        latestDate: siteAudits[0]?.audit_date ?? null,
+        hasUnseen: siteAudits.some((a) => !seen.has(a.id)),
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PortalHeader>
@@ -92,11 +122,13 @@ export default async function ForemanPage() {
       </PortalHeader>
 
       <div className="px-4 pt-5 pb-16 max-w-lg mx-auto">
+        <UnseenSiteAuditsModal />
         <ForemanDashboard
           sites={sites}
           currentClaim={currentClaim}
           pastClaims={pastClaims}
           variationCountMap={variationCountMap}
+          auditMeta={auditMeta}
           period={{
             label:         period.label,
             payLabel:       period.payLabel,

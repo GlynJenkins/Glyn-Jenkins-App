@@ -37,6 +37,7 @@ interface Props {
   pastClaims:        ForemanClaimHistoryItem[]
   variationCountMap: Record<string, number>
   period:            Period
+  auditMeta?:        Record<string, { latestDate: string | null; hasUnseen: boolean }>
 }
 
 // ── Countdown banner ───────────────────────────────────────────────────────────
@@ -114,7 +115,23 @@ function ClaimBadge({ status }: { status: string }) {
 
 // ── Site card ─────────────────────────────────────────────────────────────────
 
-function SiteCard({ site, variationCount }: { site: Site; variationCount: number }) {
+function SiteCard({
+  site,
+  variationCount,
+  latestAuditDate,
+  hasUnseenAudit,
+}: {
+  site: Site
+  variationCount: number
+  latestAuditDate: string | null
+  hasUnseenAudit: boolean
+}) {
+  const auditLabel = latestAuditDate
+    ? new Date(latestAuditDate).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric',
+      })
+    : 'No audits yet'
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="p-5 pb-4">
@@ -169,12 +186,30 @@ function SiteCard({ site, variationCount }: { site: Site; variationCount: number
         <Link href={`/foreman/sites/${site.id}/firesocks`}
           className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
-              <Shield className="w-4 h-4 text-amber-700" />
+            <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center shrink-0">
+              <Shield className="w-4 h-4 text-red-500" />
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-800">Roof Firesocks</p>
-              <p className="text-xs text-slate-400">Upload evidence photos per plot</p>
+              <p className="text-xs text-slate-400">Photo evidence by plot</p>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-300" />
+        </Link>
+        <Link href={`/foreman/sites/${site.id}/audits`}
+          className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+              <ClipboardList className="w-4 h-4 text-slate-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-slate-800">Site Audits</p>
+                {hasUnseenAudit && (
+                  <span className="w-2 h-2 rounded-full bg-orange-500" title="New" />
+                )}
+              </div>
+              <p className="text-xs text-slate-400">{auditLabel}</p>
             </div>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-300" />
@@ -188,6 +223,7 @@ function SiteCard({ site, variationCount }: { site: Site; variationCount: number
 
 export default function ForemanDashboard({
   sites, currentClaim, pastClaims, variationCountMap, period,
+  auditMeta = {},
 }: Props) {
   const router        = useRouter()
   const [withdrawing, setWithdrawing] = useState(false)
@@ -366,7 +402,13 @@ export default function ForemanDashboard({
             My Sites ({activeSites.length})
           </p>
           {activeSites.map((site) => (
-            <SiteCard key={site.id} site={site} variationCount={variationCountMap[site.id] ?? 0} />
+            <SiteCard
+              key={site.id}
+              site={site}
+              variationCount={variationCountMap[site.id] ?? 0}
+              latestAuditDate={auditMeta[site.id]?.latestDate ?? null}
+              hasUnseenAudit={auditMeta[site.id]?.hasUnseen ?? false}
+            />
           ))}
         </section>
       )}
