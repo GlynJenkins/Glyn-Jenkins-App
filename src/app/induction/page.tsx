@@ -25,6 +25,7 @@ import {
   firesockRequirement,
 } from '@/lib/induction/firesock-requirement'
 import { prepareInductionImage } from '@/lib/qa/prepare-photo-upload'
+import { parseDateOfBirth } from '@/lib/induction/date-of-birth'
 import PortalHeader from '@/components/PortalHeader'
 
 // ── Validation schema ──────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ const schema = z.object({
   surname:              z.string().min(1, 'Surname is required'),
   phone:                z.string().min(10, 'Enter a valid UK phone number'),
   email:                z.string().email('Enter a valid email address'),
+  dateOfBirth:          z.string().min(1, 'Enter your date of birth.'),
   role:                 z.enum([
     'foreman',
     'bricklayer',
@@ -56,6 +58,10 @@ const schema = z.object({
   password:             z.string().optional(),
   confirmPassword:        z.string().optional(),
 }).superRefine((data, ctx) => {
+  const dob = parseDateOfBirth(data.dateOfBirth)
+  if (!dob.ok) {
+    ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: dob.error })
+  }
   const needsCisFields = data.role !== 'apprentice' && !isEmployedContractRole(data.role)
   if (needsCisFields) {
     if (!data.utrNumber || !/^\d{10}$/.test(data.utrNumber)) {
@@ -423,10 +429,15 @@ export default function InductionPage() {
 
       const fd = new FormData()
       const cscsExpiryDate = String(data.cscsExpiryDate ?? '').slice(0, 10)
+      const dateOfBirth = String(data.dateOfBirth ?? '').slice(0, 10)
       Object.entries(data).forEach(([k, v]) => {
         if (k === 'confirmPassword') return
         if (k === 'cscsExpiryDate') {
           if (cscsExpiryDate) fd.append('cscsExpiryDate', cscsExpiryDate)
+          return
+        }
+        if (k === 'dateOfBirth') {
+          if (dateOfBirth) fd.append('dateOfBirth', dateOfBirth)
           return
         }
         if (v != null && v !== '') fd.append(k, String(v))
@@ -608,6 +619,18 @@ export default function InductionPage() {
               className={inputCls(!!errors.email)}
             />
             <FieldError message={errors.email?.message} />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Date of birth <span className="text-red-500">*</span>
+            </label>
+            <input
+              {...register('dateOfBirth')}
+              type="date"
+              className={inputCls(!!errors.dateOfBirth)}
+            />
+            <FieldError message={errors.dateOfBirth?.message} />
           </div>
         </SectionCard>
 
