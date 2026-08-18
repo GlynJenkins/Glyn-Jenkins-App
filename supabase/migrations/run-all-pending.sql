@@ -352,3 +352,16 @@ alter table workers add column if not exists date_of_birth date;
 alter table workers
   add column if not exists payment_details_updated_at timestamptz,
   add column if not exists payment_details_updated_by text;
+
+-- 22. Audit log for revealing bank / UTR / NI on worker profiles.
+create table if not exists sensitive_reveals (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references workers(id),
+  revealed_by text not null,
+  revealed_at timestamptz not null default now(),
+  fields text not null
+);
+
+create index if not exists idx_sensitive_reveals_worker on sensitive_reveals(worker_id);
+
+alter table sensitive_reveals enable row level security;
