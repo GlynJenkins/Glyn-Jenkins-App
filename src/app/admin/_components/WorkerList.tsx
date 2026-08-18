@@ -8,6 +8,7 @@ import {
   Clock, ToggleLeft, ToggleRight, Loader2, ChevronRight,
 } from 'lucide-react'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
+import { isUnder18 } from '@/lib/induction/date-of-birth'
 
 type Worker = {
   id: string
@@ -23,6 +24,7 @@ type Worker = {
   id_document_url: string | null
   insurance_certificate_url: string | null
   firesock_certificate_url: string | null
+  date_of_birth: string | null
   created_at: string
 }
 
@@ -71,6 +73,7 @@ function WorkerCard({ worker, onStatusChange }: {
     day: 'numeric', month: 'short', year: 'numeric',
   })
   const showFiresockGap = missingRequiredFiresock(worker)
+  const under18 = isUnder18(worker.date_of_birth)
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
@@ -89,6 +92,11 @@ function WorkerCard({ worker, onStatusChange }: {
         </div>
         <div className="flex flex-col items-end gap-1">
           <StatusBadge status={worker.status} />
+          {under18 && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+              Under 18
+            </span>
+          )}
           {showFiresockGap && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
               No firesock cert

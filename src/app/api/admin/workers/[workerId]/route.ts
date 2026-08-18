@@ -3,6 +3,7 @@ import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { needsPortalLogin } from '@/lib/worker-access'
+import { parseDateOfBirth } from '@/lib/induction/date-of-birth'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,15 +32,53 @@ export async function PATCH(
     const body = await request.json() as {
       role?:            string
       portalPassword?:  string
+      dateOfBirth?:     string
     }
 
-    const { role, portalPassword } = body
+    const { role, portalPassword, dateOfBirth: dateOfBirthRaw } = body
+    const updatingRole = typeof role === 'string'
+    const updatingDob = typeof dateOfBirthRaw === 'string'
+
+    if (!updatingRole && !updatingDob) {
+      return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
+    }
+
+    const supabase = createServiceClient()
+
+    if (updatingDob && !updatingRole) {
+      const dob = parseDateOfBirth(dateOfBirthRaw)
+      if (!dob.ok) {
+        return NextResponse.json({ error: dob.error }, { status: 400 })
+      }
+
+      const { data: worker, error: fetchError } = await supabase
+        .from('workers')
+        .select('id')
+        .eq('id', workerId)
+        .maybeSingle()
+
+      if (fetchError || !worker) {
+        return NextResponse.json({ error: 'Worker not found.' }, { status: 404 })
+      }
+
+      const { error: updateError } = await supabase
+        .from('workers')
+        .update({
+          date_of_birth: dob.value,
+          updated_at:    new Date().toISOString(),
+        })
+        .eq('id', workerId)
+
+      if (updateError) {
+        return apiError('api/admin/workers/[workerId]', updateError)
+      }
+
+      return NextResponse.json({ success: true, dateOfBirth: dob.value })
+    }
 
     if (!role || !ASSIGNABLE_ROLES.includes(role as AssignableRole)) {
       return NextResponse.json({ error: 'Invalid job role.' }, { status: 400 })
     }
-
-    const supabase = createServiceClient()
 
     const { data: worker, error: fetchError } = await supabase
       .from('workers')
@@ -103,20 +142,30 @@ export async function PATCH(
         .eq('foreman_id', workerId)
     }
 
+    const updatePayload: Record<string, unknown> = {
+      role,
+      auth_user_id: authUserId,
+      updated_at:   new Date().toISOString(),
+    }
+
+    if (updatingDob) {
+      const dob = parseDateOfBirth(dateOfBirthRaw)
+      if (!dob.ok) {
+        return NextResponse.json({ error: dob.error }, { status: 400 })
+      }
+      updatePayload.date_of_birth = dob.value
+    }
+
     const { error: updateError } = await supabase
       .from('workers')
-      .update({
-        role,
-        auth_user_id: authUserId,
-        updated_at:   new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', workerId)
 
     if (updateError) {
       if (portalLoginCreated && authUserId) {
         await supabase.auth.admin.deleteUser(authUserId)
       }
-      return apiError("api/admin/workers/[workerId]", updateError)
+      return apiError('api/admin/workers/[workerId]', updateError)
     }
 
     return NextResponse.json({
@@ -126,8 +175,9 @@ export async function PATCH(
       portalLoginCreated,
       portalLoginRevoked,
       previousRole:   worker.role,
+      ...(updatingDob ? { dateOfBirth: updatePayload.date_of_birth } : {}),
     })
   } catch (err) {
-    return apiError("api/admin/workers/[workerId]", err)
+    return apiError('api/admin/workers/[workerId]', err)
   }
 }

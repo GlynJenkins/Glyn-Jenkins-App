@@ -18,7 +18,7 @@ export default async function AdminWorkersPage() {
 
   const { data: workers, error } = await supabase
     .from('workers')
-    .select('id, first_name, surname, phone, utr_number, tax_type, role, status, has_personal_insurance, cscs_card_url, id_document_url, insurance_certificate_url, firesock_certificate_url, created_at')
+    .select('id, first_name, surname, phone, utr_number, tax_type, role, status, has_personal_insurance, cscs_card_url, id_document_url, insurance_certificate_url, firesock_certificate_url, date_of_birth, created_at')
     .order('created_at', { ascending: false })
 
   if (error) {

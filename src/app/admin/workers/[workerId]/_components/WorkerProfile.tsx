@@ -10,6 +10,10 @@ import {
 } from 'lucide-react'
 import { needsPortalLogin } from '@/lib/worker-access'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
+import {
+  formatDateOfBirthWithAge,
+  isUnder18,
+} from '@/lib/induction/date-of-birth'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -60,6 +64,7 @@ type Worker = {
   hs_qualification_url:            string | null
   hs_qualification_na:             boolean | null
   firesock_certificate_url:        string | null
+  date_of_birth:                   string | null
 }
 
 interface Props {
@@ -285,6 +290,15 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
   const [firesockUrl, setFiresockUrl] = useState(worker.firesock_certificate_url)
   const [firesockBusy, setFiresockBusy] = useState(false)
   const [firesockError, setFiresockError] = useState<string | null>(null)
+  const [dateOfBirth, setDateOfBirth] = useState(
+    worker.date_of_birth ? worker.date_of_birth.slice(0, 10) : '',
+  )
+  const [dobDraft, setDobDraft] = useState(
+    worker.date_of_birth ? worker.date_of_birth.slice(0, 10) : '',
+  )
+  const [dobBusy, setDobBusy] = useState(false)
+  const [dobError, setDobError] = useState<string | null>(null)
+  const [dobEditing, setDobEditing] = useState(!worker.date_of_birth)
 
   const [role,            setRole]            = useState(worker.role)
   const [portalPassword,  setPortalPassword]  = useState('')
@@ -410,6 +424,30 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
   }
 
   const firesockReq = firesockRequirement(worker.role)
+  const dobLabel = formatDateOfBirthWithAge(dateOfBirth || null)
+  const under18 = isUnder18(dateOfBirth || null)
+
+  const saveDateOfBirth = async () => {
+    setDobBusy(true)
+    setDobError(null)
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ dateOfBirth: dobDraft }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not save date of birth.')
+      const saved = String(json.dateOfBirth ?? dobDraft).slice(0, 10)
+      setDateOfBirth(saved)
+      setDobDraft(saved)
+      setDobEditing(false)
+    } catch (err) {
+      setDobError(err instanceof Error ? err.message : 'Could not save date of birth.')
+    } finally {
+      setDobBusy(false)
+    }
+  }
 
   const filteredLedger = useMemo(() => {
     const from = new Date(fromDate)
@@ -453,16 +491,86 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
               {worker.has_personal_insurance ? ' · Own insurance' : ''}
             </p>
           </div>
-          <span className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-full capitalize
-            ${STATUS_COLORS[worker.status] ?? 'bg-gray-100 text-gray-500'}`}>
-            {worker.status.replace('_', ' ')}
-          </span>
+          <div className="ml-auto flex flex-col items-end gap-1">
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize
+              ${STATUS_COLORS[worker.status] ?? 'bg-gray-100 text-gray-500'}`}>
+              {worker.status.replace('_', ' ')}
+            </span>
+            {under18 && (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                Under 18
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="divide-y divide-gray-50 text-sm text-slate-600 space-y-0">
           <div className="flex items-center gap-2 py-2">
             <Phone className="w-3.5 h-3.5 text-slate-400" />
             <span>{worker.phone}</span>
+          </div>
+          <div className="flex items-start gap-2 py-2">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 space-y-2">
+              <span className="text-slate-400 text-xs block">Date of birth</span>
+              {dobLabel && !dobEditing ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{dobLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDobDraft(dateOfBirth)
+                      setDobEditing(true)
+                      setDobError(null)
+                    }}
+                    className="text-xs font-medium text-orange-700 hover:underline"
+                  >
+                    Correct
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {!dateOfBirth && (
+                    <span className="text-amber-700 text-xs font-semibold">Not on file</span>
+                  )}
+                  <input
+                    type="date"
+                    value={dobDraft}
+                    onChange={(e) => setDobDraft(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm
+                               bg-white outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={dobBusy || !dobDraft}
+                      onClick={() => void saveDateOfBirth()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                 font-medium bg-orange-50 hover:bg-orange-100 text-orange-700
+                                 disabled:opacity-50"
+                    >
+                      {dobBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      Save date of birth
+                    </button>
+                    {dateOfBirth && (
+                      <button
+                        type="button"
+                        disabled={dobBusy}
+                        onClick={() => {
+                          setDobDraft(dateOfBirth)
+                          setDobEditing(false)
+                          setDobError(null)
+                        }}
+                        className="text-xs font-medium text-slate-500 hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {dobError && <p className="text-xs text-red-600">{dobError}</p>}
+            </div>
           </div>
           {worker.utr_number && (
             <div className="flex items-center gap-2 py-2">
