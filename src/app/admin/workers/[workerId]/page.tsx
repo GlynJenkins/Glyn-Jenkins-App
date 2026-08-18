@@ -23,13 +23,14 @@ export default async function WorkerProfilePage({
   const { data: worker } = await supabase
     .from('workers')
     .select(`
-      id, first_name, surname, phone, email, utr_number,
+      id, first_name, surname, phone, email, utr_number, ni_number,
       tax_type, role, status, has_personal_insurance, created_at,
       auth_user_id, bank_sort_code, bank_account_number,
       subcontract_agreement_pdf_url, subcontract_signature_url,
       employed_contract_signed,
       bricklayer_qualification, hs_qualification_url, hs_qualification_na,
-      firesock_certificate_url, date_of_birth
+      firesock_certificate_url, date_of_birth,
+      payment_details_updated_at, payment_details_updated_by
     `)
     .eq('id', workerId)
     .maybeSingle()

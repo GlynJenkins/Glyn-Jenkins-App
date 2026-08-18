@@ -6,14 +6,18 @@ import {
   User, Phone, FileText, Building2,
   TrendingUp, Download, ChevronDown, ChevronUp,
   Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle, ShieldCheck,
-  Flame, Upload,
+  Flame, Upload, AlertCircle,
 } from 'lucide-react'
-import { needsPortalLogin } from '@/lib/worker-access'
+import { needsPortalLogin, isEmployedContractRole } from '@/lib/worker-access'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 import {
   formatDateOfBirthWithAge,
   isUnder18,
 } from '@/lib/induction/date-of-birth'
+import {
+  maskLast4,
+  parsePaymentDetailsUpdate,
+} from '@/lib/induction/payment-details'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -49,6 +53,7 @@ type Worker = {
   phone:                           string
   email:                           string | null
   utr_number:                      string | null
+  ni_number:                       string | null
   tax_type:                        string | null
   role:                            string
   status:                          string
@@ -65,6 +70,8 @@ type Worker = {
   hs_qualification_na:             boolean | null
   firesock_certificate_url:        string | null
   date_of_birth:                   string | null
+  payment_details_updated_at:      string | null
+  payment_details_updated_by:      string | null
 }
 
 interface Props {
@@ -128,10 +135,8 @@ function escapeHtml(value: string | null | undefined): string {
 
 /** Show only the last 4 characters of a sensitive value, e.g. "••••6789". */
 function maskSensitive(value: string | null | undefined): string {
-  const v = (value ?? '').trim()
-  if (!v) return 'N/A'
-  if (v.length <= 4) return v
-  return `••••${v.slice(-4)}`
+  const masked = maskLast4(value)
+  return masked || 'N/A'
 }
 
 function printStatement(worker: Worker, entries: LedgerEntry[]) {
@@ -276,6 +281,281 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         </div>
       )}
     </>
+  )
+}
+
+function MaskedOrMissing({ label, value }: { label: string; value: string | null }) {
+  const masked = maskLast4(value)
+  return (
+    <div className="flex items-start justify-between gap-3 py-2 text-sm">
+      <span className="text-slate-500">{label}</span>
+      {masked ? (
+        <span className="font-medium text-slate-800 text-right">{masked}</span>
+      ) : (
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+          Not on file
+        </span>
+      )}
+    </div>
+  )
+}
+
+function PaymentDetailsCard({ worker }: { worker: Worker }) {
+  const showUtr =
+    worker.role !== 'apprentice' &&
+    !isEmployedContractRole(worker.role)
+
+  const [bankSortMasked, setBankSortMasked] = useState(maskLast4(worker.bank_sort_code))
+  const [bankAcctMasked, setBankAcctMasked] = useState(maskLast4(worker.bank_account_number))
+  const [utrMasked, setUtrMasked] = useState(maskLast4(worker.utr_number))
+  const [niMasked, setNiMasked] = useState(maskLast4(worker.ni_number))
+  const [updatedAt, setUpdatedAt] = useState(worker.payment_details_updated_at)
+  const [updatedBy, setUpdatedBy] = useState(worker.payment_details_updated_by)
+
+  const [editing, setEditing] = useState(false)
+  const [sortCode, setSortCode] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [confirmAccount, setConfirmAccount] = useState('')
+  const [utrNumber, setUtrNumber] = useState('')
+  const [niNumber, setNiNumber] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const resetForm = () => {
+    setSortCode('')
+    setAccountNumber('')
+    setConfirmAccount('')
+    setUtrNumber('')
+    setNiNumber('')
+    setFormError(null)
+  }
+
+  const cancelEdit = () => {
+    resetForm()
+    setEditing(false)
+  }
+
+  const save = async () => {
+    setFormError(null)
+
+    if (accountNumber.trim() && accountNumber.trim() !== confirmAccount.trim()) {
+      setFormError('Account numbers do not match.')
+      return
+    }
+
+    const parsed = parsePaymentDetailsUpdate({
+      bankSortCode:      sortCode,
+      bankAccountNumber: accountNumber,
+      utrNumber:         showUtr ? utrNumber : '',
+      niNumber,
+    })
+    if (!parsed.ok) {
+      setFormError(parsed.error)
+      return
+    }
+
+    const fullName = `${worker.first_name} ${worker.surname}`.trim()
+    const ending = parsed.masks.bankAccountNumber
+      ? ` New account ending ${parsed.masks.bankAccountNumber.replace(/^•+/, '')}.`
+      : ''
+    const confirmed = window.confirm(
+      `Update payment details for ${fullName}?${ending} Future payments will use these details.`,
+    )
+    if (!confirmed) return
+
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          paymentDetails: {
+            ...(parsed.values.bank_sort_code
+              ? { bankSortCode: sortCode, bankAccountNumber: accountNumber }
+              : {}),
+            ...(parsed.values.utr_number ? { utrNumber } : {}),
+            ...(parsed.values.ni_number ? { niNumber } : {}),
+          },
+        }),
+      })
+      const json = await res.json() as {
+        error?: string
+        masks?: {
+          bankSortCode?: string
+          bankAccountNumber?: string
+          utrNumber?: string
+          niNumber?: string
+        }
+        paymentDetailsUpdatedAt?: string | null
+        paymentDetailsUpdatedBy?: string | null
+      }
+      if (!res.ok) throw new Error(json.error ?? 'Could not update payment details.')
+
+      if (json.masks?.bankSortCode) setBankSortMasked(json.masks.bankSortCode)
+      if (json.masks?.bankAccountNumber) setBankAcctMasked(json.masks.bankAccountNumber)
+      if (json.masks?.utrNumber) setUtrMasked(json.masks.utrNumber)
+      if (json.masks?.niNumber) setNiMasked(json.masks.niNumber)
+      if (json.paymentDetailsUpdatedAt) setUpdatedAt(json.paymentDetailsUpdatedAt)
+      if (json.paymentDetailsUpdatedBy) setUpdatedBy(json.paymentDetailsUpdatedBy)
+
+      resetForm()
+      setEditing(false)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not update payment details.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const bankDisplay =
+    bankSortMasked && bankAcctMasked
+      ? `${bankSortMasked} · ${bankAcctMasked}`
+      : null
+
+  return (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+      <div className="flex items-center gap-2">
+        <PoundSterling className="w-4 h-4 text-slate-500" />
+        <p className="font-semibold text-slate-800 text-sm">Payment details</p>
+      </div>
+
+      <p className="text-xs text-slate-500 leading-relaxed">
+        Correct bank, UTR or NI here when enrolment had a typo or the worker changed banks.
+        Fields stay blank while editing — existing numbers are never shown in full.
+      </p>
+
+      <div className="divide-y divide-gray-50">
+        <div className="flex items-start justify-between gap-3 py-2 text-sm">
+          <span className="text-slate-500">Bank</span>
+          {bankDisplay ? (
+            <span className="font-medium text-slate-800 text-right">{bankDisplay}</span>
+          ) : (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+              Not on file
+            </span>
+          )}
+        </div>
+        {(showUtr || utrMasked) && (
+          <MaskedOrMissing label="UTR" value={utrMasked || null} />
+        )}
+        <MaskedOrMissing label="NI" value={niMasked || null} />
+      </div>
+
+      {updatedAt && updatedBy && (
+        <p className="text-xs text-slate-400">
+          Payment details updated {fmtDate(updatedAt)} by {updatedBy}
+        </p>
+      )}
+
+      {!editing ? (
+        <button
+          type="button"
+          onClick={() => {
+            resetForm()
+            setEditing(true)
+          }}
+          className="w-full px-4 py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-700
+                     text-sm font-semibold rounded-xl transition-colors"
+        >
+          Update payment details
+        </button>
+      ) : (
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Sort code</label>
+            <input
+              value={sortCode}
+              onChange={(e) => setSortCode(e.target.value)}
+              placeholder="12-34-56"
+              autoComplete="off"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
+                         bg-white outline-none focus:ring-2 focus:ring-orange-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Account number</label>
+            <input
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value)}
+              placeholder="8 digits"
+              inputMode="numeric"
+              autoComplete="off"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
+                         bg-white outline-none focus:ring-2 focus:ring-orange-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Confirm account number</label>
+            <input
+              value={confirmAccount}
+              onChange={(e) => setConfirmAccount(e.target.value)}
+              placeholder="Re-enter account number"
+              inputMode="numeric"
+              autoComplete="off"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
+                         bg-white outline-none focus:ring-2 focus:ring-orange-400"
+            />
+          </div>
+          {showUtr && (
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">UTR</label>
+              <input
+                value={utrNumber}
+                onChange={(e) => setUtrNumber(e.target.value)}
+                placeholder="10 digits"
+                inputMode="numeric"
+                autoComplete="off"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
+                           bg-white outline-none focus:ring-2 focus:ring-orange-400"
+              />
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">NI number</label>
+            <input
+              value={niNumber}
+              onChange={(e) => setNiNumber(e.target.value.toUpperCase())}
+              placeholder="e.g. AB123456C"
+              maxLength={9}
+              autoCapitalize="characters"
+              autoComplete="off"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm
+                         bg-white outline-none focus:ring-2 focus:ring-orange-400"
+            />
+          </div>
+
+          {formError && (
+            <p className="text-sm text-red-600 flex items-start gap-1.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              {formError}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void save()}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm
+                         font-semibold bg-slate-900 hover:bg-slate-800 text-white
+                         disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Save payment details
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={cancelEdit}
+              className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600
+                         hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -572,23 +852,6 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
               {dobError && <p className="text-xs text-red-600">{dobError}</p>}
             </div>
           </div>
-          {worker.utr_number && (
-            <div className="flex items-center gap-2 py-2">
-              <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <span>UTR: {maskSensitive(worker.utr_number)}</span>
-            </div>
-          )}
-          {worker.bank_sort_code && worker.bank_account_number ? (
-            <div className="flex items-center gap-2 py-2">
-              <PoundSterling className="w-3.5 h-3.5 text-slate-400" />
-              <span>Bank: {maskSensitive(worker.bank_sort_code)} · {maskSensitive(worker.bank_account_number)}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 py-2 text-amber-700 text-xs">
-              <PoundSterling className="w-3.5 h-3.5 shrink-0" />
-              <span>No bank on file — worker must complete registration at /induction</span>
-            </div>
-          )}
           <div className="flex items-center gap-2 py-2">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             <span>Inducted: {fmtDate(worker.created_at)}</span>
@@ -700,6 +963,8 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
           </button>
         ) : null}
       </div>
+
+      <PaymentDetailsCard worker={worker} />
 
       {/* Job role & portal access */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
