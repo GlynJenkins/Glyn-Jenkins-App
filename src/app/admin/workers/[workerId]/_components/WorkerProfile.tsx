@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import {
   User, Phone, FileText, Building2,
   TrendingUp, Download, ChevronDown, ChevronUp,
   Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle, ShieldCheck,
-  Flame, Upload, AlertCircle,
+  Flame, Upload, AlertCircle, Eye, EyeOff, Copy,
 } from 'lucide-react'
 import { needsPortalLogin, isEmployedContractRole } from '@/lib/worker-access'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
@@ -52,16 +52,17 @@ type Worker = {
   surname:                         string
   phone:                           string
   email:                           string | null
-  utr_number:                      string | null
-  ni_number:                       string | null
+  /** Masked last-4 only — full values come from the reveal endpoint. */
+  utr_masked:                      string | null
+  ni_masked:                       string | null
   tax_type:                        string | null
   role:                            string
   status:                          string
   has_personal_insurance:          boolean | null
   created_at:                      string
   auth_user_id:                    string | null
-  bank_sort_code:                  string | null
-  bank_account_number:             string | null
+  bank_sort_masked:                string | null
+  bank_account_masked:             string | null
   subcontract_agreement_pdf_url:   string | null
   subcontract_signature_url:       string | null
   employed_contract_signed:        boolean | null
@@ -72,6 +73,8 @@ type Worker = {
   date_of_birth:                   string | null
   payment_details_updated_at:      string | null
   payment_details_updated_by:      string | null
+  last_sensitive_reveal_at:        string | null
+  last_sensitive_reveal_by:        string | null
 }
 
 interface Props {
@@ -184,7 +187,7 @@ function printStatement(worker: Worker, entries: LedgerEntry[]) {
     <h1>CIS Payment Statement</h1>
     <div class="sub">
       ${escapeHtml(worker.first_name)} ${escapeHtml(worker.surname)} &bull;
-      UTR: ${escapeHtml(maskSensitive(worker.utr_number))} &bull;
+      UTR: ${escapeHtml(maskSensitive(worker.utr_masked))} &bull;
       ${escapeHtml(ROLE_LABELS[worker.role] ?? worker.role)} &bull;
       ${worker.tax_type === 'cis_20' ? 'CIS 20%' : 'Gross'}<br/>
       Generated: ${fmtDate(new Date().toISOString())} &bull; Glyn Jenkins LTD
@@ -284,13 +287,51 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
   )
 }
 
-function MaskedOrMissing({ label, value }: { label: string; value: string | null }) {
-  const masked = maskLast4(value)
+function DisplayOrMissing({
+  label,
+  display,
+  copyValue,
+  revealed,
+}: {
+  label: string
+  display: string | null
+  copyValue?: string | null
+  revealed: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = async () => {
+    if (!copyValue) return
+    try {
+      await navigator.clipboard.writeText(copyValue)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="flex items-start justify-between gap-3 py-2 text-sm">
       <span className="text-slate-500">{label}</span>
-      {masked ? (
-        <span className="font-medium text-slate-800 text-right">{masked}</span>
+      {display ? (
+        <div className="flex items-center gap-2 text-right min-w-0">
+          <span className={`font-medium text-slate-800 break-all ${revealed ? 'font-mono' : ''}`}>
+            {display}
+          </span>
+          {revealed && copyValue && (
+            <button
+              type="button"
+              onClick={() => void copy()}
+              className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs
+                         font-medium text-orange-700 bg-orange-50 hover:bg-orange-100"
+              title="Copy"
+            >
+              <Copy className="w-3 h-3" />
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          )}
+        </div>
       ) : (
         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
           Not on file
@@ -305,12 +346,23 @@ function PaymentDetailsCard({ worker }: { worker: Worker }) {
     worker.role !== 'apprentice' &&
     !isEmployedContractRole(worker.role)
 
-  const [bankSortMasked, setBankSortMasked] = useState(maskLast4(worker.bank_sort_code))
-  const [bankAcctMasked, setBankAcctMasked] = useState(maskLast4(worker.bank_account_number))
-  const [utrMasked, setUtrMasked] = useState(maskLast4(worker.utr_number))
-  const [niMasked, setNiMasked] = useState(maskLast4(worker.ni_number))
+  const [bankSortMasked, setBankSortMasked] = useState(worker.bank_sort_masked)
+  const [bankAcctMasked, setBankAcctMasked] = useState(worker.bank_account_masked)
+  const [utrMasked, setUtrMasked] = useState(worker.utr_masked)
+  const [niMasked, setNiMasked] = useState(worker.ni_masked)
   const [updatedAt, setUpdatedAt] = useState(worker.payment_details_updated_at)
   const [updatedBy, setUpdatedBy] = useState(worker.payment_details_updated_by)
+  const [lastRevealAt, setLastRevealAt] = useState(worker.last_sensitive_reveal_at)
+  const [lastRevealBy, setLastRevealBy] = useState(worker.last_sensitive_reveal_by)
+
+  const [revealed, setRevealed] = useState(false)
+  const [revealBusy, setRevealBusy] = useState(false)
+  const [revealError, setRevealError] = useState<string | null>(null)
+  const [fullBankSort, setFullBankSort] = useState<string | null>(null)
+  const [fullBankAcct, setFullBankAcct] = useState<string | null>(null)
+  const [fullUtr, setFullUtr] = useState<string | null>(null)
+  const [fullNi, setFullNi] = useState<string | null>(null)
+  const hideTimerRef = useRef<number | null>(null)
 
   const [editing, setEditing] = useState(false)
   const [sortCode, setSortCode] = useState('')
@@ -320,6 +372,60 @@ function PaymentDetailsCard({ worker }: { worker: Worker }) {
   const [niNumber, setNiNumber] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const clearReveal = () => {
+    setRevealed(false)
+    setFullBankSort(null)
+    setFullBankAcct(null)
+    setFullUtr(null)
+    setFullNi(null)
+    setRevealError(null)
+    if (hideTimerRef.current != null) {
+      window.clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current != null) window.clearTimeout(hideTimerRef.current)
+    }
+  }, [])
+
+  const reveal = async () => {
+    setRevealBusy(true)
+    setRevealError(null)
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}/reveal`, { method: 'POST' })
+      const json = await res.json() as {
+        error?: string
+        bankSortCode?: string | null
+        bankAccountNumber?: string | null
+        utrNumber?: string | null
+        niNumber?: string | null
+        revealedAt?: string
+        revealedBy?: string
+      }
+      if (!res.ok) throw new Error(json.error ?? 'Could not reveal details.')
+
+      setFullBankSort(json.bankSortCode ?? null)
+      setFullBankAcct(json.bankAccountNumber ?? null)
+      setFullUtr(json.utrNumber ?? null)
+      setFullNi(json.niNumber ?? null)
+      setRevealed(true)
+      if (json.revealedAt) setLastRevealAt(json.revealedAt)
+      if (json.revealedBy) setLastRevealBy(json.revealedBy)
+
+      if (hideTimerRef.current != null) window.clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = window.setTimeout(() => {
+        clearReveal()
+      }, 60_000)
+    } catch (err) {
+      setRevealError(err instanceof Error ? err.message : 'Could not reveal details.')
+    } finally {
+      setRevealBusy(false)
+    }
+  }
 
   const resetForm = () => {
     setSortCode('')
@@ -398,6 +504,7 @@ function PaymentDetailsCard({ worker }: { worker: Worker }) {
       if (json.paymentDetailsUpdatedAt) setUpdatedAt(json.paymentDetailsUpdatedAt)
       if (json.paymentDetailsUpdatedBy) setUpdatedBy(json.paymentDetailsUpdatedBy)
 
+      clearReveal()
       resetForm()
       setEditing(false)
     } catch (err) {
@@ -407,39 +514,105 @@ function PaymentDetailsCard({ worker }: { worker: Worker }) {
     }
   }
 
-  const bankDisplay =
+  const bankMaskedDisplay =
     bankSortMasked && bankAcctMasked
       ? `${bankSortMasked} · ${bankAcctMasked}`
       : null
 
+  const sortCopyDigits = fullBankSort ? fullBankSort.replace(/\D/g, '') : null
+
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-      <div className="flex items-center gap-2">
-        <PoundSterling className="w-4 h-4 text-slate-500" />
-        <p className="font-semibold text-slate-800 text-sm">Payment details</p>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <PoundSterling className="w-4 h-4 text-slate-500" />
+          <p className="font-semibold text-slate-800 text-sm">Payment details</p>
+        </div>
+        {!editing && (
+          revealed ? (
+            <button
+              type="button"
+              onClick={clearReveal}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs
+                         font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              Hide
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={revealBusy}
+              onClick={() => void reveal()}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs
+                         font-semibold text-orange-700 bg-orange-50 hover:bg-orange-100
+                         disabled:opacity-50"
+            >
+              {revealBusy
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Eye className="w-3.5 h-3.5" />}
+              Reveal
+            </button>
+          )
+        )}
       </div>
 
       <p className="text-xs text-slate-500 leading-relaxed">
-        Correct bank, UTR or NI here when enrolment had a typo or the worker changed banks.
-        Fields stay blank while editing — existing numbers are never shown in full.
+        Values stay masked by default. Reveal to check enrolment or hand-key a payment —
+        every reveal is logged. Use Update to correct a typo (fields stay blank; nothing is pre-filled).
       </p>
 
       <div className="divide-y divide-gray-50">
-        <div className="flex items-start justify-between gap-3 py-2 text-sm">
-          <span className="text-slate-500">Bank</span>
-          {bankDisplay ? (
-            <span className="font-medium text-slate-800 text-right">{bankDisplay}</span>
-          ) : (
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-              Not on file
-            </span>
-          )}
-        </div>
-        {(showUtr || utrMasked) && (
-          <MaskedOrMissing label="UTR" value={utrMasked || null} />
+        {revealed ? (
+          <>
+            <DisplayOrMissing
+              label="Sort code"
+              revealed
+              display={fullBankSort}
+              copyValue={sortCopyDigits}
+            />
+            <DisplayOrMissing
+              label="Account number"
+              revealed
+              display={fullBankAcct}
+              copyValue={fullBankAcct}
+            />
+          </>
+        ) : (
+          <DisplayOrMissing
+            label="Bank"
+            revealed={false}
+            display={bankMaskedDisplay}
+          />
         )}
-        <MaskedOrMissing label="NI" value={niMasked || null} />
+        {(showUtr || utrMasked || fullUtr) && (
+          <DisplayOrMissing
+            label="UTR"
+            revealed={revealed}
+            display={revealed ? (fullUtr || null) : (utrMasked || null)}
+            copyValue={revealed ? fullUtr : null}
+          />
+        )}
+        <DisplayOrMissing
+          label="NI"
+          revealed={revealed}
+          display={revealed ? (fullNi || null) : (niMasked || null)}
+          copyValue={revealed ? fullNi : null}
+        />
       </div>
+
+      {revealError && (
+        <p className="text-sm text-red-600 flex items-start gap-1.5">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          {revealError}
+        </p>
+      )}
+
+      {lastRevealAt && lastRevealBy && (
+        <p className="text-xs text-slate-400">
+          Last revealed {fmtDate(lastRevealAt)} by {lastRevealBy}
+        </p>
+      )}
 
       {updatedAt && updatedBy && (
         <p className="text-xs text-slate-400">
@@ -451,6 +624,7 @@ function PaymentDetailsCard({ worker }: { worker: Worker }) {
         <button
           type="button"
           onClick={() => {
+            clearReveal()
             resetForm()
             setEditing(true)
           }}
