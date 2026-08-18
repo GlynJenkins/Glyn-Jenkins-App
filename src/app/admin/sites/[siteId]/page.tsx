@@ -46,6 +46,16 @@ export default async function AdminSitePage({
 
   const toolboxTalkCount = talkCountRows?.length ?? 0
 
+  const { data: auditRows } = await supabase
+    .from('site_audits')
+    .select('id, audit_date, status')
+    .eq('site_id', siteId)
+    .order('audit_date', { ascending: false })
+
+  const completedAudits = (auditRows ?? []).filter((a) => a.status === 'completed')
+  const siteAuditCount = completedAudits.length
+  const lastAuditDate = completedAudits[0]?.audit_date ?? null
+
   const { data: stages } = await supabase
     .from('site_stages')
     .select('id, stage_name, stage_order')
@@ -184,6 +194,26 @@ export default async function AdminSitePage({
             <p className="font-semibold text-slate-900">Toolbox talks</p>
             <p className="text-xs text-slate-500 mt-0.5">
               {toolboxTalkCount} talk{toolboxTalkCount === 1 ? '' : 's'} on this site
+            </p>
+          </div>
+          <span className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl shrink-0">
+            View
+          </span>
+        </Link>
+
+        <Link
+          href={`/admin/site-audits?siteId=${siteId}`}
+          className="flex items-center justify-between bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-orange-200 transition-colors"
+        >
+          <div>
+            <p className="font-semibold text-slate-900">Site Audits</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {siteAuditCount} completed
+              {lastAuditDate
+                ? ` · last ${new Date(lastAuditDate).toLocaleDateString('en-GB', {
+                    day: 'numeric', month: 'short', year: 'numeric',
+                  })}`
+                : ''}
             </p>
           </div>
           <span className="px-4 py-2 bg-slate-800 text-white text-xs font-semibold rounded-xl shrink-0">
