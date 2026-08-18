@@ -118,19 +118,27 @@ function resolvePayeeBank(
   row: RawLedgerRow,
   worker: { first_name: string; surname: string; bank_sort_code?: string | null; bank_account_number?: string | null },
 ) {
-  if (row.payee_sort_code && row.payee_account_number) {
-    return {
-      payeeSortCode:      row.payee_sort_code,
-      payeeAccountNumber: row.payee_account_number,
-    }
-  }
-
+  // Prefer live worker bank so admin corrections apply on the next Bank CSV export.
   const snap = buildLedgerPayeeSnapshot({
     first_name:           worker.first_name,
     surname:              worker.surname,
     bank_sort_code:       worker.bank_sort_code,
     bank_account_number:  worker.bank_account_number,
   })
+
+  if (snap.payee_sort_code && snap.payee_account_number) {
+    return {
+      payeeSortCode:      snap.payee_sort_code,
+      payeeAccountNumber: snap.payee_account_number,
+    }
+  }
+
+  if (row.payee_sort_code && row.payee_account_number) {
+    return {
+      payeeSortCode:      row.payee_sort_code,
+      payeeAccountNumber: row.payee_account_number,
+    }
+  }
 
   return {
     payeeSortCode:      snap.payee_sort_code,
