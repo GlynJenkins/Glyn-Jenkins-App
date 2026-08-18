@@ -347,3 +347,8 @@ alter table workers add column if not exists firesock_certificate_url text;
 
 -- 20. Date of birth at enrolment.
 alter table workers add column if not exists date_of_birth date;
+
+-- 21. Admin payment-details edit audit.
+alter table workers
+  add column if not exists payment_details_updated_at timestamptz,
+  add column if not exists payment_details_updated_by text;

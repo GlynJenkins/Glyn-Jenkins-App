@@ -4,6 +4,10 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { needsPortalLogin } from '@/lib/worker-access'
 import { parseDateOfBirth } from '@/lib/induction/date-of-birth'
+import {
+  parsePaymentDetailsUpdate,
+  type PaymentDetailsInput,
+} from '@/lib/induction/payment-details'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +24,17 @@ const ASSIGNABLE_ROLES = [
 
 type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]
 
+function adminDisplayName(
+  worker: { first_name: string; surname: string } | null,
+  userEmail: string | undefined,
+): string {
+  if (worker) {
+    const name = `${worker.first_name} ${worker.surname}`.trim()
+    if (name) return name
+  }
+  return userEmail?.trim() || 'Admin'
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ workerId: string }> }
@@ -33,19 +48,80 @@ export async function PATCH(
       role?:            string
       portalPassword?:  string
       dateOfBirth?:     string
+      paymentDetails?:  PaymentDetailsInput
     }
 
-    const { role, portalPassword, dateOfBirth: dateOfBirthRaw } = body
+    const { role, portalPassword, dateOfBirth: dateOfBirthRaw, paymentDetails } = body
     const updatingRole = typeof role === 'string'
     const updatingDob = typeof dateOfBirthRaw === 'string'
+    const updatingPayment = paymentDetails != null && typeof paymentDetails === 'object'
 
-    if (!updatingRole && !updatingDob) {
+    if (!updatingRole && !updatingDob && !updatingPayment) {
       return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
     }
 
     const supabase = createServiceClient()
 
-    if (updatingDob && !updatingRole) {
+    // ── Payment details only (write-only — never echo full stored values) ──
+    if (updatingPayment && !updatingRole && !updatingDob) {
+      const parsed = parsePaymentDetailsUpdate(paymentDetails)
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 })
+      }
+
+      const { data: worker, error: fetchError } = await supabase
+        .from('workers')
+        .select('id')
+        .eq('id', workerId)
+        .maybeSingle()
+
+      if (fetchError || !worker) {
+        return NextResponse.json({ error: 'Worker not found.' }, { status: 404 })
+      }
+
+      const updatedAt = new Date().toISOString()
+      const updatedBy = adminDisplayName(auth.worker, auth.user.email)
+
+      const { error: updateError } = await supabase
+        .from('workers')
+        .update({
+          ...parsed.values,
+          payment_details_updated_at: updatedAt,
+          payment_details_updated_by: updatedBy,
+          updated_at:                 updatedAt,
+        })
+        .eq('id', workerId)
+
+      if (updateError) {
+        if (/payment_details_updated/i.test(updateError.message) || updateError.code === 'PGRST204') {
+          const retry = await supabase
+            .from('workers')
+            .update({ ...parsed.values, updated_at: updatedAt })
+            .eq('id', workerId)
+          if (retry.error) {
+            return apiError('api/admin/workers/[workerId]', retry.error)
+          }
+          return NextResponse.json({
+            success: true,
+            masks: parsed.masks,
+            paymentDetailsUpdatedAt: null,
+            paymentDetailsUpdatedBy: null,
+            note: 'Saved without audit columns — run the payment_details migration.',
+          })
+        }
+        return apiError('api/admin/workers/[workerId]', updateError)
+      }
+
+      return NextResponse.json({
+        success: true,
+        masks: parsed.masks,
+        paymentDetailsUpdatedAt: updatedAt,
+        paymentDetailsUpdatedBy: updatedBy,
+      })
+    }
+
+    // ── DOB only ───────────────────────────────────────────────
+    if (updatingDob && !updatingRole && !updatingPayment) {
       const dob = parseDateOfBirth(dateOfBirthRaw)
       if (!dob.ok) {
         return NextResponse.json({ error: dob.error }, { status: 400 })
