@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -9,7 +9,7 @@ type Params = { params: Promise<{ auditId: string }> }
 
 /** POST — add item to draft audit. */
 export async function POST(request: NextRequest, { params }: Params) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

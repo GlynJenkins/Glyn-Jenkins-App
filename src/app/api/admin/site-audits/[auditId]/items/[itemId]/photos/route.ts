@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isImageUploadFile } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
@@ -13,7 +13,7 @@ type Params = { params: Promise<{ auditId: string; itemId: string }> }
 
 /** POST — upload photo for a draft item. Optional ?photoId= for DELETE. */
 export async function POST(request: NextRequest, { params }: Params) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
 /** DELETE ?photoId= — remove photo from draft item. */
 export async function DELETE(request: NextRequest, { params }: Params) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

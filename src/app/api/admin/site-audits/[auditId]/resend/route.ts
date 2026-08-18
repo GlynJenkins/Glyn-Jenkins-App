@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
-import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { loadSiteAuditPdfBuffer } from '@/lib/site-audits/load-site-audit-pdf'
 import { issueSiteAuditToRecipients } from '@/lib/site-audits/send-site-audit'
@@ -13,7 +13,7 @@ type Params = { params: Promise<{ auditId: string }> }
 
 /** Re-issue completed audit PDF to additional / failed recipients. */
 export async function POST(request: NextRequest, { params }: Params) {
-  const auth = await verifyAdminApiAccess()
+  const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {

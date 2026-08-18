@@ -61,6 +61,10 @@ export function canAccessFiresock(role: string): boolean {
   return canAccessManagementArea(role)
 }
 
+export function canAccessSiteAudits(role: string): boolean {
+  return canAccessManagementArea(role)
+}
+
 export function canViewHolidays(role: string): boolean {
   return canAccessManagementArea(role)
 }

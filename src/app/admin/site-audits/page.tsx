@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import SiteAuditsListClient from './_components/SiteAuditsListClient'
 
@@ -11,7 +11,7 @@ export default async function SiteAuditsPage({
 }: {
   searchParams: Promise<{ siteId?: string }>
 }) {
-  await requireAdminAccess()
+  await requireManagementAreaAccess()
   const { siteId } = await searchParams
 
   const supabase = createServiceClient()

@@ -70,6 +70,12 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
             label:       'Toolbox Talks',
             description: 'Safety talks, signatures & PDFs',
           },
+          {
+            href:        '/admin/site-audits',
+            icon:        FileSearch,
+            label:       'Site Audits',
+            description: 'Walk sites, actions & PDFs',
+          },
         ],
       },
       {

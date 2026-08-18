@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { requireAdminAccess } from '@/lib/auth/portal-access'
+import { requireManagementAreaAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchDistinctPlotNumbers } from '@/lib/qa/queries'
 import { needsPortalLogin } from '@/lib/worker-access'
@@ -13,7 +13,7 @@ export default async function SiteAuditPage({
 }: {
   params: Promise<{ auditId: string }>
 }) {
-  await requireAdminAccess()
+  await requireManagementAreaAccess()
   const { auditId } = await params
   const supabase = createServiceClient()
 

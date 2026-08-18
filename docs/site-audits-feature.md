@@ -1,13 +1,13 @@
 # Feature Brief — Site Audits (weekly/fortnightly site walks)
 
-**Goal:** When Management (and later Site Supervisor / Contracts Manager) visits a site, they walk the plots in build and record a **Site Audit**: for each item needing action — the **plot number**, a **description**, and **photos**. The finished audit is a **branded, date-stamped PDF** that can be downloaded and shared with the gangs, is stored against the site, **and appears in the foreman portal** for that site's assigned foremen. Each audit is a standalone snapshot report (no open/closed tracking — that can be bolted on later if wanted).
+**Goal:** When Management, Site Supervisor, or Contracts Manager visits a site, they walk the plots in build and record a **Site Audit**: for each item needing action — the **plot number**, a **description**, and **photos**. The finished audit is a **branded, date-stamped PDF** that can be downloaded and shared with the gangs, is stored against the site, **and appears in the foreman portal** for that site's assigned foremen. Each audit is a standalone snapshot report (no open/closed tracking — that can be bolted on later if wanted).
 
 **This complements Quality Checks:** stage inspections sign off a specific plot/stage against a checklist; a Site Audit is a free-roaming walk of the whole site capturing anything that needs actioning.
 
 **Repo context:** Next.js 15 App Router + Supabase. Reuse existing patterns throughout:
 - Photo capture/upload as used in variations & QA inspections (compression before upload if `prepareImage` is built — audits mean many photos on a phone).
 - PDF generation — same library and house style as the QA inspection / toolbox talk PDFs (slate header band, orange accents, **white plate behind the logo** per `docs/toolbox-talks-fixes.md`).
-- Guards: `requireAdminAccess` / `verifyAdminApiAccess` now; supervisor guard variants when those roles land. Foreman side: `requireForemanAccess`, and only for **their assigned sites**.
+- Guards: `requireManagementAreaAccess` / `verifyManagementAreaApiAccess` (admin, management, contracts manager, site supervisor). Foreman side: `requireForemanAccess`, and only for **their assigned sites**.
 - Storage: private bucket, `site-audits/{auditId}/...`, signed URLs.
 
 **How to use:** save as `docs/site-audits-feature.md`, do the tasks in order, commit each separately.
@@ -68,7 +68,7 @@ alter table site_audit_photos enable row level security;
 
 ## Task 2 — API
 
-Admin routes under `/api/admin/site-audits` (guard `verifyAdminApiAccess`):
+Admin routes under `/api/admin/site-audits` (guard `verifyManagementAreaApiAccess`):
 
 - `GET ?siteId=` — list a site's audits (date, auditor, item count, pdf ready).
 - `POST` — create a draft audit `{ siteId }` → returns the audit id.
