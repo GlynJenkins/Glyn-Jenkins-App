@@ -8,8 +8,18 @@ import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 type Params = { params: Promise<{ auditId: string; itemId: string }> }
+
+function asUploadFile(value: FormDataEntryValue | null): File | null {
+  if (!value || typeof value === 'string') return null
+  // Node / undici may hand back File or a Blob-like upload part.
+  const file = value as File
+  if (typeof file.arrayBuffer !== 'function' || typeof file.size !== 'number') return null
+  if (file.size <= 0) return null
+  return file
+}
 
 /** POST — upload photo for a draft item. Optional ?photoId= for DELETE. */
 export async function POST(request: NextRequest, { params }: Params) {
@@ -38,8 +48,17 @@ export async function POST(request: NextRequest, { params }: Params) {
       .maybeSingle()
     if (!item) return NextResponse.json({ error: 'Item not found.' }, { status: 404 })
 
-    const formData = await request.formData()
-    const file = formData.get('photo') as File | null
+    let formData: FormData
+    try {
+      formData = await request.formData()
+    } catch {
+      return NextResponse.json(
+        { error: 'Photo was too large to upload. Try one photo at a time.' },
+        { status: 413 },
+      )
+    }
+
+    const file = asUploadFile(formData.get('photo'))
     if (!file || !isImageUploadFile(file)) {
       return NextResponse.json({ error: 'A photo is required.' }, { status: 400 })
     }
@@ -58,12 +77,12 @@ export async function POST(request: NextRequest, { params }: Params) {
     const path = `site-audits/${auditId}/${itemId}/${randomUUID()}.jpg`
     const { error: uploadError } = await supabase.storage
       .from('worker-documents')
-      .upload(path, normalized.buffer, {
+      .upload(path, new Uint8Array(normalized.buffer), {
         contentType: normalized.mime,
         upsert: false,
       })
     if (uploadError) {
-      return apiError('api/admin/site-audits photos upload', uploadError)
+      return apiError('api/admin/site-audits photos upload', uploadError, 'Photo upload failed.')
     }
 
     const { data: photo, error } = await supabase
@@ -74,7 +93,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (error || !photo) {
       await supabase.storage.from('worker-documents').remove([path])
-      return apiError('api/admin/site-audits photos insert', error)
+      return apiError('api/admin/site-audits photos insert', error, 'Could not save photo.')
     }
 
     const { data: signed } = await supabase.storage
@@ -88,7 +107,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       },
     })
   } catch (err) {
-    return apiError('api/admin/site-audits photos POST', err)
+    return apiError('api/admin/site-audits photos POST', err, 'Photo upload failed.')
   }
 }
 

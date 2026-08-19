@@ -9,6 +9,28 @@ import {
 import { prepareVariationPhotoForUpload } from '@/lib/qa/prepare-photo-upload'
 import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
 
+async function readApiError(res: Response, fallback: string): Promise<string> {
+  if (res.status === 413) {
+    return 'Photo was too large to upload. Try one photo at a time.'
+  }
+  const json = await res.json().catch(() => null) as { error?: string } | null
+  return json?.error ?? fallback
+}
+
+async function uploadAuditPhoto(auditId: string, itemId: string, file: File) {
+  const prepared = await prepareVariationPhotoForUpload(file)
+  const fd = new FormData()
+  fd.append('photo', prepared, prepared.name || 'photo.jpg')
+  const res = await fetch(`/api/admin/site-audits/${auditId}/items/${itemId}/photos`, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!res.ok) throw new Error(await readApiError(res, 'Photo upload failed.'))
+  const json = await res.json().catch(() => null) as { photo?: { id: string; url: string | null } } | null
+  if (!json?.photo?.id) throw new Error('Photo upload failed.')
+  return json.photo
+}
+
 type Photo = { id: string; url: string | null }
 type Item = {
   id: string
@@ -134,18 +156,10 @@ export default function SiteAuditClient({
 
       for (const file of pendingPhotos) {
         setUploadingPhoto(file.name)
-        const prepared = await prepareVariationPhotoForUpload(file)
-        const fd = new FormData()
-        fd.append('photo', prepared)
-        const up = await fetch(
-          `/api/admin/site-audits/${audit.id}/items/${newItem.id}/photos`,
-          { method: 'POST', body: fd },
-        )
-        const upJson = await up.json()
-        if (!up.ok) throw new Error(upJson.error ?? 'Photo upload failed.')
+        const photo = await uploadAuditPhoto(audit.id, newItem.id, file)
         newItem = {
           ...newItem,
-          photos: [...newItem.photos, { id: upJson.photo.id, url: upJson.photo.url }],
+          photos: [...newItem.photos, { id: photo.id, url: photo.url }],
         }
       }
 
@@ -204,24 +218,17 @@ export default function SiteAuditClient({
     for (const file of Array.from(files)) {
       setUploadingPhoto(file.name)
       try {
-        const prepared = await prepareVariationPhotoForUpload(file)
-        const fd = new FormData()
-        fd.append('photo', prepared)
-        const res = await fetch(
-          `/api/admin/site-audits/${audit.id}/items/${itemId}/photos`,
-          { method: 'POST', body: fd },
-        )
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error ?? 'Photo upload failed.')
+        const photo = await uploadAuditPhoto(audit.id, itemId, file)
         setItems((prev) =>
           prev.map((i) =>
             i.id === itemId
-              ? { ...i, photos: [...i.photos, { id: json.photo.id, url: json.photo.url }] }
+              ? { ...i, photos: [...i.photos, { id: photo.id, url: photo.url }] }
               : i,
           ),
         )
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Photo upload failed.')
+        break
       }
     }
     setUploadingPhoto(null)
@@ -597,8 +604,7 @@ export default function SiteAuditClient({
             Add photos
             <input
               type="file"
-              accept="image/*"
-              capture="environment"
+              accept="image/*,.heic,.heif"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -701,8 +707,7 @@ export default function SiteAuditClient({
                       <ImagePlus className="w-5 h-5" />
                       <input
                         type="file"
-                        accept="image/*"
-                        capture="environment"
+                        accept="image/*,.heic,.heif"
                         multiple
                         className="hidden"
                         onChange={(e) => {

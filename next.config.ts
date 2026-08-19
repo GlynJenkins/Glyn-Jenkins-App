@@ -14,10 +14,12 @@ const withPWA = withPWAInit({
     navigateFallbackDenylist: [/^\/admin/, /^\/api/, /^\/dashboard/, /^\/foreman/, /^\/login/],
     runtimeCaching: [
       {
-        urlPattern: /\/admin\//,
+        // Only HTML admin pages — never /api/admin/* (photo uploads, etc.).
+        urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/admin'),
         handler: 'NetworkFirst',
+        method: 'GET',
         options: {
-          cacheName: 'admin-pages',
+          cacheName: 'admin-pages-v2',
           networkTimeoutSeconds: 10,
           expiration: { maxEntries: 16, maxAgeSeconds: 300 },
         },
