@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { ClipboardList, Download } from 'lucide-react'
+import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
 
 type Row = {
   id: string
@@ -20,15 +22,23 @@ export default function ForemanAuditsList({
   siteId: string
   audits: Row[]
 }) {
+  const [error, setError] = useState<string | null>(null)
+
   const fmt = (iso: string) =>
     new Date(iso).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'short', year: 'numeric',
     })
 
   const download = async (id: string) => {
-    const res = await fetch(`/api/foreman/site-audits/${id}/pdf`)
-    const json = await res.json()
-    if (res.ok && json.url) window.open(json.url, '_blank', 'noopener,noreferrer')
+    setError(null)
+    try {
+      const res = await fetch(`/api/foreman/site-audits/${id}/pdf`)
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.url) throw new Error(json?.error ?? 'Download failed.')
+      openPdfDownload(json.url, json.filename ?? 'site-audit.pdf')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.')
+    }
   }
 
   if (!audits.length) {
@@ -37,6 +47,11 @@ export default function ForemanAuditsList({
 
   return (
     <div className="space-y-3">
+      {error && (
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600">
+          {error}
+        </div>
+      )}
       {audits.map((a) => (
         <div key={a.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <div className="flex items-start gap-3">

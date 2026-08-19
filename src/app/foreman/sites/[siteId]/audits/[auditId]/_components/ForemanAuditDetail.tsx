@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Download, Loader2 } from 'lucide-react'
+import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
 
 type Item = {
   id: string
@@ -51,9 +52,14 @@ export default function ForemanAuditDetail({
   }, [auditId])
 
   const download = async () => {
-    const res = await fetch(`/api/foreman/site-audits/${auditId}/pdf`)
-    const json = await res.json()
-    if (res.ok && json.url) window.open(json.url, '_blank', 'noopener,noreferrer')
+    try {
+      const res = await fetch(`/api/foreman/site-audits/${auditId}/pdf`)
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.url) throw new Error(json?.error ?? 'Download failed.')
+      openPdfDownload(json.url, json.filename ?? 'site-audit.pdf')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed.')
+    }
   }
 
   const fmt = (iso: string) =>

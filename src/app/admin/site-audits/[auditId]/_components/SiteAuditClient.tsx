@@ -7,6 +7,7 @@ import {
   Pencil, Share2, Trash2, X, Download, ImagePlus,
 } from 'lucide-react'
 import { prepareVariationPhotoForUpload } from '@/lib/qa/prepare-photo-upload'
+import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
 
 type Photo = { id: string; url: string | null }
 type Item = {
@@ -290,32 +291,40 @@ export default function SiteAuditClient({
     }
   }
 
+  const fetchPdfLink = async () => {
+    const res = await fetch(`/api/admin/site-audits/${audit.id}/pdf`)
+    const json = await res.json().catch(() => null)
+    if (!res.ok || !json?.url) throw new Error(json?.error ?? 'Download failed.')
+    return json as { url: string; filename?: string }
+  }
+
   const downloadPdf = async () => {
     try {
-      const res = await fetch(`/api/admin/site-audits/${audit.id}/pdf`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Download failed.')
-      if (navigator.share && json.url) {
-        try {
-          const fileRes = await fetch(json.url)
-          const blob = await fileRes.blob()
-          const file = new File([blob], json.filename || 'site-audit.pdf', {
-            type: 'application/pdf',
-          })
-          if (navigator.canShare?.({ files: [file] })) {
-            await navigator.share({
-              title: `Site Audit — ${audit.siteName}`,
-              files: [file],
-            })
-            return
-          }
-        } catch {
-          /* fall through to open */
-        }
-      }
-      window.open(json.url, '_blank', 'noopener,noreferrer')
+      const json = await fetchPdfLink()
+      openPdfDownload(json.url, json.filename ?? 'site-audit.pdf')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed.')
+    }
+  }
+
+  const sharePdf = async () => {
+    try {
+      const json = await fetchPdfLink()
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: `Site Audit — ${audit.siteName}`,
+            url:   json.url,
+          })
+          return
+        } catch (err) {
+          // User cancelled share sheet — don't fall through as an error.
+          if (err instanceof Error && err.name === 'AbortError') return
+        }
+      }
+      openPdfDownload(json.url, json.filename ?? 'site-audit.pdf')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Share failed.')
     }
   }
 
@@ -410,7 +419,7 @@ export default function SiteAuditClient({
           </button>
           <button
             type="button"
-            onClick={() => void downloadPdf()}
+            onClick={() => void sharePdf()}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-orange-50
                        text-orange-700 text-sm font-semibold"
           >

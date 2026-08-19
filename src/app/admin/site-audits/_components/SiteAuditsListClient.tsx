@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ClipboardList, Download, Loader2, Plus, Trash2 } from 'lucide-react'
+import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
 
 type AuditRow = {
   id: string
@@ -66,9 +67,9 @@ export default function SiteAuditsListClient({
   const downloadPdf = async (id: string) => {
     try {
       const res = await fetch(`/api/admin/site-audits/${id}/pdf`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Download failed.')
-      window.open(json.url, '_blank', 'noopener,noreferrer')
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.url) throw new Error(json?.error ?? 'Download failed.')
+      openPdfDownload(json.url, json.filename ?? 'site-audit.pdf')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed.')
     }
