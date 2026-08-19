@@ -5,6 +5,7 @@ import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isImageUploadFile } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
+import { assertAuditEditable } from '@/lib/site-audits/assert-editable'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,7 +22,7 @@ function asUploadFile(value: FormDataEntryValue | null): File | null {
   return file
 }
 
-/** POST — upload photo for a draft item. Optional ?photoId= for DELETE. */
+/** POST — upload photo for an item. Optional ?photoId= for DELETE. */
 export async function POST(request: NextRequest, { params }: Params) {
   const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
@@ -36,9 +37,8 @@ export async function POST(request: NextRequest, { params }: Params) {
       .eq('id', auditId)
       .maybeSingle()
     if (!audit) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
-    if (audit.status !== 'draft') {
-      return NextResponse.json({ error: 'Only draft audits can be edited.' }, { status: 400 })
-    }
+    const blocked = assertAuditEditable(audit.status)
+    if (blocked) return blocked
 
     const { data: item } = await supabase
       .from('site_audit_items')
@@ -130,9 +130,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       .eq('id', auditId)
       .maybeSingle()
     if (!audit) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
-    if (audit.status !== 'draft') {
-      return NextResponse.json({ error: 'Only draft audits can be edited.' }, { status: 400 })
-    }
+    const blocked = assertAuditEditable(audit.status)
+    if (blocked) return blocked
 
     const { data: photo } = await supabase
       .from('site_audit_photos')

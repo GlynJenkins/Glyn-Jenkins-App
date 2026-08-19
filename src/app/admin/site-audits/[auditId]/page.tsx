@@ -10,11 +10,15 @@ export const dynamic = 'force-dynamic'
 
 export default async function SiteAuditPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ auditId: string }>
+  searchParams: Promise<{ edit?: string }>
 }) {
   await requireManagementAreaAccess()
   const { auditId } = await params
+  const { edit } = await searchParams
+  const startEditing = edit === '1' || edit === 'true'
   const supabase = createServiceClient()
 
   const { data: audit } = await supabase
@@ -110,7 +114,11 @@ export default async function SiteAuditPage({
             ← Site audits
           </Link>
           <h1 className="text-xl font-bold text-white mt-1">
-            {audit.status === 'draft' ? 'Site audit walk' : 'Site audit'}
+            {audit.status === 'draft'
+              ? 'Site audit walk'
+              : startEditing
+                ? 'Edit site audit'
+                : 'Site audit'}
           </h1>
           <p className="text-slate-400 text-sm mt-0.5">{site.name}</p>
         </div>
@@ -151,6 +159,7 @@ export default async function SiteAuditPage({
           plotNumbers={plotNumbers}
           assignedForemen={assignedWorkers}
           otherRecipients={otherRecipients}
+          startEditing={audit.status === 'completed' && startEditing}
         />
       </main>
     </div>

@@ -100,7 +100,7 @@ Foreman routes (guard `verifyForemanApiAccess`, assigned sites only):
 - Items list grouped by plot, each showing description + photo thumbnails.
 - **"Complete audit"** → optional general notes ("Overall site comments — housekeeping, standout good work, etc."), then a **"Send to foremen"** step: the site's **assigned foremen pre-ticked** (untickable, plus tick any other portal-login worker), so issuing the report sends it straight to the right people → confirm → PDF generates and sends → success screen showing delivery status per recipient ("Sent to Dave Jones ✓ · Retry for Sam Price"), with **Download PDF** / **Share** (Web Share API on mobile for WhatsApp) for manual sharing on top.
 
-**3c. Completed view:** read-only audit with items, photos (tap to enlarge), notes, Download PDF, and a **"Sent to"** list (from `site_audit_recipients`) with a **"Send to more people"** button (the resend route).
+**3c. Completed view:** audit with items, photos (tap to enlarge), notes, Download PDF, **Edit audit** (add/change/remove items & photos, update notes, then **Save & update PDF**), and a **"Sent to"** list (from `site_audit_recipients`) with a **"Send to more people"** button (the resend route).
 
 ## Task 4 — The branded PDF
 

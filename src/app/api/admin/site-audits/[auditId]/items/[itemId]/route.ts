@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { assertAuditEditable } from '@/lib/site-audits/assert-editable'
 
 export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ auditId: string; itemId: string }> }
 
-async function requireDraftItem(auditId: string, itemId: string) {
+async function requireEditableItem(auditId: string, itemId: string) {
   const supabase = createServiceClient()
   const { data: audit } = await supabase
     .from('site_audits')
@@ -15,11 +16,8 @@ async function requireDraftItem(auditId: string, itemId: string) {
     .eq('id', auditId)
     .maybeSingle()
   if (!audit) return { error: NextResponse.json({ error: 'Audit not found.' }, { status: 404 }) }
-  if (audit.status !== 'draft') {
-    return {
-      error: NextResponse.json({ error: 'Only draft audits can be edited.' }, { status: 400 }),
-    }
-  }
+  const blocked = assertAuditEditable(audit.status)
+  if (blocked) return { error: blocked }
   const { data: item } = await supabase
     .from('site_audit_items')
     .select('id, audit_id')
@@ -30,14 +28,14 @@ async function requireDraftItem(auditId: string, itemId: string) {
   return { supabase, item }
 }
 
-/** PATCH — edit item while draft. */
+/** PATCH — edit item on a draft or completed audit. */
 export async function PATCH(request: NextRequest, { params }: Params) {
   const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {
     const { auditId, itemId } = await params
-    const ctx = await requireDraftItem(auditId, itemId)
+    const ctx = await requireEditableItem(auditId, itemId)
     if ('error' in ctx) return ctx.error
 
     const body = await request.json() as { plotNumber?: string; description?: string }
@@ -72,14 +70,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 }
 
-/** DELETE — remove item + photos while draft. */
+/** DELETE — remove item + photos from a draft or completed audit. */
 export async function DELETE(_request: NextRequest, { params }: Params) {
   const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
 
   try {
     const { auditId, itemId } = await params
-    const ctx = await requireDraftItem(auditId, itemId)
+    const ctx = await requireEditableItem(auditId, itemId)
     if ('error' in ctx) return ctx.error
 
     const { data: photos } = await ctx.supabase

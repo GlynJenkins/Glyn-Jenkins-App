@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { assertAuditEditable } from '@/lib/site-audits/assert-editable'
 
 export const dynamic = 'force-dynamic'
 
 type Params = { params: Promise<{ auditId: string }> }
 
-/** POST — add item to draft audit. */
+/** POST — add item to a draft or completed audit. */
 export async function POST(request: NextRequest, { params }: Params) {
   const auth = await verifyManagementAreaApiAccess()
   if (!auth.ok) return auth.response
@@ -23,9 +24,8 @@ export async function POST(request: NextRequest, { params }: Params) {
       .maybeSingle()
 
     if (!audit) return NextResponse.json({ error: 'Audit not found.' }, { status: 404 })
-    if (audit.status !== 'draft') {
-      return NextResponse.json({ error: 'Only draft audits can be edited.' }, { status: 400 })
-    }
+    const blocked = assertAuditEditable(audit.status)
+    if (blocked) return blocked
 
     const body = await request.json() as { plotNumber?: string; description?: string }
     const plotNumber = body.plotNumber?.trim() ?? ''

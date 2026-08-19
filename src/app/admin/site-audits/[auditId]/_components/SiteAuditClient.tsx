@@ -58,6 +58,7 @@ export default function SiteAuditClient({
   plotNumbers,
   assignedForemen,
   otherRecipients,
+  startEditing = false,
 }: {
   audit: {
     id: string
@@ -75,9 +76,12 @@ export default function SiteAuditClient({
   plotNumbers: string[]
   assignedForemen: WorkerOpt[]
   otherRecipients: WorkerOpt[]
+  startEditing?: boolean
 }) {
   const router = useRouter()
   const isDraft = audit.status === 'draft'
+  const [editing, setEditing] = useState(startEditing && !isDraft)
+  const [savingUpdate, setSavingUpdate] = useState(false)
 
   const [items, setItems] = useState(initialItems)
   const [recipients, setRecipients] = useState(initialRecipients)
@@ -335,8 +339,38 @@ export default function SiteAuditClient({
     }
   }
 
+  const saveCompletedEdits = async () => {
+    setError(null)
+    if (items.length < 1) {
+      setError('Add at least one item — or if the site was clean, add a single item saying so.')
+      return
+    }
+    setSavingUpdate(true)
+    try {
+      const res = await fetch(`/api/admin/site-audits/${audit.id}/refresh-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generalNotes: notes }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(json?.error ?? 'Could not update PDF.')
+      setEditing(false)
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update PDF.')
+    } finally {
+      setSavingUpdate(false)
+    }
+  }
+
+  const cancelEditing = () => {
+    setEditing(false)
+    setError(null)
+    router.refresh()
+  }
+
   // ── Completed / done view ──────────────────────────────────
-  if (!isDraft || step === 'done') {
+  if ((!isDraft && !editing) || (step === 'done' && !editing)) {
     return (
       <div className="space-y-4">
         <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-1">
@@ -347,9 +381,9 @@ export default function SiteAuditClient({
           <p className="font-semibold text-slate-900">
             {items.length} item{items.length === 1 ? '' : 's'}
           </p>
-          {audit.generalNotes && (
+          {(notes || audit.generalNotes) && (
             <p className="text-sm text-slate-600 pt-2 border-t border-gray-50 mt-2">
-              {audit.generalNotes}
+              {notes || audit.generalNotes}
             </p>
           )}
         </div>
@@ -415,6 +449,21 @@ export default function SiteAuditClient({
         )}
 
         <div className="flex flex-wrap gap-2">
+          {!isDraft && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(true)
+                setStep('walk')
+                setError(null)
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-orange-600
+                         text-white text-sm font-semibold"
+            >
+              <Pencil className="w-4 h-4" />
+              Edit audit
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void downloadPdf()}
@@ -556,6 +605,23 @@ export default function SiteAuditClient({
           {items.length} item{items.length === 1 ? '' : 's'}
         </p>
       </div>
+
+      {editing && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Editing completed audit</p>
+          <p className="text-xs text-amber-800">
+            Change items and photos below, update notes, then save to regenerate the PDF for the portal.
+          </p>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="Overall site comments…"
+            className="w-full px-3 py-2.5 rounded-xl border border-amber-200 text-sm outline-none
+                       focus:ring-2 focus:ring-orange-400 bg-white"
+          />
+        </div>
+      )}
 
       {/* Add item */}
       <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
@@ -746,13 +812,35 @@ export default function SiteAuditClient({
 
       <button
         type="button"
-        disabled={items.length === 0}
-        onClick={() => setStep('notes')}
-        className="w-full px-4 py-3 rounded-2xl bg-orange-600 text-white font-semibold text-sm
-                   disabled:opacity-40"
+        disabled={items.length === 0 || savingUpdate}
+        onClick={() => {
+          if (editing) void saveCompletedEdits()
+          else setStep('notes')
+        }}
+        className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
+                   bg-orange-600 text-white font-semibold text-sm disabled:opacity-40"
       >
-        Complete audit
+        {savingUpdate ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Updating PDF…
+          </>
+        ) : editing ? (
+          'Save & update PDF'
+        ) : (
+          'Complete audit'
+        )}
       </button>
+      {editing && (
+        <button
+          type="button"
+          disabled={savingUpdate}
+          onClick={cancelEditing}
+          className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600"
+        >
+          Cancel
+        </button>
+      )}
     </div>
   )
 }
