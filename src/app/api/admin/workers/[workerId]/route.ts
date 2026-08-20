@@ -9,6 +9,7 @@ import {
   parsePaymentDetailsUpdate,
   type PaymentDetailsInput,
 } from '@/lib/induction/payment-details'
+import { deleteWorkerPermanently } from '@/lib/workers/delete-worker'
 
 export const dynamic = 'force-dynamic'
 
@@ -294,6 +295,33 @@ export async function PATCH(
       previousRole:   worker.role,
       ...(updatingDob ? { dateOfBirth: updatePayload.date_of_birth } : {}),
     })
+  } catch (err) {
+    return apiError('api/admin/workers/[workerId]', err)
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ workerId: string }> },
+) {
+  const auth = await verifyAdminApiAccess()
+  if (!auth.ok) return auth.response
+
+  try {
+    const { workerId } = await params
+    const supabase = createServiceClient()
+    const result = await deleteWorkerPermanently(supabase, workerId, {
+      actingWorkerId: auth.worker?.id ?? null,
+    })
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.status ?? 400 },
+      )
+    }
+
+    return NextResponse.json({ success: true })
   } catch (err) {
     return apiError('api/admin/workers/[workerId]', err)
   }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   User, Phone, FileText, CheckCircle, XCircle,
-  Clock, ToggleLeft, ToggleRight, Loader2, ChevronRight,
+  Clock, ToggleLeft, ToggleRight, Loader2, ChevronRight, Trash2,
 } from 'lucide-react'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 import { isUnder18 } from '@/lib/induction/date-of-birth'
@@ -60,11 +60,13 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function WorkerCard({ worker, onStatusChange }: {
+function WorkerCard({ worker, onStatusChange, onDelete }: {
   worker: Worker
   onStatusChange: (id: string, status: string) => void
+  onDelete: (id: string) => Promise<void>
 }) {
   const [busy, startTransition] = useTransition()
+  const [deleting, setDeleting] = useState(false)
 
   const toggle = (newStatus: string) => {
     startTransition(() => onStatusChange(worker.id, newStatus))
@@ -76,6 +78,19 @@ function WorkerCard({ worker, onStatusChange }: {
   })
   const showFiresockGap = missingRequiredFiresock(worker)
   const under18 = isUnder18(worker.date_of_birth)
+
+  const handleDelete = async () => {
+    const ok = window.confirm(
+      `Permanently delete ${fullName}?\n\nThis removes their enrolment, portal login and documents. It cannot be undone.`,
+    )
+    if (!ok) return
+    setDeleting(true)
+    try {
+      await onDelete(worker.id)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
@@ -182,7 +197,7 @@ function WorkerCard({ worker, onStatusChange }: {
         {/* Inactive workers — reactivate */}
         {worker.status === 'inactive' && (
           <button
-            disabled={busy}
+            disabled={busy || deleting}
             onClick={() => toggle('active')}
             className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200
                        text-slate-700 text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
@@ -191,6 +206,18 @@ function WorkerCard({ worker, onStatusChange }: {
             Reactivate
           </button>
         )}
+
+        <button
+          type="button"
+          disabled={busy || deleting}
+          onClick={() => void handleDelete()}
+          className="flex items-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100
+                     text-red-700 text-sm font-medium rounded-xl border border-red-200
+                     transition-colors disabled:opacity-50"
+        >
+          {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          Delete
+        </button>
       </div>
     </div>
   )
@@ -231,6 +258,21 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
       router.refresh()
     } catch {
       setError('Could not update worker status. Please try again.')
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/workers/${id}`, { method: 'DELETE' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error ?? 'Failed to delete worker')
+
+      setWorkers((prev) => prev.filter((w) => w.id !== id))
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete worker. Please try again.')
+      throw err
     }
   }
 
@@ -313,6 +355,7 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
               key={worker.id}
               worker={worker}
               onStatusChange={handleStatusChange}
+              onDelete={handleDelete}
             />
           ))}
         </div>

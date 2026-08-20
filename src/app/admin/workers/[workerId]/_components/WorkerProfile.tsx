@@ -2,11 +2,12 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   User, Phone, FileText, Building2, MapPin,
   TrendingUp, Download, ChevronDown, ChevronUp,
   Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle, ShieldCheck,
-  Flame, Upload, AlertCircle, Eye, EyeOff, Copy,
+  Flame, Upload, AlertCircle, Eye, EyeOff, Copy, Trash2,
 } from 'lucide-react'
 import { needsPortalLogin, isEmployedContractRole } from '@/lib/worker-access'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
@@ -766,6 +767,13 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
   const [addressError, setAddressError] = useState<string | null>(null)
   const [addressEditing, setAddressEditing] = useState(!worker.home_address)
 
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const router = useRouter()
+
   const [role,            setRole]            = useState(worker.role)
   const [portalPassword,  setPortalPassword]  = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -940,6 +948,25 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
       setAddressError(err instanceof Error ? err.message : 'Could not save home address.')
     } finally {
       setAddressBusy(false)
+    }
+  }
+
+  const fullName = `${worker.first_name} ${worker.surname}`.trim()
+  const deleteReady = deleteConfirm.trim().toLowerCase() === fullName.toLowerCase()
+
+  const deleteWorker = async () => {
+    if (!deleteReady) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}`, { method: 'DELETE' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error ?? 'Could not delete worker.')
+      router.push('/admin/workers')
+      router.refresh()
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Could not delete worker.')
+      setDeleteBusy(false)
     }
   }
 
@@ -1549,6 +1576,72 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
             {ledger.map((entry) => (
               <LedgerRow key={entry.id} entry={entry} />
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Danger zone — permanent delete */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-red-100 space-y-3">
+        <div className="flex items-center gap-2">
+          <Trash2 className="w-4 h-4 text-red-500" />
+          <p className="text-sm font-semibold text-red-700">Delete worker</p>
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Permanently removes this enrolment, portal login and uploaded documents.
+          Use this to clear test accounts. This cannot be undone.
+        </p>
+        {!deleteOpen ? (
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteOpen(true)
+              setDeleteConfirm('')
+              setDeleteError(null)
+            }}
+            className="px-4 py-2 rounded-xl text-sm font-medium border border-red-200
+                       bg-red-50 text-red-700 hover:bg-red-100"
+          >
+            Delete permanently…
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <label className="text-xs text-slate-500 block">
+              Type <span className="font-semibold text-slate-700">{fullName}</span> to confirm
+            </label>
+            <input
+              type="text"
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              autoComplete="off"
+              className="w-full px-3 py-2 border border-red-200 rounded-xl text-sm
+                         outline-none focus:ring-2 focus:ring-red-300"
+            />
+            {deleteError && <p className="text-xs text-red-600">{deleteError}</p>}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={deleteBusy || !deleteReady}
+                onClick={() => void deleteWorker()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm
+                           font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Delete forever
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => {
+                  setDeleteOpen(false)
+                  setDeleteConfirm('')
+                  setDeleteError(null)
+                }}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600
+                           border border-gray-200 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
       </div>
