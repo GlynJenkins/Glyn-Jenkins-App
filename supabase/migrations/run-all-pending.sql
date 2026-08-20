@@ -425,3 +425,11 @@ alter table site_audits enable row level security;
 alter table site_audit_items enable row level security;
 alter table site_audit_photos enable row level security;
 alter table site_audit_views enable row level security;
+
+-- 24. Foreman marks site audit as done (actioned).
+alter table site_audit_views
+  add column if not exists completed_at timestamptz;
+
+create index if not exists idx_site_audit_views_completed
+  on site_audit_views (worker_id, completed_at)
+  where completed_at is not null;

@@ -103,6 +103,29 @@ export default async function SiteAuditPage({
       role: w.role,
     }))
 
+  const assignedWorkerIds = assignedWorkers.map((w) => w.id)
+  const { data: foremanViews } = assignedWorkerIds.length
+    ? await supabase
+        .from('site_audit_views')
+        .select('worker_id, seen_at, completed_at')
+        .eq('audit_id', auditId)
+        .in('worker_id', assignedWorkerIds)
+    : { data: [] as { worker_id: string; seen_at: string; completed_at: string | null }[] }
+
+  const viewByWorker = new Map(
+    (foremanViews ?? []).map((v) => [v.worker_id, v]),
+  )
+  const foremanActionStatus = assignedWorkers.map((w) => {
+    const view = viewByWorker.get(w.id)
+    return {
+      workerId:   w.id,
+      workerName: w.name,
+      done:       !!view?.completed_at,
+      doneAt:     view?.completed_at ?? null,
+      seen:       !!view?.seen_at,
+    }
+  })
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-slate-900 px-5 pt-12 pb-6">
@@ -159,6 +182,7 @@ export default async function SiteAuditPage({
           plotNumbers={plotNumbers}
           assignedForemen={assignedWorkers}
           otherRecipients={otherRecipients}
+          foremanActionStatus={foremanActionStatus}
           startEditing={audit.status === 'completed' && startEditing}
         />
       </main>

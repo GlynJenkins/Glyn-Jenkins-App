@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { ClipboardList, Download } from 'lucide-react'
+import { CheckCircle2, ClipboardList, Download } from 'lucide-react'
 import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
 
 type Row = {
@@ -13,6 +13,7 @@ type Row = {
   itemCount: number
   pdfReady: boolean
   unseen: boolean
+  done: boolean
 }
 
 export default function ForemanAuditsList({
@@ -55,14 +56,31 @@ export default function ForemanAuditsList({
       {audits.map((a) => (
         <div key={a.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 relative">
-              <ClipboardList className="w-5 h-5 text-slate-500" />
-              {a.unseen && (
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 relative ${
+              a.done ? 'bg-emerald-50' : 'bg-slate-100'
+            }`}>
+              {a.done
+                ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                : <ClipboardList className="w-5 h-5 text-slate-500" />}
+              {a.unseen && !a.done && (
                 <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-orange-500" />
               )}
             </div>
-            <div>
-              <p className="font-semibold text-slate-900">{fmt(a.auditDate)}</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-semibold text-slate-900">{fmt(a.auditDate)}</p>
+                {a.done ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5
+                                   rounded bg-emerald-100 text-emerald-700">
+                    Done
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5
+                                   rounded bg-amber-100 text-amber-800">
+                    To do
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500">
                 {a.auditedByName}
                 {a.auditedByRole ? ` · ${a.auditedByRole}` : ''}

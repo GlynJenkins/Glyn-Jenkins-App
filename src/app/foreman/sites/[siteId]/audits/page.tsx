@@ -40,11 +40,14 @@ export default async function ForemanSiteAuditsPage({
   const { data: views } = auditIds.length
     ? await supabase
         .from('site_audit_views')
-        .select('audit_id')
+        .select('audit_id, completed_at')
         .eq('worker_id', worker.id)
         .in('audit_id', auditIds)
-    : { data: [] as { audit_id: string }[] }
+    : { data: [] as { audit_id: string; completed_at: string | null }[] }
   const seen = new Set((views ?? []).map((v) => v.audit_id))
+  const done = new Set(
+    (views ?? []).filter((v) => !!v.completed_at).map((v) => v.audit_id),
+  )
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -68,6 +71,7 @@ export default async function ForemanSiteAuditsPage({
             itemCount: Array.isArray(a.site_audit_items) ? a.site_audit_items.length : 0,
             pdfReady: !!a.pdf_path,
             unseen: !seen.has(a.id),
+            done: done.has(a.id),
           }))}
         />
       </main>

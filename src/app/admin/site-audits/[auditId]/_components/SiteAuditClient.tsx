@@ -58,6 +58,7 @@ export default function SiteAuditClient({
   plotNumbers,
   assignedForemen,
   otherRecipients,
+  foremanActionStatus = [],
   startEditing = false,
 }: {
   audit: {
@@ -76,6 +77,13 @@ export default function SiteAuditClient({
   plotNumbers: string[]
   assignedForemen: WorkerOpt[]
   otherRecipients: WorkerOpt[]
+  foremanActionStatus?: {
+    workerId: string
+    workerName: string
+    done: boolean
+    doneAt: string | null
+    seen: boolean
+  }[]
   startEditing?: boolean
 }) {
   const router = useRouter()
@@ -415,6 +423,24 @@ export default function SiteAuditClient({
             ))}
           </div>
         ))}
+
+        {foremanActionStatus.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+            <p className="font-semibold text-slate-800 text-sm">Foreman progress</p>
+            {foremanActionStatus.map((f) => (
+              <p key={f.workerId} className="text-sm text-slate-600 flex items-center justify-between gap-2">
+                <span>{f.workerName}</span>
+                <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                  f.done
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {f.done ? 'Done' : 'To do'}
+                </span>
+              </p>
+            ))}
+          </div>
+        )}
 
         {(recipients.length > 0 || deliveries.length > 0) && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">

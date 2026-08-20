@@ -117,6 +117,7 @@ Compress embedded photos (re-encode ~1600px JPEG) so a 30-photo audit doesn't pr
 
 ## Task 5 — Foreman portal
 
+- Foreman can **Mark as done** on a completed audit once the findings are actioned (per foreman). List shows Done / To do; management sees foreman progress on the audit.
 - **Pop-up on login:** when a foreman lands on their dashboard and one of their assigned sites has an audit they haven't seen yet, show a modal front and centre: **"New site audit — Meadow View, 14 Aug"** with the item count, a **"View audit"** button (straight to it) and "Later". Dismissing or viewing marks it seen (per-foreman `audit_views` row or last-seen timestamp — viewing state is per foreman, not global). Multiple unseen audits → one modal listing them. Don't re-show what's been dismissed; the badge below keeps it findable.
 - On the foreman's site card (with Site Price Grid / Submit Variation / Roof Firesocks): a **"Site Audits"** entry with a badge showing the latest audit date, and a **"New"** dot while unseen.
 - Opens a read-only list of that site's completed audits → view items/photos in-app + **Download PDF**.

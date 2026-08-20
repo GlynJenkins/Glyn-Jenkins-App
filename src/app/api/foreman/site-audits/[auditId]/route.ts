@@ -63,12 +63,20 @@ export async function GET(_request: NextRequest, { params }: Params) {
       }
     }
 
-    // Mark viewed when opened
+    // Mark viewed when opened (do not clear completed_at if already done).
+    const { data: existingView } = await supabase
+      .from('site_audit_views')
+      .select('completed_at')
+      .eq('audit_id', auditId)
+      .eq('worker_id', auth.worker.id)
+      .maybeSingle()
+
     await supabase.from('site_audit_views').upsert(
       {
-        audit_id:  auditId,
-        worker_id: auth.worker.id,
-        seen_at:   new Date().toISOString(),
+        audit_id:      auditId,
+        worker_id:     auth.worker.id,
+        seen_at:       new Date().toISOString(),
+        completed_at:  existingView?.completed_at ?? null,
       },
       { onConflict: 'audit_id,worker_id' },
     )
@@ -85,6 +93,8 @@ export async function GET(_request: NextRequest, { params }: Params) {
         auditDate:     audit.audit_date,
         generalNotes:  audit.general_notes,
         pdfReady:      !!audit.pdf_path,
+        done:          !!existingView?.completed_at,
+        doneAt:        existingView?.completed_at ?? null,
       },
       items: (items ?? []).map((item) => ({
         id:          item.id,
