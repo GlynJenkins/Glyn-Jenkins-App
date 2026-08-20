@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 import { isUnder18 } from '@/lib/induction/date-of-birth'
+import WorkerDocumentButtons from './WorkerDocumentButtons'
 
 type Worker = {
   id: string
@@ -23,6 +24,7 @@ type Worker = {
   cscs_card_url: string | null
   id_document_url: string | null
   insurance_certificate_url: string | null
+  hs_qualification_url: string | null
   firesock_certificate_url: string | null
   date_of_birth: string | null
   created_at: string
@@ -119,6 +121,17 @@ function WorkerCard({ worker, onStatusChange }: {
         )}
         <p className="text-xs text-slate-400">Submitted: {submitted}</p>
       </div>
+
+      <WorkerDocumentButtons
+        workerId={worker.id}
+        docs={{
+          cscs_card_url:             worker.cscs_card_url,
+          id_document_url:           worker.id_document_url,
+          insurance_certificate_url: worker.insurance_certificate_url,
+          hs_qualification_url:      worker.hs_qualification_url,
+          firesock_certificate_url:  worker.firesock_certificate_url,
+        }}
+      />
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2 pt-1">

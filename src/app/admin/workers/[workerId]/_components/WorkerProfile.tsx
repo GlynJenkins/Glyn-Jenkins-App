@@ -18,6 +18,7 @@ import {
   maskLast4,
   parsePaymentDetailsUpdate,
 } from '@/lib/induction/payment-details'
+import WorkerDocumentButtons from '@/app/admin/_components/WorkerDocumentButtons'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,9 @@ type Worker = {
   hs_qualification_url:            string | null
   hs_qualification_na:             boolean | null
   firesock_certificate_url:        string | null
+  cscs_card_url:                   string | null
+  id_document_url:                 string | null
+  insurance_certificate_url:       string | null
   date_of_birth:                   string | null
   payment_details_updated_at:      string | null
   payment_details_updated_by:      string | null
@@ -1050,6 +1054,20 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
               </span>
             </div>
           )}
+
+          <div className="py-2 border-t border-gray-50 mt-1">
+            <WorkerDocumentButtons
+              workerId={worker.id}
+              docs={{
+                cscs_card_url:             worker.cscs_card_url,
+                id_document_url:           worker.id_document_url,
+                insurance_certificate_url: worker.insurance_certificate_url,
+                hs_qualification_url:      worker.hs_qualification_url,
+                firesock_certificate_url:  worker.firesock_certificate_url,
+              }}
+            />
+          </div>
+
           {firesockReq !== 'hidden' && (
             <div className="flex items-start gap-2 py-2">
               <Flame className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
