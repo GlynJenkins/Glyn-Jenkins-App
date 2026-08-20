@@ -3,8 +3,14 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ClipboardList, Download, Loader2, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, ClipboardList, Download, Loader2, Plus, Trash2 } from 'lucide-react'
 import { openPdfDownload } from '@/lib/site-audits/open-pdf-download'
+
+type Assignee = {
+  workerId: string | null
+  workerName: string
+  done: boolean
+}
 
 type AuditRow = {
   id: string
@@ -14,6 +20,47 @@ type AuditRow = {
   status: string
   pdfReady: boolean
   itemCount: number
+  assignees?: Assignee[]
+  progress?: 'done' | 'outstanding' | 'partial' | 'none'
+  doneCount?: number
+  assigneeCount?: number
+}
+
+function ProgressBadge({
+  progress,
+  doneCount = 0,
+  assigneeCount = 0,
+}: {
+  progress: AuditRow['progress']
+  doneCount?: number
+  assigneeCount?: number
+}) {
+  if (progress === 'done') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide
+                       px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+        <CheckCircle2 className="w-3 h-3" />
+        Done
+      </span>
+    )
+  }
+  if (progress === 'partial') {
+    return (
+      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5
+                       rounded bg-sky-100 text-sky-800">
+        {doneCount}/{assigneeCount} done
+      </span>
+    )
+  }
+  if (progress === 'outstanding') {
+    return (
+      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5
+                       rounded bg-amber-100 text-amber-800">
+        Outstanding
+      </span>
+    )
+  }
+  return null
 }
 
 export default function SiteAuditsListClient({
@@ -137,17 +184,53 @@ export default function SiteAuditsListClient({
             className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3"
           >
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                <ClipboardList className="w-5 h-5 text-slate-500" />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                a.progress === 'done' ? 'bg-emerald-50' : 'bg-slate-100'
+              }`}>
+                {a.progress === 'done'
+                  ? <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  : <ClipboardList className="w-5 h-5 text-slate-500" />}
               </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-slate-900">{fmt(a.auditDate)}</p>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-slate-900">{fmt(a.auditDate)}</p>
+                  <ProgressBadge
+                    progress={a.progress}
+                    doneCount={a.doneCount}
+                    assigneeCount={a.assigneeCount}
+                  />
+                </div>
                 <p className="text-xs text-slate-500">
-                  {a.auditedByName}
+                  Issued by {a.auditedByName}
                   {a.auditedByRole ? ` · ${a.auditedByRole}` : ''}
                   {' · '}
                   {a.itemCount} item{a.itemCount === 1 ? '' : 's'}
                 </p>
+                {(a.assignees?.length ?? 0) > 0 ? (
+                  <div className="pt-1 space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                      Assigned to
+                    </p>
+                    {a.assignees!.map((person, i) => (
+                      <div
+                        key={`${person.workerId ?? person.workerName}-${i}`}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
+                        <span className="text-slate-700 truncate">{person.workerName}</span>
+                        <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wide
+                                         px-1.5 py-0.5 rounded ${
+                          person.done
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {person.done ? 'Done' : 'Outstanding'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 pt-1">No foremen assigned to this site</p>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
