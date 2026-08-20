@@ -8,6 +8,7 @@ import { INDUCTION_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
 import { isTradeQualification } from '@/lib/induction/qualifications'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 import { parseDateOfBirth } from '@/lib/induction/date-of-birth'
+import { parseHomeAddress } from '@/lib/induction/home-address'
 import {
   extensionForMime,
   validateUpload,
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
     const cscsNumber           = (formData.get('cscsNumber')          as string)?.trim()
     const cscsExpiryDate       = (formData.get('cscsExpiryDate')      as string)?.trim()
     const dateOfBirthRaw       = (formData.get('dateOfBirth')         as string)?.trim()
+    const homeAddressRaw       = (formData.get('homeAddress')         as string)?.trim()
     const bricklayerQualification = (formData.get('qualification') as string)?.trim()
       || (formData.get('bricklayerQualification') as string)?.trim()
       || ''
@@ -89,6 +91,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: dob.error }, { status: 400 })
     }
     const dateOfBirth = dob.value
+
+    const address = parseHomeAddress(homeAddressRaw)
+    if (!address.ok) {
+      return NextResponse.json({ error: address.error }, { status: 400 })
+    }
+    const homeAddress = address.value
 
     if (!(ALLOWED_INDUCTION_ROLES as readonly string[]).includes(role)) {
       return NextResponse.json({ error: 'Invalid job role.' }, { status: 400 })
@@ -328,6 +336,7 @@ export async function POST(request: NextRequest) {
       phone,
       email,
       date_of_birth:             dateOfBirth,
+      home_address:              homeAddress,
       ni_number:                 niNumber       || null,
       bank_sort_code:            bankSortCode,
       bank_account_number:       bankAccountNumber,
@@ -360,7 +369,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       // Older DBs may be missing newer columns — retry without them so registration isn't blocked.
       const missingOptionalCol =
-        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed|firesock_certificate|date_of_birth/i.test(insertError.message) ||
+        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed|firesock_certificate|date_of_birth|home_address/i.test(insertError.message) ||
         insertError.code === 'PGRST204'
 
       if (missingOptionalCol) {
@@ -373,6 +382,7 @@ export async function POST(request: NextRequest) {
           employed_contract_signed: _e,
           firesock_certificate_url: _f,
           date_of_birth: _d,
+          home_address: _a,
           ...legacyRow
         } = workerRow
         const { error: retryError } = await supabase

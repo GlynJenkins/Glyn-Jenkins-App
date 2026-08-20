@@ -26,6 +26,7 @@ import {
 } from '@/lib/induction/firesock-requirement'
 import { prepareInductionImage } from '@/lib/qa/prepare-photo-upload'
 import { parseDateOfBirth } from '@/lib/induction/date-of-birth'
+import { parseHomeAddress } from '@/lib/induction/home-address'
 import PortalHeader from '@/components/PortalHeader'
 
 // ── Validation schema ──────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ const schema = z.object({
   phone:                z.string().min(10, 'Enter a valid UK phone number'),
   email:                z.string().email('Enter a valid email address'),
   dateOfBirth:          z.string().min(1, 'Enter your date of birth.'),
+  homeAddress:          z.string().min(1, 'Enter your full home address including postcode.'),
   role:                 z.enum([
     'foreman',
     'bricklayer',
@@ -61,6 +63,10 @@ const schema = z.object({
   const dob = parseDateOfBirth(data.dateOfBirth)
   if (!dob.ok) {
     ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: dob.error })
+  }
+  const address = parseHomeAddress(data.homeAddress)
+  if (!address.ok) {
+    ctx.addIssue({ code: 'custom', path: ['homeAddress'], message: address.error })
   }
   const needsCisFields = data.role !== 'apprentice' && !isEmployedContractRole(data.role)
   if (needsCisFields) {
@@ -631,6 +637,19 @@ export default function InductionPage() {
               className={inputCls(!!errors.dateOfBirth)}
             />
             <FieldError message={errors.dateOfBirth?.message} />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Home address <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              {...register('homeAddress')}
+              rows={3}
+              placeholder="House number & street, town, postcode"
+              className={inputCls(!!errors.homeAddress)}
+            />
+            <FieldError message={errors.homeAddress?.message} />
           </div>
         </SectionCard>
 
