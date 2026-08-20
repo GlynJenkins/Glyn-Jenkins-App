@@ -433,3 +433,6 @@ alter table site_audit_views
 create index if not exists idx_site_audit_views_completed
   on site_audit_views (worker_id, completed_at)
   where completed_at is not null;
+
+-- 25. Worker home address (Worker Matrix / enrolment).
+alter table workers add column if not exists home_address text;
