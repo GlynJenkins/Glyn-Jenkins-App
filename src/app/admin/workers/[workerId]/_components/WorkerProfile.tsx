@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import {
-  User, Phone, FileText, Building2,
+  User, Phone, FileText, Building2, MapPin,
   TrendingUp, Download, ChevronDown, ChevronUp,
   Calendar, PoundSterling, Briefcase, KeyRound, Loader2, CheckCircle, ShieldCheck,
   Flame, Upload, AlertCircle, Eye, EyeOff, Copy,
@@ -14,6 +14,7 @@ import {
   formatDateOfBirthWithAge,
   isUnder18,
 } from '@/lib/induction/date-of-birth'
+import { parseHomeAddress } from '@/lib/induction/home-address'
 import {
   maskLast4,
   parsePaymentDetailsUpdate,
@@ -75,6 +76,7 @@ type Worker = {
   id_document_url:                 string | null
   insurance_certificate_url:       string | null
   date_of_birth:                   string | null
+  home_address:                    string | null
   payment_details_updated_at:      string | null
   payment_details_updated_by:      string | null
   last_sensitive_reveal_at:        string | null
@@ -758,6 +760,12 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
   const [dobError, setDobError] = useState<string | null>(null)
   const [dobEditing, setDobEditing] = useState(!worker.date_of_birth)
 
+  const [homeAddress, setHomeAddress] = useState(worker.home_address ?? '')
+  const [addressDraft, setAddressDraft] = useState(worker.home_address ?? '')
+  const [addressBusy, setAddressBusy] = useState(false)
+  const [addressError, setAddressError] = useState<string | null>(null)
+  const [addressEditing, setAddressEditing] = useState(!worker.home_address)
+
   const [role,            setRole]            = useState(worker.role)
   const [portalPassword,  setPortalPassword]  = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -907,6 +915,34 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
     }
   }
 
+  const saveHomeAddress = async () => {
+    setAddressBusy(true)
+    setAddressError(null)
+    const parsed = parseHomeAddress(addressDraft)
+    if (!parsed.ok) {
+      setAddressError(parsed.error)
+      setAddressBusy(false)
+      return
+    }
+    try {
+      const res = await fetch(`/api/admin/workers/${worker.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ homeAddress: parsed.value }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not save home address.')
+      const saved = String(json.homeAddress ?? parsed.value)
+      setHomeAddress(saved)
+      setAddressDraft(saved)
+      setAddressEditing(false)
+    } catch (err) {
+      setAddressError(err instanceof Error ? err.message : 'Could not save home address.')
+    } finally {
+      setAddressBusy(false)
+    }
+  }
+
   const filteredLedger = useMemo(() => {
     const from = new Date(fromDate)
     const to   = new Date(toDate)
@@ -1028,6 +1064,70 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
                 </div>
               )}
               {dobError && <p className="text-xs text-red-600">{dobError}</p>}
+            </div>
+          </div>
+          <div className="flex items-start gap-2 py-2">
+            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 space-y-2">
+              <span className="text-slate-400 text-xs block">Home address</span>
+              {homeAddress && !addressEditing ? (
+                <div className="flex flex-wrap items-start gap-2">
+                  <span className="whitespace-pre-line">{homeAddress}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddressDraft(homeAddress)
+                      setAddressEditing(true)
+                      setAddressError(null)
+                    }}
+                    className="text-xs font-medium text-orange-700 hover:underline shrink-0"
+                  >
+                    Correct
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {!homeAddress && (
+                    <span className="text-amber-700 text-xs font-semibold">Not on file</span>
+                  )}
+                  <textarea
+                    value={addressDraft}
+                    onChange={(e) => setAddressDraft(e.target.value)}
+                    rows={3}
+                    placeholder="House number & street, town, postcode"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm
+                               bg-white outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={addressBusy || !addressDraft.trim()}
+                      onClick={() => void saveHomeAddress()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm
+                                 font-medium bg-orange-50 hover:bg-orange-100 text-orange-700
+                                 disabled:opacity-50"
+                    >
+                      {addressBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      Save home address
+                    </button>
+                    {homeAddress && (
+                      <button
+                        type="button"
+                        disabled={addressBusy}
+                        onClick={() => {
+                          setAddressDraft(homeAddress)
+                          setAddressEditing(false)
+                          setAddressError(null)
+                        }}
+                        className="text-xs font-medium text-slate-500 hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {addressError && <p className="text-xs text-red-600">{addressError}</p>}
             </div>
           </div>
           <div className="flex items-center gap-2 py-2">

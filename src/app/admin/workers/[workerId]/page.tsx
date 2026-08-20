@@ -31,7 +31,7 @@ export default async function WorkerProfilePage({
       subcontract_agreement_pdf_url, subcontract_signature_url,
       employed_contract_signed,
       bricklayer_qualification, hs_qualification_url, hs_qualification_na,
-      firesock_certificate_url, date_of_birth,
+      firesock_certificate_url, date_of_birth, home_address,
       cscs_card_url, id_document_url, insurance_certificate_url,
       payment_details_updated_at, payment_details_updated_by
     `)
@@ -110,6 +110,7 @@ export default async function WorkerProfilePage({
     id_document_url:               worker.id_document_url,
     insurance_certificate_url:     worker.insurance_certificate_url,
     date_of_birth:                 worker.date_of_birth,
+    home_address:                  worker.home_address,
     payment_details_updated_at:    worker.payment_details_updated_at,
     payment_details_updated_by:    worker.payment_details_updated_by,
     bank_sort_masked:              maskLast4(sortForMask) || null,

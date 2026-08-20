@@ -4,6 +4,7 @@ import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { needsPortalLogin } from '@/lib/worker-access'
 import { parseDateOfBirth } from '@/lib/induction/date-of-birth'
+import { parseHomeAddress } from '@/lib/induction/home-address'
 import {
   parsePaymentDetailsUpdate,
   type PaymentDetailsInput,
@@ -48,22 +49,30 @@ export async function PATCH(
       role?:            string
       portalPassword?:  string
       dateOfBirth?:     string
+      homeAddress?:     string
       paymentDetails?:  PaymentDetailsInput
     }
 
-    const { role, portalPassword, dateOfBirth: dateOfBirthRaw, paymentDetails } = body
+    const {
+      role,
+      portalPassword,
+      dateOfBirth: dateOfBirthRaw,
+      homeAddress: homeAddressRaw,
+      paymentDetails,
+    } = body
     const updatingRole = typeof role === 'string'
     const updatingDob = typeof dateOfBirthRaw === 'string'
+    const updatingHomeAddress = typeof homeAddressRaw === 'string'
     const updatingPayment = paymentDetails != null && typeof paymentDetails === 'object'
 
-    if (!updatingRole && !updatingDob && !updatingPayment) {
+    if (!updatingRole && !updatingDob && !updatingHomeAddress && !updatingPayment) {
       return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
     }
 
     const supabase = createServiceClient()
 
     // ── Payment details only (write-only — never echo full stored values) ──
-    if (updatingPayment && !updatingRole && !updatingDob) {
+    if (updatingPayment && !updatingRole && !updatingDob && !updatingHomeAddress) {
       const parsed = parsePaymentDetailsUpdate(paymentDetails)
       if (!parsed.ok) {
         return NextResponse.json({ error: parsed.error }, { status: 400 })
@@ -121,7 +130,7 @@ export async function PATCH(
     }
 
     // ── DOB only ───────────────────────────────────────────────
-    if (updatingDob && !updatingRole && !updatingPayment) {
+    if (updatingDob && !updatingRole && !updatingPayment && !updatingHomeAddress) {
       const dob = parseDateOfBirth(dateOfBirthRaw)
       if (!dob.ok) {
         return NextResponse.json({ error: dob.error }, { status: 400 })
@@ -150,6 +159,38 @@ export async function PATCH(
       }
 
       return NextResponse.json({ success: true, dateOfBirth: dob.value })
+    }
+
+    // ── Home address only ──────────────────────────────────────
+    if (updatingHomeAddress && !updatingRole && !updatingPayment && !updatingDob) {
+      const parsed = parseHomeAddress(homeAddressRaw)
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 })
+      }
+
+      const { data: worker, error: fetchError } = await supabase
+        .from('workers')
+        .select('id')
+        .eq('id', workerId)
+        .maybeSingle()
+
+      if (fetchError || !worker) {
+        return NextResponse.json({ error: 'Worker not found.' }, { status: 404 })
+      }
+
+      const { error: updateError } = await supabase
+        .from('workers')
+        .update({
+          home_address: parsed.value,
+          updated_at:   new Date().toISOString(),
+        })
+        .eq('id', workerId)
+
+      if (updateError) {
+        return apiError('api/admin/workers/[workerId]', updateError)
+      }
+
+      return NextResponse.json({ success: true, homeAddress: parsed.value })
     }
 
     if (!role || !ASSIGNABLE_ROLES.includes(role as AssignableRole)) {
