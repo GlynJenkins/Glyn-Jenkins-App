@@ -87,10 +87,10 @@ export default async function SiteAuditsPage({
       <header className="bg-slate-900 px-5 pt-12 pb-6">
         <div className="max-w-lg mx-auto">
           <Link
-            href={`/admin/sites/${siteId}`}
+            href="/admin/site-audits"
             className="text-orange-400 text-xs font-semibold tracking-widest uppercase"
           >
-            ← {site.name}
+            ← All sites
           </Link>
           <h1 className="text-xl font-bold text-white mt-1">Site Audits</h1>
           <p className="text-slate-400 text-sm mt-0.5">{site.name}</p>
