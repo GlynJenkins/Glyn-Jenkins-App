@@ -9,6 +9,7 @@ import {
   FileUp,
   GraduationCap,
   CircleHelp,
+  LayoutGrid,
   Megaphone,
   Settings,
   Shield,
@@ -170,6 +171,12 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
           description: 'Inductions, profiles & activation',
           badge:       counts.pendingWorkers,
           accent:      counts.pendingWorkers > 0,
+        },
+        {
+          href:        '/admin/worker-matrix',
+          icon:        LayoutGrid,
+          label:       'Worker Matrix',
+          description: 'Name, role, age, phone & address',
         },
         {
           href:        '/admin/training',
