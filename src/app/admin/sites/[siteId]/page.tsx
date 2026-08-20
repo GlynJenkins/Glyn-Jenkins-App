@@ -8,6 +8,7 @@ import ForemanAssignments from './_components/ForemanAssignments'
 import ClearGridButton from './_components/ClearGridButton'
 import AddStageColumnButton from './_components/AddStageColumnButton'
 import SiteDocumentDetailsForm from './_components/SiteDocumentDetailsForm'
+import SiteStatusControls from './_components/SiteStatusControls'
 import { formatSiteCode } from '@/lib/variations/vo-reference'
 import { computeCostToCompleteFromCells } from '@/lib/production/cost-to-complete'
 
@@ -128,6 +129,9 @@ export default async function AdminSitePage({
               {site.address && (
                 <p className="text-slate-400 text-sm">{site.address}</p>
               )}
+              <p className={`text-xs font-medium mt-1 ${site.is_active ? 'text-green-400' : 'text-slate-500'}`}>
+                {site.is_active ? '● Active' : '○ Inactive'}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {hasData && (
@@ -148,6 +152,12 @@ export default async function AdminSitePage({
 
       {/* Grid */}
       <div className="px-4 pt-5 pb-16 max-w-5xl mx-auto space-y-5">
+
+        <SiteStatusControls
+          siteId={siteId}
+          siteName={site.name}
+          isActive={site.is_active}
+        />
 
         {hasData && (
           <div className="bg-white border border-orange-200 rounded-2xl px-5 py-4 shadow-sm">
