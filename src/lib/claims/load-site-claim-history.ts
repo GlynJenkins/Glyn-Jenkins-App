@@ -108,7 +108,7 @@ export async function loadSiteClaimHistory(
   const { data: claims, error: claimsError } = await supabase
     .from('claim_periods')
     .select(
-      'id, foreman_id, period_start, period_end, submitted_at, status, pool_items, site_id',
+      'id, foreman_id, foreman_name, period_start, period_end, submitted_at, status, pool_items, site_id',
     )
     .or(`site_id.eq.${siteId},site_id.is.null`)
     .order('period_end', { ascending: true })
@@ -149,7 +149,11 @@ export async function loadSiteClaimHistory(
             catch { return [] }
           })()
         : []
-    const foremanName = foremanDisplayName(foremanById.get(claim.foreman_id))
+    const snapshotted = typeof claim.foreman_name === 'string'
+      ? claim.foreman_name.trim()
+      : ''
+    const foremanName = snapshotted
+      || foremanDisplayName(foremanById.get(claim.foreman_id))
 
     for (const raw of pool) {
       const parsed = parseGridClaimFromPoolItem(raw)

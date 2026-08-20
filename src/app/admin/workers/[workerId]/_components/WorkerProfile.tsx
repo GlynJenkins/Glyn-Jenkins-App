@@ -1588,7 +1588,9 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
           Permanently removes this enrolment, portal login and uploaded documents.
-          Use this to clear test accounts. This cannot be undone.
+          Fortnightly claims they booked as a foreman are kept, with their name
+          frozen on the lift history. Prefer <strong>Set Inactive</strong> for
+          staff who leave so the full profile stays on file.
         </p>
         {!deleteOpen ? (
           <button

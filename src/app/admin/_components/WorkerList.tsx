@@ -81,7 +81,7 @@ function WorkerCard({ worker, onStatusChange, onDelete }: {
 
   const handleDelete = async () => {
     const ok = window.confirm(
-      `Permanently delete ${fullName}?\n\nThis removes their enrolment, portal login and documents. It cannot be undone.`,
+      `Permanently delete ${fullName}?\n\nRemoves enrolment, portal login and documents.\nClaims they booked as foreman are kept with their name on the lift history.\nPrefer Set Inactive for staff who leave.\n\nThis cannot be undone.`,
     )
     if (!ok) return
     setDeleting(true)

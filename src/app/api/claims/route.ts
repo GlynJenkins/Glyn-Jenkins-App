@@ -111,20 +111,39 @@ export async function POST(request: NextRequest) {
     // ── Create claim period ──────────────────────────────────────────────
     // The partial unique index on (foreman_id, period_start, period_end)
     // catches races the pre-check above cannot.
-    const { data: claim, error: claimErr } = await supabase
+    const foremanName = `${auth.worker.first_name} ${auth.worker.surname}`.trim() || null
+    const claimRow = {
+      site_id:      siteId,
+      foreman_id:   foremanId,
+      foreman_name: foremanName,
+      period_start: periodStart,
+      period_end:   periodEnd,
+      pool_total:   computedPoolTotal,
+      pool_items:   sanitizedPoolItems,
+      status:       'pending' as const,
+      submitted_at: new Date().toISOString(),
+    }
+
+    let { data: claim, error: claimErr } = await supabase
       .from('claim_periods')
-      .insert({
-        site_id:      siteId,
-        foreman_id:   foremanId,
-        period_start: periodStart,
-        period_end:   periodEnd,
-        pool_total:   computedPoolTotal,
-        pool_items:   sanitizedPoolItems,
-        status:       'pending',
-        submitted_at: new Date().toISOString(),
-      })
+      .insert(claimRow)
       .select()
       .single()
+
+    // Older DBs may not have foreman_name yet — retry without it.
+    if (
+      claimErr &&
+      (/foreman_name/i.test(claimErr.message) || claimErr.code === 'PGRST204')
+    ) {
+      const { foreman_name: _n, ...legacyRow } = claimRow
+      const retry = await supabase
+        .from('claim_periods')
+        .insert(legacyRow)
+        .select()
+        .single()
+      claim = retry.data
+      claimErr = retry.error
+    }
 
     if (claimErr || !claim) {
       if (claimErr?.code === '23505') {

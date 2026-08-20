@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { deleteClaimPeriod } from '@/lib/claims/delete-claim-period'
 
 const DOC_URL_FIELDS = [
   'cscs_card_url',
@@ -21,6 +20,13 @@ function storagePathFromStored(value: string | null | undefined): string | null 
   if (idx >= 0) return trimmed.slice(idx + marker.length).split('?')[0] || null
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return null
   return trimmed
+}
+
+function workerDisplayName(worker: {
+  first_name: string
+  surname: string
+}): string {
+  return `${worker.first_name} ${worker.surname}`.trim() || 'Unknown foreman'
 }
 
 async function nullWorkerRefs(
@@ -75,13 +81,18 @@ async function deleteOwnedRows(
   return { ok: true }
 }
 
-async function deleteForemanClaims(
+/**
+ * Keep fortnightly claims (and lift history) when a foreman leaves.
+ * Snapshot their name onto the claim, then detach the workers FK.
+ */
+async function preserveForemanClaimHistory(
   supabase: SupabaseClient,
   workerId: string,
+  foremanName: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data: claims, error } = await supabase
     .from('claim_periods')
-    .select('id, status')
+    .select('id, foreman_name')
     .eq('foreman_id', workerId)
 
   if (error) {
@@ -89,13 +100,21 @@ async function deleteForemanClaims(
   }
 
   for (const claim of claims ?? []) {
-    // Pending claims still hold grid %. Approved/rejected already reversed or finalised.
-    const reverseGridPct = claim.status === 'pending'
-    const result = await deleteClaimPeriod(claim.id, { reverseGridPct })
-    if (!result.ok) {
+    const existing = typeof claim.foreman_name === 'string' ? claim.foreman_name.trim() : ''
+    const { error: updErr } = await supabase
+      .from('claim_periods')
+      .update({
+        foreman_name: existing || foremanName,
+        foreman_id:   null,
+      })
+      .eq('id', claim.id)
+
+    if (updErr) {
       return {
         ok: false,
-        error: `Could not remove claim ${claim.id}: ${result.error}`,
+        error:
+          `Could not keep claim history for ${claim.id}: ${updErr.message}. ` +
+          'Run the claim_periods.foreman_name migration if the column is missing.',
       }
     }
   }
@@ -166,7 +185,8 @@ export type DeleteWorkerResult =
 
 /**
  * Permanently remove a worker and related enrolment / pay / portal data.
- * Intended for clearing test enrolments and mistaken duplicates.
+ * Fortnightly claims they submitted as foreman are kept with a snapshotted name
+ * so site lift history still shows who booked each lift.
  */
 export async function deleteWorkerPermanently(
   supabase: SupabaseClient,
@@ -199,20 +219,18 @@ export async function deleteWorkerPermanently(
     return { ok: false, status: 404, error: 'Worker not found.' }
   }
 
+  const foremanName = workerDisplayName(worker)
+
   await nullWorkerRefs(supabase, workerId)
 
   const owned = await deleteOwnedRows(supabase, workerId)
   if (!owned.ok) return owned
 
-  const claims = await deleteForemanClaims(supabase, workerId)
+  const claims = await preserveForemanClaimHistory(supabase, workerId, foremanName)
   if (!claims.ok) return claims
 
   const submissions = await deleteDeveloperSubmissions(supabase, workerId)
   if (!submissions.ok) return submissions
-
-  // Null foreman_id on any leftover claims if deleteClaimPeriod couldn't run
-  // (e.g. unexpected statuses) — only if column allows null.
-  await supabase.from('claim_periods').update({ foreman_id: null }).eq('foreman_id', workerId)
 
   await removeWorkerDocuments(supabase, worker)
 
@@ -223,7 +241,7 @@ export async function deleteWorkerPermanently(
       status: 409,
       error:
         `Could not delete this worker because other records still reference them (${deleteError.message}). ` +
-        'Clear related claims/variations first, or contact support.',
+        'Set them inactive instead, or contact support.',
     }
   }
 
