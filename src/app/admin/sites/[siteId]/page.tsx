@@ -274,6 +274,7 @@ export default async function AdminSitePage({
             </div>
 
             <SiteGrid
+              siteId={siteId}
               stages={stages ?? []}
               cells={(cells ?? []).map((c) => ({ ...c, total_claimed_pct: c.total_claimed_pct ?? 0 }))}
             />

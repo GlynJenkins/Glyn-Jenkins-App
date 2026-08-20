@@ -1,9 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import CellEditorPanel, { type SelectedCell } from './CellEditorPanel'
+import {
+  ClaimHistoryHoverCard,
+  ClaimHistoryTapPopover,
+} from './ClaimHistoryPopover'
+import PlotHistoryPanel from './PlotHistoryPanel'
 import { ShieldCheck, X, Loader2 } from 'lucide-react'
 import { buildPlotGridRows, sortPlotNumbers } from '@/lib/sites/plot-order'
+import type { ClaimHistoryEntry, ClaimHistoryMap } from '@/lib/claims/load-site-claim-history'
 
 type Stage = { id: string; stage_name: string; stage_order: number }
 type Cell  = {
@@ -18,17 +24,16 @@ type Cell  = {
 }
 
 interface Props {
+  siteId: string
   stages: Stage[]
   cells:  Cell[]
 }
 
-// Stages that are pre-calculated totals in the spreadsheet — exclude from row/grand totals
 function isTotalStage(name: string): boolean {
   const n = name.toLowerCase().trim()
   return n.includes('total') || n.includes('subtotal') || n === 'sum'
 }
 
-// Colour driven by claim status (same system as foreman view)
 function cellBg(cell: Cell): string {
   if (cell.total_claimed_pct >= 100) return 'bg-green-500 text-white'
   if (cell.total_claimed_pct > 0)    return 'bg-orange-300 text-slate-800'
@@ -46,7 +51,10 @@ function fmt(v: number | null): string {
   return '£' + v.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
-// ── Claim status picker ───────────────────────────────────────────────────────
+function prefersFineHover(): boolean {
+  if (typeof window === 'undefined') return true
+  return window.matchMedia('(hover: hover) and (pointer: fine)').matches
+}
 
 const CLAIM_OPTIONS = [
   { label: 'Unclaimed',      pct: 0,   color: 'border-gray-200 bg-white text-slate-700'           },
@@ -68,7 +76,6 @@ function AdminClaimPicker({
   saving:  boolean
 }) {
   const fullValue = cell.contract_value ?? 0
-
   const isLocked = cell.total_claimed_pct > 0
 
   return (
@@ -89,7 +96,7 @@ function AdminClaimPicker({
 
         {isLocked && (
           <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl mb-4">
-            <svg className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M5.07 19h13.86a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16a2 2 0 001.73 3z" />
             </svg>
             <div>
@@ -133,14 +140,53 @@ function AdminClaimPicker({
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
-export default function SiteGrid({ stages, cells: initialCells }: Props) {
+export default function SiteGrid({ siteId, stages, cells: initialCells }: Props) {
   const [gridCells,    setGridCells]    = useState<Cell[]>(initialCells)
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [claimMode,    setClaimMode]    = useState(false)
   const [pickerCell,   setPickerCell]   = useState<Cell | null>(null)
   const [saving,       setSaving]       = useState(false)
+
+  const [history, setHistory] = useState<ClaimHistoryMap | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const historyFetchStarted = useRef(false)
+
+  const [hoverTip, setHoverTip] = useState<{
+    entries: ClaimHistoryEntry[]
+    x: number
+    y: number
+  } | null>(null)
+  const [tapHistory, setTapHistory] = useState<{
+    cell: Cell
+    stage: Stage
+    entries: ClaimHistoryEntry[]
+  } | null>(null)
+  const [plotHistory, setPlotHistory] = useState<string | null>(null)
+
+  const ensureHistory = useCallback(async () => {
+    if (history || historyFetchStarted.current) return history
+    historyFetchStarted.current = true
+    setHistoryLoading(true)
+    try {
+      const res = await fetch(`/api/admin/sites/${siteId}/claim-history`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not load claim history')
+      const map = (json.history ?? {}) as ClaimHistoryMap
+      setHistory(map)
+      return map
+    } catch {
+      historyFetchStarted.current = false
+      setHistory({})
+      return {} as ClaimHistoryMap
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [history, siteId])
+
+  useEffect(() => {
+    // Warm history after first paint so hover feels instant.
+    void ensureHistory()
+  }, [ensureHistory])
 
   const cellMap = new Map<string, Map<string, Cell>>()
   for (const cell of gridCells) {
@@ -150,14 +196,9 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
 
   const plotNumbers = sortPlotNumbers(Array.from(new Set(gridCells.map((c) => c.plot_number))))
   const plotRows    = buildPlotGridRows(plotNumbers)
-
   const sortedStages = [...stages].sort((a, b) => a.stage_order - b.stage_order)
 
-  const handleCellClick = (cell: Cell, stage: Stage) => {
-    if (claimMode) {
-      setPickerCell(cell)  // picker shows locked state when total_claimed_pct > 0
-      return
-    }
+  const openEditor = (cell: Cell, stage: Stage) => {
     setSelectedCell({
       cellId:          cell.id,
       plotNumber:      cell.plot_number,
@@ -167,6 +208,44 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
       cellColor:       cell.cell_color,
       overrideNote:    cell.override_note,
       totalClaimedPct: cell.total_claimed_pct,
+    })
+  }
+
+  const handleCellClick = async (cell: Cell, stage: Stage) => {
+    if (claimMode) {
+      setPickerCell(cell)
+      return
+    }
+
+    const claimed = cell.total_claimed_pct > 0
+    if (claimed && !prefersFineHover()) {
+      const map = (await ensureHistory()) ?? history ?? {}
+      const entries = map[cell.id] ?? []
+      if (entries.length > 0) {
+        setTapHistory({ cell, stage, entries })
+        return
+      }
+    }
+
+    openEditor(cell, stage)
+  }
+
+  const handleCellMouseEnter = async (
+    e: React.MouseEvent<HTMLTableCellElement>,
+    cell: Cell,
+  ) => {
+    if (claimMode || cell.total_claimed_pct <= 0 || !prefersFineHover()) return
+    const map = (await ensureHistory()) ?? history ?? {}
+    const entries = map[cell.id] ?? []
+    if (entries.length === 0) {
+      setHoverTip(null)
+      return
+    }
+    const rect = e.currentTarget.getBoundingClientRect()
+    setHoverTip({
+      entries,
+      x: Math.min(rect.left, window.innerWidth - 280),
+      y: rect.bottom + 6,
     })
   }
 
@@ -184,8 +263,6 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
   const handleClaimPick = async (pct: number) => {
     if (!pickerCell) return
     setSaving(true)
-
-    // Determine color: 0=white, 1-99=orange, 100=green (admin-approved)
     const newColor = pct === 0 ? 'white' : pct >= 100 ? 'green' : 'orange'
 
     try {
@@ -210,8 +287,12 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
 
   return (
     <>
-      {/* Claim mode toggle */}
-      <div className="flex items-center justify-end mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <p className="text-xs text-slate-500">
+          {historyLoading
+            ? 'Loading claim history…'
+            : 'Hover or tap a claimed cell for who claimed it · tap a plot number for full history'}
+        </p>
         {!claimMode ? (
           <button
             onClick={() => setClaimMode(true)}
@@ -277,7 +358,16 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
               <tr key={row.key} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                 <td className="sticky left-0 z-10 px-4 py-2 font-semibold text-slate-800
                                border-r border-gray-200 bg-inherit whitespace-nowrap">
-                  {plotNo}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void ensureHistory().then(() => setPlotHistory(plotNo))
+                    }}
+                    className="text-left hover:text-orange-700 hover:underline underline-offset-2"
+                    title={`Plot history for ${plotNo}`}
+                  >
+                    {plotNo}
+                  </button>
                 </td>
                 {sortedStages.map((stage) => {
                   const cell = cellMap.get(plotNo)?.get(stage.id)
@@ -295,12 +385,11 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
                   return (
                     <td
                       key={stage.id}
-                      onClick={() => handleCellClick(cell, stage)}
+                      onClick={() => void handleCellClick(cell, stage)}
+                      onMouseEnter={(e) => void handleCellMouseEnter(e, cell)}
+                      onMouseLeave={() => setHoverTip(null)}
                       className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap
                                   cursor-pointer hover:opacity-80 transition-opacity ${bgCls}`}
-                      title={claimMode
-                        ? `Set claim status for Plot ${plotNo} — ${stage.stage_name}`
-                        : `Edit Plot ${plotNo} — ${stage.stage_name}`}
                     >
                       <span className="text-xs font-medium">
                         {cell.override_note ?? fmt(cell.contract_value)}
@@ -321,7 +410,6 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
                     </td>
                   )
                 })}
-                {/* Row total — excludes any stage that is itself a pre-calculated total */}
                 {(() => {
                   const rowTotal = sortedStages.reduce((sum, stage) =>
                     isTotalStage(stage.stage_name) ? sum : sum + (cellMap.get(plotNo)?.get(stage.id)?.contract_value ?? 0), 0)
@@ -335,7 +423,6 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
               )
             })}
 
-            {/* Totals row */}
             <tr className="bg-slate-800 text-white font-bold border-t-2 border-slate-600">
               <td className="sticky left-0 z-10 bg-slate-800 px-4 py-3 text-xs uppercase
                              tracking-wide border-r border-slate-600 whitespace-nowrap">
@@ -365,7 +452,6 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
                   </td>
                 )
               })}
-              {/* Grand total cell */}
               {(() => {
                 const grandTotal = sortedStages.reduce((stageSum, stage) =>
                   isTotalStage(stage.stage_name) ? stageSum : stageSum + plotNumbers.reduce((plotSum, p) =>
@@ -382,7 +468,37 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
         </table>
       </div>
 
-      {/* Normal cell editor */}
+      {hoverTip && (
+        <ClaimHistoryHoverCard
+          entries={hoverTip.entries}
+          style={{ left: hoverTip.x, top: hoverTip.y }}
+        />
+      )}
+
+      {tapHistory && (
+        <ClaimHistoryTapPopover
+          plotNumber={tapHistory.cell.plot_number}
+          stageName={tapHistory.stage.stage_name}
+          entries={tapHistory.entries}
+          onClose={() => setTapHistory(null)}
+          onEdit={() => {
+            const { cell, stage } = tapHistory
+            setTapHistory(null)
+            openEditor(cell, stage)
+          }}
+        />
+      )}
+
+      {plotHistory && (
+        <PlotHistoryPanel
+          plotNumber={plotHistory}
+          stages={stages}
+          cells={gridCells}
+          history={history ?? {}}
+          onClose={() => setPlotHistory(null)}
+        />
+      )}
+
       {selectedCell && !claimMode && (
         <CellEditorPanel
           cell={selectedCell}
@@ -391,7 +507,6 @@ export default function SiteGrid({ stages, cells: initialCells }: Props) {
         />
       )}
 
-      {/* Claim status picker */}
       {pickerCell && claimMode && (
         <AdminClaimPicker
           cell={pickerCell}

@@ -132,14 +132,9 @@ export async function loadSiteClaimHistory(
       const parsed = parseGridClaimFromPoolItem(raw)
       if (!parsed) continue
 
-      // Multi-site claims: only keep cells that belong to this site.
+      // Multi-site (null site_id): only cells that still belong to this site.
+      // Single-site claim for this site: keep even if the cell was later re-imported away.
       if (claim.site_id !== siteId && !siteCellIds.has(parsed.cellId)) continue
-      // Single-site claim for this site: keep even if cell was later re-imported away.
-      if (claim.site_id === siteId || siteCellIds.has(parsed.cellId)) {
-        // ok
-      } else {
-        continue
-      }
 
       const entry: ClaimHistoryEntry = {
         claimId:     claim.id,
