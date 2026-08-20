@@ -149,12 +149,14 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
 
   const [history, setHistory] = useState<ClaimHistoryMap | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
-  const historyFetchStarted = useRef(false)
+  const historyRef = useRef<ClaimHistoryMap | null>(null)
+  const historyPromiseRef = useRef<Promise<ClaimHistoryMap> | null>(null)
 
   const [hoverTip, setHoverTip] = useState<{
     entries: ClaimHistoryEntry[]
     x: number
     y: number
+    emptyReason?: string
   } | null>(null)
   const [tapHistory, setTapHistory] = useState<{
     cell: Cell
@@ -162,31 +164,58 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
     entries: ClaimHistoryEntry[]
   } | null>(null)
   const [plotHistory, setPlotHistory] = useState<string | null>(null)
+  const hoverCellIdRef = useRef<string | null>(null)
 
-  const ensureHistory = useCallback(async () => {
-    if (history || historyFetchStarted.current) return history
-    historyFetchStarted.current = true
+  const ensureHistory = useCallback(async (): Promise<ClaimHistoryMap> => {
+    if (historyRef.current) return historyRef.current
+    if (historyPromiseRef.current) return historyPromiseRef.current
+
     setHistoryLoading(true)
-    try {
-      const res = await fetch(`/api/admin/sites/${siteId}/claim-history`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Could not load claim history')
-      const map = (json.history ?? {}) as ClaimHistoryMap
-      setHistory(map)
-      return map
-    } catch {
-      historyFetchStarted.current = false
-      setHistory({})
-      return {} as ClaimHistoryMap
-    } finally {
-      setHistoryLoading(false)
-    }
-  }, [history, siteId])
+    const promise = (async () => {
+      try {
+        const res = await fetch(`/api/admin/sites/${siteId}/claim-history`)
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? 'Could not load claim history')
+        const map = (json.history ?? {}) as ClaimHistoryMap
+        historyRef.current = map
+        setHistory(map)
+        return map
+      } catch {
+        const empty = {} as ClaimHistoryMap
+        historyRef.current = empty
+        setHistory(empty)
+        return empty
+      } finally {
+        setHistoryLoading(false)
+      }
+    })()
+
+    historyPromiseRef.current = promise
+    return promise
+  }, [siteId])
 
   useEffect(() => {
-    // Warm history after first paint so hover feels instant.
+    historyRef.current = null
+    historyPromiseRef.current = null
     void ensureHistory()
   }, [ensureHistory])
+
+  const showHoverForCell = useCallback((
+    cell: Cell,
+    rect: DOMRect,
+    map: ClaimHistoryMap,
+  ) => {
+    if (hoverCellIdRef.current !== cell.id) return
+    const entries = map[cell.id] ?? []
+    setHoverTip({
+      entries,
+      x: Math.min(Math.max(8, rect.left), window.innerWidth - 288),
+      y: Math.min(rect.bottom + 6, window.innerHeight - 120),
+      emptyReason: entries.length === 0
+        ? 'No fortnightly claim on file — may have been marked manually on the grid.'
+        : undefined,
+    })
+  }, [])
 
   const cellMap = new Map<string, Map<string, Cell>>()
   for (const cell of gridCells) {
@@ -219,34 +248,46 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
 
     const claimed = cell.total_claimed_pct > 0
     if (claimed && !prefersFineHover()) {
-      const map = (await ensureHistory()) ?? history ?? {}
+      const map = await ensureHistory()
       const entries = map[cell.id] ?? []
-      if (entries.length > 0) {
-        setTapHistory({ cell, stage, entries })
-        return
-      }
+      setTapHistory({ cell, stage, entries })
+      return
     }
 
     openEditor(cell, stage)
   }
 
-  const handleCellMouseEnter = async (
+  const handleCellMouseEnter = (
     e: React.MouseEvent<HTMLTableCellElement>,
     cell: Cell,
   ) => {
     if (claimMode || cell.total_claimed_pct <= 0 || !prefersFineHover()) return
-    const map = (await ensureHistory()) ?? history ?? {}
-    const entries = map[cell.id] ?? []
-    if (entries.length === 0) {
-      setHoverTip(null)
+
+    hoverCellIdRef.current = cell.id
+    const rect = e.currentTarget.getBoundingClientRect()
+
+    const cached = historyRef.current
+    if (cached) {
+      showHoverForCell(cell, rect, cached)
       return
     }
-    const rect = e.currentTarget.getBoundingClientRect()
+
+    // Show a loading tip immediately, then fill when history arrives.
     setHoverTip({
-      entries,
-      x: Math.min(rect.left, window.innerWidth - 280),
-      y: rect.bottom + 6,
+      entries: [],
+      x: Math.min(Math.max(8, rect.left), window.innerWidth - 288),
+      y: Math.min(rect.bottom + 6, window.innerHeight - 120),
+      emptyReason: 'Loading claim history…',
     })
+
+    void ensureHistory().then((map) => {
+      showHoverForCell(cell, rect, map)
+    })
+  }
+
+  const handleCellMouseLeave = () => {
+    hoverCellIdRef.current = null
+    setHoverTip(null)
   }
 
   const handleSave = (updated: SelectedCell) => {
@@ -396,8 +437,8 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
                     <td
                       key={stage.id}
                       onClick={() => void handleCellClick(cell, stage)}
-                      onMouseEnter={(e) => void handleCellMouseEnter(e, cell)}
-                      onMouseLeave={() => setHoverTip(null)}
+                      onMouseEnter={(e) => handleCellMouseEnter(e, cell)}
+                      onMouseLeave={handleCellMouseLeave}
                       className={`px-3 py-2 border-r border-gray-100 whitespace-nowrap
                                   cursor-pointer hover:opacity-80 transition-opacity ${bgCls}`}
                     >
@@ -481,6 +522,7 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
       {hoverTip && (
         <ClaimHistoryHoverCard
           entries={hoverTip.entries}
+          emptyReason={hoverTip.emptyReason}
           style={{ left: hoverTip.x, top: hoverTip.y }}
         />
       )}

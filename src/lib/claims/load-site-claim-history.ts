@@ -79,7 +79,7 @@ export async function loadSiteClaimHistory(
 ): Promise<ClaimHistoryMap> {
   const { data: siteCells, error: cellsError } = await supabase
     .from('price_grid')
-    .select('id')
+    .select('id, plot_number, stage_id, site_stages ( stage_name )')
     .eq('site_id', siteId)
 
   if (cellsError) {
@@ -87,6 +87,22 @@ export async function loadSiteClaimHistory(
   }
 
   const siteCellIds = new Set((siteCells ?? []).map((c) => c.id as string))
+
+  // Fallback when grid was re-imported and cell UUIDs changed but labels still match.
+  const cellIdByPlotStage = new Map<string, string>()
+  for (const cell of siteCells ?? []) {
+    const stageRel = cell.site_stages as
+      | { stage_name: string }
+      | { stage_name: string }[]
+      | null
+    const stage = Array.isArray(stageRel) ? stageRel[0] : stageRel
+    const stageName = stage?.stage_name?.trim()
+    if (!stageName) continue
+    cellIdByPlotStage.set(
+      `${String(cell.plot_number).trim().toLowerCase()}|${stageName.toLowerCase()}`,
+      cell.id,
+    )
+  }
 
   // Single-site claims + multi-site claims (null site_id) that may include this site.
   const { data: claims, error: claimsError } = await supabase
@@ -125,16 +141,31 @@ export async function loadSiteClaimHistory(
   for (const claim of claims ?? []) {
     const status = String(claim.status ?? '')
     const voided = isVoidedStatus(status)
-    const pool = Array.isArray(claim.pool_items) ? claim.pool_items : []
+    const pool = Array.isArray(claim.pool_items)
+      ? claim.pool_items
+      : typeof claim.pool_items === 'string'
+        ? (() => {
+            try { return JSON.parse(claim.pool_items) as unknown[] }
+            catch { return [] }
+          })()
+        : []
     const foremanName = foremanDisplayName(foremanById.get(claim.foreman_id))
 
     for (const raw of pool) {
       const parsed = parseGridClaimFromPoolItem(raw)
       if (!parsed) continue
 
-      // Multi-site (null site_id): only cells that still belong to this site.
-      // Single-site claim for this site: keep even if the cell was later re-imported away.
-      if (claim.site_id !== siteId && !siteCellIds.has(parsed.cellId)) continue
+      let cellId = parsed.cellId
+      if (!siteCellIds.has(cellId)) {
+        const label = typeof (raw as { label?: unknown }).label === 'string'
+          ? (raw as { label: string }).label
+          : ''
+        const remapped = remapCellIdFromLabel(label, cellIdByPlotStage)
+        if (remapped) cellId = remapped
+      }
+
+      // Multi-site claims: only cells on this site. Single-site for this site: keep all.
+      if (claim.site_id !== siteId && !siteCellIds.has(cellId)) continue
 
       const entry: ClaimHistoryEntry = {
         claimId:     claim.id,
@@ -148,8 +179,8 @@ export async function loadSiteClaimHistory(
         voided,
       }
 
-      if (!map[parsed.cellId]) map[parsed.cellId] = []
-      map[parsed.cellId].push(entry)
+      if (!map[cellId]) map[cellId] = []
+      map[cellId].push(entry)
     }
   }
 
@@ -164,6 +195,17 @@ export async function loadSiteClaimHistory(
   }
 
   return map
+}
+
+/** Match "Plot 30 — Joist" style labels back onto current grid cells. */
+function remapCellIdFromLabel(
+  label: string,
+  cellIdByPlotStage: Map<string, string>,
+): string | null {
+  const match = label.match(/^Plot\s+(.+?)\s+[—–-]\s+(.+)$/i)
+  if (!match) return null
+  const key = `${match[1].trim().toLowerCase()}|${match[2].trim().toLowerCase()}`
+  return cellIdByPlotStage.get(key) ?? null
 }
 
 /** Format period end as "w/e 14 Jun 2025". */

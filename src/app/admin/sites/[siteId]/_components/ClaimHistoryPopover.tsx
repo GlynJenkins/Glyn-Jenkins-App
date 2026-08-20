@@ -47,22 +47,41 @@ export function ClaimHistoryLines({
 /** Absolute floating tooltip for desktop hover (no layout shift). */
 export function ClaimHistoryHoverCard({
   entries,
+  emptyReason,
   style,
 }: {
   entries: ClaimHistoryEntry[]
+  emptyReason?: string
   style: CSSProperties
 }) {
   return (
     <div
       role="tooltip"
       style={style}
-      className="fixed z-[60] max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-2
+      className="fixed z-[80] max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-2
                  shadow-lg pointer-events-none"
     >
       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
         Claim history
       </p>
-      <ClaimHistoryLines entries={entries} compact />
+      {entries.length === 0 ? (
+        <p className="text-xs text-slate-500 leading-snug">
+          {emptyReason ?? 'Not yet claimed'}
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {entries.map((entry) => (
+            <li
+              key={`${entry.claimId}-${entry.periodEnd}-${entry.pct}-${entry.value}`}
+              className={`text-xs leading-snug ${
+                entry.voided ? 'text-slate-400' : 'text-slate-700'
+              }`}
+            >
+              {formatClaimHistoryLine(entry)}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
