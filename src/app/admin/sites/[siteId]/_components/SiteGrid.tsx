@@ -7,7 +7,7 @@ import {
   ClaimHistoryTapPopover,
 } from './ClaimHistoryPopover'
 import PlotHistoryPanel from './PlotHistoryPanel'
-import { ShieldCheck, X, Loader2 } from 'lucide-react'
+import { ShieldCheck, X, Loader2, FileSpreadsheet } from 'lucide-react'
 import { buildPlotGridRows, sortPlotNumbers } from '@/lib/sites/plot-order'
 import type { ClaimHistoryEntry, ClaimHistoryMap } from '@/lib/claims/load-site-claim-history'
 
@@ -293,30 +293,40 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
             ? 'Loading claim history…'
             : 'Hover or tap a claimed cell for who claimed it · tap a plot number for full history'}
         </p>
-        {!claimMode ? (
-          <button
-            onClick={() => setClaimMode(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700
-                       text-white text-xs font-semibold rounded-xl transition-colors"
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={`/api/admin/sites/${siteId}/build-history/export`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200
+                       hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
           >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Mark Claim Status
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-green-700 bg-green-50 border border-green-200
-                             rounded-xl px-3 py-1.5 font-medium">
-              Tap any cell to set its claim status
-            </span>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Export build history
+          </a>
+          {!claimMode ? (
             <button
-              onClick={() => setClaimMode(false)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-gray-200 hover:bg-gray-300
-                         text-slate-600 text-xs font-semibold rounded-xl transition-colors"
+              onClick={() => setClaimMode(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700
+                         text-white text-xs font-semibold rounded-xl transition-colors"
             >
-              <X className="w-3.5 h-3.5" /> Done
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Mark Claim Status
             </button>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-green-700 bg-green-50 border border-green-200
+                               rounded-xl px-3 py-1.5 font-medium">
+                Tap any cell to set its claim status
+              </span>
+              <button
+                onClick={() => setClaimMode(false)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-gray-200 hover:bg-gray-300
+                           text-slate-600 text-xs font-semibold rounded-xl transition-colors"
+              >
+                <X className="w-3.5 h-3.5" /> Done
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm">
