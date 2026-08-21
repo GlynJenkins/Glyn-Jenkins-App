@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     const { Resend } = await import('resend')
     const resend    = new Resend(process.env.RESEND_API_KEY)
-    const from      = process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev'
+    const from      = process.env.RESEND_FROM_EMAIL ?? 'payroll@glynjenkins.co.uk'
 
     const fmtGBP = (n: number) =>
       '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

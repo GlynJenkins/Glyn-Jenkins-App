@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
+import { releasePriceGridClaim } from '@/lib/claims/price-grid-claim'
 
 export async function POST(
   request: NextRequest,
@@ -47,33 +48,8 @@ export async function POST(
       return NextResponse.json({ error: 'Claim not found or already processed.' }, { status: 404 })
     }
 
-    // ── Restore price_grid cells (undo total_claimed_pct increment) ────
-    const poolItems = (claim.pool_items ?? []) as {
-      type: string; id: string; amount: number; fullValue?: number
-    }[]
-
-    for (const item of poolItems.filter((p) => p.type === 'grid_cell')) {
-      if (!item.id || !item.fullValue) continue
-
-      const { data: cell } = await supabase
-        .from('price_grid')
-        .select('total_claimed_pct')
-        .eq('id', item.id)
-        .single()
-
-      const currentPct = cell?.total_claimed_pct ?? 0
-      const addedPct   = Math.round((item.amount / item.fullValue) * 100)
-      const newPct     = Math.max(0, currentPct - addedPct)
-      const newColor   = newPct >= 100 ? 'blue' : newPct > 0 ? 'orange' : 'white'
-
-      await supabase
-        .from('price_grid')
-        .update({ total_claimed_pct: newPct, cell_color: newColor })
-        .eq('id', item.id)
-    }
-
-    // ── Update claim to rejected ───────────────────────────────────────
-    await supabase
+    // ── Status-guarded reject first (B3) — never reverse an approved claim ──
+    const { data: rejectedRows, error: rejectErr } = await supabase
       .from('claim_periods')
       .update({
         status:           'rejected',
@@ -81,6 +57,31 @@ export async function POST(
         rejected_at:      new Date().toISOString(),
       })
       .eq('id', claimId)
+      .eq('status', 'pending')
+      .select('id')
+
+    if (rejectErr) {
+      return NextResponse.json({ error: rejectErr.message }, { status: 500 })
+    }
+    if (!rejectedRows?.length) {
+      return NextResponse.json(
+        { error: 'Claim not found or already processed.' },
+        { status: 409 },
+      )
+    }
+
+    // ── Restore price_grid cells (atomic money release) ────────────────
+    const poolItems = (claim.pool_items ?? []) as {
+      type: string; id: string; amount: number; fullValue?: number
+    }[]
+
+    for (const item of poolItems.filter((p) => p.type === 'grid_cell')) {
+      if (!item.id || !(item.amount > 0)) continue
+      const released = await releasePriceGridClaim(supabase, item.id, item.amount)
+      if (!released.ok) {
+        console.error('[reject] grid release failed:', released.error, item.id)
+      }
+    }
 
     // ── SMS foreman with rejection reason ──────────────────────────────
     const foreman = claim.workers as {
@@ -120,7 +121,7 @@ export async function POST(
     if (foreman?.email && emailConfigured) {
       const { Resend } = await import('resend')
       const resend     = new Resend(process.env.RESEND_API_KEY)
-      const fromEmail  = process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev'
+      const fromEmail  = process.env.RESEND_FROM_EMAIL ?? 'payroll@glynjenkins.co.uk'
 
       const fmtDate = (d: string | null) =>
         d
