@@ -54,7 +54,8 @@ export default function CellEditorPanel({ cell, onClose, onSave }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(body),
       })
-      if (!res.ok) throw new Error('Failed to save changes')
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error ?? 'Failed to save changes')
 
       onSave({
         ...cell,
@@ -64,8 +65,8 @@ export default function CellEditorPanel({ cell, onClose, onSave }: Props) {
         overrideNote:   body.override_note,
       })
       onClose()
-    } catch {
-      setError('Could not save. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save. Please try again.')
     } finally {
       setSaving(false)
     }

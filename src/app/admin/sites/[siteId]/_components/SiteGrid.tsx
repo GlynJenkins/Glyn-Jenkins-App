@@ -147,6 +147,11 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
   const [pickerCell,   setPickerCell]   = useState<Cell | null>(null)
   const [saving,       setSaving]       = useState(false)
 
+  // After Add Column / Import / Clear Grid, server props change — keep local state in sync.
+  useEffect(() => {
+    setGridCells(initialCells)
+  }, [initialCells])
+
   const [history, setHistory] = useState<ClaimHistoryMap | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const historyRef = useRef<ClaimHistoryMap | null>(null)
