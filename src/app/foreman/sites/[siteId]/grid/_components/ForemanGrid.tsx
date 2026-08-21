@@ -17,6 +17,7 @@ type Cell  = {
   cellColor:       string
   overrideNote:    string | null
   totalClaimedPct: number   // 0–100 accumulated across all claims
+  claimedValue?:   number | null
 }
 
 // claimAmount = the £ value being claimed this time (may be fraction of contractValue)
@@ -78,8 +79,16 @@ function PctPicker({
   onRemove:           () => void
   onClose:            () => void
 }) {
-  const remainingPct   = Math.max(0, 100 - cell.totalClaimedPct)
-  const remainingValue = Math.round(cell.contractValue * remainingPct / 100 * 100) / 100
+  const remainingValue = (() => {
+    if (typeof cell.claimedValue === 'number' && Number.isFinite(cell.claimedValue)) {
+      return Math.max(0, Math.round((cell.contractValue - cell.claimedValue) * 100) / 100)
+    }
+    const remainingPct = Math.max(0, 100 - cell.totalClaimedPct)
+    return Math.round(cell.contractValue * remainingPct / 100 * 100) / 100
+  })()
+  const remainingPct   = cell.contractValue > 0
+    ? Math.max(0, Math.round((remainingValue / cell.contractValue) * 100))
+    : Math.max(0, 100 - cell.totalClaimedPct)
 
   return (
     <>
@@ -220,7 +229,9 @@ export default function ForemanGrid({
       } else {
         rowCells.forEach((c) => {
           if (cellBlockedByFiresock(c)) return
-          const remaining = Math.round(c.contractValue * (100 - c.totalClaimedPct) / 100 * 100) / 100
+          const remaining = typeof c.claimedValue === 'number' && Number.isFinite(c.claimedValue)
+            ? Math.max(0, Math.round((c.contractValue - c.claimedValue) * 100) / 100)
+            : Math.round(c.contractValue * (100 - c.totalClaimedPct) / 100 * 100) / 100
           next.set(c.id, { fullValue: c.contractValue, claimAmount: remaining })
         })
       }

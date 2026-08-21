@@ -64,21 +64,35 @@ export default async function AdminSitePage({
     .order('stage_order')
 
   // Supabase has a server-side row cap (~1000). Fetch all cells in pages.
-  const allCells: {
+  type GridCellRow = {
     id: string; plot_number: string; stage_id: string
     contract_value: number | null; current_balance: number | null
     cell_color: string; override_note: string | null; total_claimed_pct: number
-  }[] = []
+    claimed_value?: number | null
+  }
+  const allCells: GridCellRow[] = []
   const PAGE = 1000
   let from = 0
+  let useClaimedValue = true
   while (true) {
-    const { data: page, error } = await supabase
-      .from('price_grid')
-      .select('id, plot_number, stage_id, contract_value, current_balance, cell_color, override_note, total_claimed_pct')
-      .eq('site_id', siteId)
-      .range(from, from + PAGE - 1)
+    const query = useClaimedValue
+      ? supabase
+          .from('price_grid')
+          .select('id, plot_number, stage_id, contract_value, current_balance, cell_color, override_note, total_claimed_pct, claimed_value')
+          .eq('site_id', siteId)
+          .range(from, from + PAGE - 1)
+      : supabase
+          .from('price_grid')
+          .select('id, plot_number, stage_id, contract_value, current_balance, cell_color, override_note, total_claimed_pct')
+          .eq('site_id', siteId)
+          .range(from, from + PAGE - 1)
+    const { data: page, error } = await query
+    if (error && useClaimedValue) {
+      useClaimedValue = false
+      continue
+    }
     if (error || !page || page.length === 0) break
-    allCells.push(...page)
+    allCells.push(...(page as GridCellRow[]))
     if (page.length < PAGE) break
     from += PAGE
   }

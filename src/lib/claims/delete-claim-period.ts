@@ -1,9 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { releasePriceGridClaim } from '@/lib/claims/price-grid-claim'
 
 type GridPoolItem = { type: string; id: string; amount: number; fullValue?: number }
 
 /**
- * Reverse the claimed-percentage a claim added to its grid cells.
+ * Reverse the claimed money a claim added to its grid cells (atomic RPC).
  * Used on withdrawal; rejection does the same reversal in the reject route
  * (rejected claims are kept, so resubmission must NOT reverse again).
  */
@@ -23,24 +24,9 @@ export async function reverseClaimGridPct(
     .filter((p) => p.type === 'grid_cell')
 
   for (const item of gridItems) {
-    if (!item.id || !item.fullValue) continue
-
-    const { data: cell } = await supabase
-      .from('price_grid')
-      .select('total_claimed_pct')
-      .eq('id', item.id)
-      .single()
-
-    const currentPct = cell?.total_claimed_pct ?? 0
-    const addedPct   = Math.round((item.amount / item.fullValue) * 100)
-    const newPct     = Math.max(0, currentPct - addedPct)
-    const newColor   = newPct <= 0 ? 'white' : 'orange'
-
-    const { error: gridErr } = await supabase
-      .from('price_grid')
-      .update({ total_claimed_pct: newPct, cell_color: newColor })
-      .eq('id', item.id)
-    if (gridErr) return { ok: false, error: gridErr.message }
+    if (!item.id || !(item.amount > 0)) continue
+    const released = await releasePriceGridClaim(supabase, item.id, item.amount)
+    if (!released.ok) return released
   }
 
   return { ok: true }
@@ -59,7 +45,18 @@ export async function deleteClaimPeriod(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = createServiceClient()
 
+  // Only pending claims may be withdrawn with grid reversal (B3).
   if (opts.reverseGridPct) {
+    const { data: pending } = await supabase
+      .from('claim_periods')
+      .select('id')
+      .eq('id', claimId)
+      .eq('status', 'pending')
+      .maybeSingle()
+    if (!pending) {
+      return { ok: false, error: 'Claim not found or already processed.' }
+    }
+
     const reversed = await reverseClaimGridPct(claimId)
     if (!reversed.ok) return reversed
   }
@@ -81,11 +78,15 @@ export async function deleteClaimPeriod(
     .update({ claimed_in_period_id: null })
     .eq('claimed_in_period_id', claimId)
 
-  const { error: claimErr } = await supabase
-    .from('claim_periods')
-    .delete()
-    .eq('id', claimId)
+  let claimDelete = supabase.from('claim_periods').delete().eq('id', claimId)
+  if (opts.reverseGridPct) {
+    claimDelete = claimDelete.eq('status', 'pending')
+  }
+  const { data: deleted, error: claimErr } = await claimDelete.select('id')
   if (claimErr) return { ok: false, error: claimErr.message }
+  if (opts.reverseGridPct && (!deleted || deleted.length === 0)) {
+    return { ok: false, error: 'Claim was processed by another action. Refresh and try again.' }
+  }
 
   return { ok: true }
 }

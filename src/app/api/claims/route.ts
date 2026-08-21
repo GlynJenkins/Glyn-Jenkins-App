@@ -7,6 +7,10 @@ import { getCurrentFortnight, toLocalDateString } from '@/lib/fortnight'
 import { deleteClaimPeriod } from '@/lib/claims/delete-claim-period'
 import { validateFiresockForClaimItems } from '@/lib/firesock/claim-gate'
 import { validateClaimPool, type ClaimPoolItem } from '@/lib/claims/validate-claim-pool'
+import {
+  applyPriceGridClaim,
+  releasePriceGridClaim,
+} from '@/lib/claims/price-grid-claim'
 
 export async function POST(request: NextRequest) {
   const auth = await verifyForemanApiAccess()
@@ -195,28 +199,21 @@ export async function POST(request: NextRequest) {
         .is('claimed_in_period_id', null)   // never steal another claim's variations
     }
 
-    // ── Update price_grid cells: increment total_claimed_pct + auto colour ──
+    // ── Update price_grid cells atomically (claimed_value + derived %) ──
     const gridItems = sanitizedPoolItems.filter((p) => p.type === 'grid_cell')
+    const applied: { id: string; amount: number }[] = []
     for (const item of gridItems) {
-      if (!item.id || !item.fullValue) continue
+      if (!item.id || !item.amount) continue
 
-      const { data: cell } = await supabase
-        .from('price_grid')
-        .select('total_claimed_pct')
-        .eq('id', item.id)
-        .single()
-
-      const currentPct = cell?.total_claimed_pct ?? 0
-      const addedPct   = Math.round((item.amount / item.fullValue) * 100)
-      const newPct     = Math.min(100, currentPct + addedPct)
-
-      // White → Orange (partial) → Blue (fully submitted, awaiting admin approval)
-      const newColor = newPct >= 100 ? 'blue' : 'orange'
-
-      await supabase
-        .from('price_grid')
-        .update({ total_claimed_pct: newPct, cell_color: newColor })
-        .eq('id', item.id)
+      const appliedCell = await applyPriceGridClaim(supabase, item.id, item.amount)
+      if (!appliedCell.ok) {
+        for (const done of applied.reverse()) {
+          await releasePriceGridClaim(supabase, done.id, done.amount)
+        }
+        await deleteClaimPeriod(claim.id)
+        return NextResponse.json({ error: appliedCell.error }, { status: 409 })
+      }
+      applied.push({ id: item.id, amount: item.amount })
     }
 
     return NextResponse.json({ success: true, claimId: claim.id })

@@ -21,6 +21,7 @@ type Cell  = {
   cell_color:       string
   override_note:    string | null
   total_claimed_pct: number
+  claimed_value?:   number | null
 }
 
 interface Props {
@@ -51,9 +52,12 @@ function fmt(v: number | null): string {
   return '£' + v.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
-/** Remaining contract value after claims — not the imported current_balance field. */
+/** Remaining contract value after claims — prefer claimed_value money when present. */
 function remainingAfterClaims(cell: Cell | undefined): number {
   if (!cell || cell.contract_value == null) return 0
+  if (typeof cell.claimed_value === 'number' && Number.isFinite(cell.claimed_value)) {
+    return Math.max(0, Math.round((cell.contract_value - cell.claimed_value) * 100) / 100)
+  }
   const pct = Math.min(100, Math.max(0, cell.total_claimed_pct ?? 0))
   return Math.round(cell.contract_value * (100 - pct)) / 100
 }

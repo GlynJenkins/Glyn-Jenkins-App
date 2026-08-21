@@ -7,6 +7,8 @@ import { calculatePayLine } from '@/lib/cis/calculate-pay'
 import { buildLedgerPayeeSnapshot } from '@/lib/cis/ledger-payee'
 import { resolveClaimLedgerSiteId } from '@/lib/cis/resolve-claim-site'
 
+const round2 = (n: number) => Math.round(n * 100) / 100
+
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ claimId: string }> }
@@ -52,6 +54,21 @@ export async function POST(
 
     const fees = await fetchPayFeeSettings()
 
+    // Preserve custom deductions / NI before wipe (H1).
+    const { data: existingLedger } = await supabase
+      .from('worker_cis_ledger')
+      .select('claim_allocation_id, custom_deduction, national_insurance')
+      .eq('claim_period_id', claimId)
+
+    const preservedByAlloc = new Map<string, { custom: number; ni: number }>()
+    for (const row of existingLedger ?? []) {
+      if (!row.claim_allocation_id) continue
+      preservedByAlloc.set(row.claim_allocation_id, {
+        custom: row.custom_deduction ?? 0,
+        ni:     row.national_insurance ?? 0,
+      })
+    }
+
     // Delete any existing ledger rows for this claim (idempotent)
     await supabase
       .from('worker_cis_ledger')
@@ -68,6 +85,9 @@ export async function POST(
       if (!worker) continue
 
       const gross = alloc.gross_amount ?? 0
+      const preserved = preservedByAlloc.get(alloc.id)
+      const customDeduction = preserved?.custom ?? 0
+      const nationalInsurance = preserved?.ni ?? 0
       const pay = calculatePayLine(
         gross,
         {
@@ -77,7 +97,9 @@ export async function POST(
           role: worker.role,
         },
         fees,
+        customDeduction,
       )
+      const netPay = round2(Math.max(0, pay.net - nationalInsurance))
 
       const payee = buildLedgerPayeeSnapshot(worker)
 
@@ -90,11 +112,10 @@ export async function POST(
         gross_pay:             pay.gross,
         admin_fee:             pay.adminFee,
         insurance_fee:         pay.insuranceFee,
-        custom_deduction:      0,
+        custom_deduction:      pay.customDeduction,
         cis_tax_deducted:      pay.cisTax,
-        // NI intentionally 0 — handled in payroll after export (23 Jul 2026).
-        national_insurance:    0,
-        net_pay:               pay.net,
+        national_insurance:    nationalInsurance,
+        net_pay:               netPay,
         payee_name:            payee.payee_name,
         payee_sort_code:       payee.payee_sort_code,
         payee_account_number:  payee.payee_account_number,

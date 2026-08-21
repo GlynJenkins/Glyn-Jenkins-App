@@ -77,14 +77,29 @@ export async function validateClaimPool(
     return { ok: false, status: 400, error: 'Duplicate grid cells in claim.' }
   }
 
-  const cellById = new Map<string, { site_id: string; contract_value: number | null; total_claimed_pct: number | null }>()
+  const cellById = new Map<string, {
+    site_id: string
+    contract_value: number | null
+    total_claimed_pct: number | null
+    claimed_value: number | null
+  }>()
   if (cellIds.length > 0) {
     const { data: cells, error } = await supabase
       .from('price_grid')
-      .select('id, site_id, contract_value, total_claimed_pct')
+      .select('id, site_id, contract_value, total_claimed_pct, claimed_value')
       .in('id', cellIds)
-    if (error) return { ok: false, status: 500, error: 'Could not verify claim items.' }
-    for (const c of cells ?? []) cellById.set(c.id, c)
+    if (error) {
+      const { data: legacyCells, error: legacyErr } = await supabase
+        .from('price_grid')
+        .select('id, site_id, contract_value, total_claimed_pct')
+        .in('id', cellIds)
+      if (legacyErr) return { ok: false, status: 500, error: 'Could not verify claim items.' }
+      for (const c of legacyCells ?? []) {
+        cellById.set(c.id, { ...c, claimed_value: null })
+      }
+    } else {
+      for (const c of cells ?? []) cellById.set(c.id, c)
+    }
   }
 
   let gridTotal = 0
@@ -104,9 +119,12 @@ export async function validateClaimPool(
       return { ok: false, status: 400, error: `Claim item "${item.label}" has an invalid amount.` }
     }
 
-    const fullValue      = cell.contract_value ?? 0
-    const claimedPct     = cell.total_claimed_pct ?? 0
-    const remainingValue = fullValue * (100 - claimedPct) / 100
+    const fullValue = cell.contract_value ?? 0
+    const claimedMoney =
+      typeof cell.claimed_value === 'number'
+        ? cell.claimed_value
+        : fullValue * (cell.total_claimed_pct ?? 0) / 100
+    const remainingValue = Math.max(0, round2(fullValue - claimedMoney))
 
     if (item.amount > remainingValue + 0.01) {
       return {
@@ -212,8 +230,36 @@ export async function validateClaimPool(
 
   for (const a of allocations) {
     const amt = a.grossAmount
+    if (typeof a.workerId !== 'string' || !a.workerId.trim()) {
+      return { ok: false, status: 400, error: 'Invalid worker allocation — missing worker.' }
+    }
     if (typeof amt !== 'number' || !isFinite(amt) || amt < 0) {
       return { ok: false, status: 400, error: 'Invalid worker allocation amount.' }
+    }
+  }
+
+  const allocationWorkerIds = [...new Set(allocations.map((a) => a.workerId).filter(Boolean))]
+  if (allocationWorkerIds.length > 0) {
+    const { data: workers, error: workersErr } = await supabase
+      .from('workers')
+      .select('id, status')
+      .in('id', allocationWorkerIds)
+    if (workersErr) {
+      return { ok: false, status: 500, error: 'Could not verify workers on this claim.' }
+    }
+    const okIds = new Set(
+      (workers ?? [])
+        .filter((w) => w.status === 'active' || w.status === 'pending_verification')
+        .map((w) => w.id),
+    )
+    for (const id of allocationWorkerIds) {
+      if (!okIds.has(id)) {
+        return {
+          ok: false,
+          status: 400,
+          error: 'A worker on this claim is missing or not eligible for payment. Refresh and try again.',
+        }
+      }
     }
   }
 
