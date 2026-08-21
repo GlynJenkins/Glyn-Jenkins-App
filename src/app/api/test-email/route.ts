@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
+import { getResendFromEmail } from '@/lib/email/from-address'
 
 export async function POST(request: NextRequest) {
   const auth = await verifyAdminApiAccess()
@@ -14,9 +15,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'RESEND_API_KEY not configured.' }, { status: 500 })
     }
 
+    const from = getResendFromEmail()
+    if (!from) {
+      return NextResponse.json(
+        {
+          error:
+            'RESEND_FROM_EMAIL is missing or still set to Resend sandbox (resend.dev). Verify glynjenkinsltd.co.uk in Resend, then set RESEND_FROM_EMAIL on Vercel (e.g. payroll@glynjenkinsltd.co.uk).',
+        },
+        { status: 503 },
+      )
+    }
+
     const { Resend } = await import('resend')
     const resend    = new Resend(process.env.RESEND_API_KEY)
-    const from      = process.env.RESEND_FROM_EMAIL ?? 'payroll@glynjenkins.co.uk'
 
     const fmtGBP = (n: number) =>
       '£' + n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

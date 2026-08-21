@@ -6,6 +6,7 @@ import { fetchPayFeeSettings } from '@/lib/admin/settings-fees'
 import { calculatePayLine } from '@/lib/cis/calculate-pay'
 import { buildLedgerPayeeSnapshot } from '@/lib/cis/ledger-payee'
 import { resolveClaimLedgerSiteId } from '@/lib/cis/resolve-claim-site'
+import { getResendFromEmail } from '@/lib/email/from-address'
 
 export async function POST(
   request: NextRequest,
@@ -232,11 +233,11 @@ export async function POST(
       }
     }
 
-    // ── Send email payslips (if Resend configured) ─────────────────────
-    if (process.env.RESEND_API_KEY) {
+    // ── Send email payslips (if Resend + verified from-address configured) ──
+    const fromEmail = getResendFromEmail()
+    if (process.env.RESEND_API_KEY && fromEmail) {
       const { Resend } = await import('resend')
       const resend     = new Resend(process.env.RESEND_API_KEY)
-      const fromEmail  = process.env.RESEND_FROM_EMAIL ?? 'payroll@glynjenkins.co.uk'
 
       for (const p of payslips) {
         const worker = p.worker

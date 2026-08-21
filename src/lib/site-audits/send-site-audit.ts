@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getResendFromEmail } from '@/lib/email/from-address'
 
 export type SiteAuditSendTarget = {
   workerId: string
@@ -17,10 +18,6 @@ export type SiteAuditSendResult = {
 }
 
 const ATTACH_MAX_BYTES = 8 * 1024 * 1024
-
-function fromEmail(): string {
-  return process.env.RESEND_FROM_EMAIL?.trim() || 'payroll@glynjenkins.co.uk'
-}
 
 async function sendSms(phone: string, body: string): Promise<{ ok: boolean; error?: string }> {
   if (
@@ -59,7 +56,11 @@ export async function issueSiteAuditToRecipients(opts: {
   const supabase = createServiceClient()
   const results: SiteAuditSendResult[] = []
   const resendKey = process.env.RESEND_API_KEY?.trim()
-  const resend = resendKey ? new Resend(resendKey) : null
+  const fromAddr = getResendFromEmail()
+  const resend = resendKey && fromAddr ? new Resend(resendKey) : null
+  if (resendKey && !fromAddr) {
+    console.warn('[site-audit] RESEND_FROM_EMAIL missing or sandbox — email delivery skipped')
+  }
 
   let signedUrl: string | null = null
   if (opts.pdfBuffer.length > ATTACH_MAX_BYTES) {
@@ -77,15 +78,24 @@ export async function issueSiteAuditToRecipients(opts: {
 
     if (target.email && resend) {
       try {
+        const safeName = target.name
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+        const safeSite = opts.siteName
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
         const html = `
-          <p>Hello ${target.name},</p>
-          <p>A new <strong>Site Audit Report</strong> is ready for <strong>${opts.siteName}</strong>.</p>
+          <p>Hello ${safeName},</p>
+          <p>A new <strong>Site Audit Report</strong> is ready for <strong>${safeSite}</strong>.</p>
           <p>You can also open it in the foreman portal under Site Audits.</p>
           ${signedUrl ? `<p><a href="${signedUrl}">Download the PDF</a> (link valid for 7 days).</p>` : ''}
           <p>— Glyn Jenkins Ltd</p>
         `
         await resend.emails.send({
-          from:    `Glyn Jenkins LTD <${fromEmail()}>`,
+          from:    `Glyn Jenkins LTD <${fromAddr}>`,
           to:      target.email,
           subject: `Site Audit — ${opts.siteName}`,
           html,

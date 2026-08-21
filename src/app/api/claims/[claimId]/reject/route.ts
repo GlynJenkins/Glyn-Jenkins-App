@@ -3,6 +3,7 @@ import { apiError } from '@/lib/api/route-error'
 import { verifyAdminApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { releasePriceGridClaim } from '@/lib/claims/price-grid-claim'
+import { getResendFromEmail } from '@/lib/email/from-address'
 
 export async function POST(
   request: NextRequest,
@@ -113,15 +114,15 @@ export async function POST(
       }
     }
 
-    // ── Email foreman (if Resend configured) ───────────────────────────
+    // ── Email foreman (if Resend + verified from-address configured) ───
     let emailSent   = false
     let emailError: string | null = null
-    const emailConfigured = !!process.env.RESEND_API_KEY
+    const fromEmail = getResendFromEmail()
+    const emailConfigured = !!process.env.RESEND_API_KEY && !!fromEmail
 
-    if (foreman?.email && emailConfigured) {
+    if (foreman?.email && emailConfigured && fromEmail) {
       const { Resend } = await import('resend')
       const resend     = new Resend(process.env.RESEND_API_KEY)
-      const fromEmail  = process.env.RESEND_FROM_EMAIL ?? 'payroll@glynjenkins.co.uk'
 
       const fmtDate = (d: string | null) =>
         d

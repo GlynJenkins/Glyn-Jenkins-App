@@ -1,6 +1,3 @@
--- Enable RLS on tables that may have been created after the bulk RLS script.
--- Safe to re-run. App uses service-role server-side (bypasses RLS).
-
 alter table if exists public.jetwash_plot_status enable row level security;
 alter table if exists public.jetwash_plot_status force row level security;
 

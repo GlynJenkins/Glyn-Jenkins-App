@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError } from '@/lib/api/route-error'
 import { createServiceClient } from '@/lib/supabase/server'
 import { FORGOT_PASSWORD_RATE_LIMIT, rateLimit } from '@/lib/rate-limit'
+import { getResendFromEmail } from '@/lib/email/from-address'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,7 +66,11 @@ export async function POST(request: NextRequest) {
 
       const { Resend } = await import('resend')
       const resend    = new Resend(process.env.RESEND_API_KEY)
-      const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'payroll@glynjenkins.co.uk'
+      const fromEmail = getResendFromEmail()
+      if (!fromEmail) {
+        console.warn('[forgot-password] RESEND_FROM_EMAIL not configured for production mail — reset link not emailed')
+        return NextResponse.json({ success: true })
+      }
 
       const { error: sendError } = await resend.emails.send({
         from:    fromEmail,
