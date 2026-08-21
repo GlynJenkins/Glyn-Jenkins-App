@@ -16,7 +16,7 @@ type Worker = {
   first_name: string
   surname: string
   phone: string
-  utr_number: string | null
+  utr_masked: string | null
   tax_type: string
   role: string
   status: string
@@ -128,10 +128,10 @@ function WorkerCard({ worker, onStatusChange, onDelete }: {
           <Phone className="w-3.5 h-3.5 text-slate-400" />
           <span>{worker.phone}</span>
         </div>
-        {worker.utr_number && (
+        {worker.utr_masked && (
           <div className="flex items-center gap-2">
             <FileText className="w-3.5 h-3.5 text-slate-400" />
-            <span>UTR: {worker.utr_number}</span>
+            <span>UTR: {worker.utr_masked}</span>
           </div>
         )}
         <p className="text-xs text-slate-400">Submitted: {submitted}</p>

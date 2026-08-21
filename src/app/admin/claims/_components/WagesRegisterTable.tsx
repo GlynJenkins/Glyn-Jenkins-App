@@ -12,7 +12,7 @@ import {
   wagesRegisterFilterOptions,
   WAGES_ROLE_LABELS,
   type WagesFortnightTab,
-  type WagesRegisterRow,
+  type WagesRegisterPublicRow,
 } from '@/lib/claims/load-wages-register'
 
 const fmt = (n: number) =>
@@ -29,7 +29,7 @@ const amountInputClass =
   'w-[4.5rem] px-2 py-1 border border-slate-200 rounded-lg text-xs text-right tabular-nums outline-none focus:ring-2 focus:ring-orange-400'
 
 type Props = {
-  rows:               WagesRegisterRow[]
+  rows:               WagesRegisterPublicRow[]
   periodTabs:         WagesFortnightTab[]
   defaultPeriodKey:   string
   pendingCount?:      number
@@ -201,7 +201,7 @@ export default function WagesRegisterTable({
   }
 
   const saveApprenticeDeductions = (
-    row: WagesRegisterRow,
+    row: WagesRegisterPublicRow,
     updates: { tax?: number; nationalInsurance?: number },
   ) => {
     const tax = updates.tax ?? row.tax

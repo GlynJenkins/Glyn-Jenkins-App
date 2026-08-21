@@ -25,7 +25,15 @@ export default async function AdminWorkersPage() {
     console.error('[Admin Workers] Failed to fetch workers:', error.message)
   }
 
-  const workerRows = workers ?? []
+  const workerRows = (workers ?? []).map(({ utr_number, ...rest }) => ({
+    ...rest,
+    // Mask before the client bundle — never ship full UTR to the browser list.
+    utr_masked: utr_number && utr_number.length >= 4
+      ? `••••${utr_number.slice(-4)}`
+      : utr_number
+        ? '••••'
+        : null,
+  }))
   const pendingCount = workerRows.filter((w) => w.status === 'pending_verification').length
 
   return (

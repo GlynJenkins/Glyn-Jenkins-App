@@ -134,17 +134,19 @@ export function buildPayrollCsvRows(
 }
 
 export function payrollCsvContent(result: PayrollCsvBuildResult): string {
+  // Force-quote sort/account so Excel keeps leading zeros (H4).
+  const forceQuote = (value: string) => `"${String(value).replace(/"/g, '""')}"`
   const lines = [
     ['Payee', 'Sort Code', 'Account Number', 'Amount', 'Reference', 'Note'].map(csvCell).join(','),
     ...result.rows.map((r) =>
       [
-        r.payee,
-        r.sortCode,
-        r.accountNumber,
-        r.amount.toFixed(2),
-        r.reference,
-        r.note,
-      ].map(csvCell).join(','),
+        csvCell(r.payee),
+        forceQuote(r.sortCode),
+        forceQuote(r.accountNumber),
+        csvCell(r.amount.toFixed(2)),
+        csvCell(r.reference),
+        csvCell(r.note),
+      ].join(','),
     ),
   ]
   // UTF-8 BOM helps Numbers/Excel open comma-separated columns correctly.

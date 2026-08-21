@@ -27,8 +27,21 @@ export type WagesRegisterRow = {
   periodEnd:       string | null
   dateOfPay:       string
   claimPeriodId:   string | null
+  /** Server-only for bank CSV — never pass to client components. */
   payeeSortCode:      string | null
   payeeAccountNumber: string | null
+}
+
+/** Browser-safe wages row — no bank details. */
+export type WagesRegisterPublicRow = Omit<
+  WagesRegisterRow,
+  'payeeSortCode' | 'payeeAccountNumber'
+>
+
+export function toPublicWagesRegisterRows(
+  rows: WagesRegisterRow[],
+): WagesRegisterPublicRow[] {
+  return rows.map(({ payeeSortCode: _s, payeeAccountNumber: _a, ...rest }) => rest)
 }
 
 type RawLedgerRow = {
@@ -70,7 +83,7 @@ export function computeRegisterNet(
   return Math.round((gross - fees - tax - nationalInsurance) * 100) / 100
 }
 
-function compareByName(a: WagesRegisterRow, b: WagesRegisterRow) {
+function compareByName(a: WagesRegisterPublicRow, b: WagesRegisterPublicRow) {
   const s = a.surname.localeCompare(b.surname, undefined, { sensitivity: 'base' })
   if (s !== 0) return s
   return a.firstName.localeCompare(b.firstName, undefined, { sensitivity: 'base' })
@@ -284,13 +297,13 @@ export const WAGES_ROLE_LABELS: Record<string, string> = {
   site_supervisor:    'Site Supervisor',
 }
 
-export function wagesRegisterPeriodKey(row: WagesRegisterRow): string {
+export function wagesRegisterPeriodKey(row: WagesRegisterPublicRow): string {
   if (row.periodStart && row.periodEnd) return `${row.periodStart}|${row.periodEnd}`
   if (row.claimPeriodId) return row.claimPeriodId
   return 'unknown'
 }
 
-export function rowMatchesPeriodKey(row: WagesRegisterRow, periodKey: string): boolean {
+export function rowMatchesPeriodKey(row: WagesRegisterPublicRow, periodKey: string): boolean {
   if (periodKey === 'all') return true
   return wagesRegisterPeriodKey(row) === periodKey
 }
@@ -306,7 +319,7 @@ export type WagesFortnightTab = {
 
 export function buildWagesFortnightTabs(
   settings: PayCycleSettings | null,
-  rows: WagesRegisterRow[],
+  rows: WagesRegisterPublicRow[],
   at = new Date(),
   count = 52,
 ): WagesFortnightTab[] {
@@ -415,10 +428,10 @@ export type WagesRegisterFilters = {
   periodKey?: string
 }
 
-export function filterWagesRegisterRows(
-  rows: WagesRegisterRow[],
+export function filterWagesRegisterRows<T extends WagesRegisterPublicRow>(
+  rows: T[],
   filters: WagesRegisterFilters,
-): WagesRegisterRow[] {
+): T[] {
   let result = rows
   if (filters.foremanId) {
     result = result.filter((r) => r.foremanId === filters.foremanId)
@@ -432,7 +445,7 @@ export function filterWagesRegisterRows(
   return result
 }
 
-export function wagesRegisterFilterOptions(rows: WagesRegisterRow[]) {
+export function wagesRegisterFilterOptions(rows: WagesRegisterPublicRow[]) {
   const foremen = new Map<string, string>()
   const roles = new Set<string>()
   const periods = new Map<string, { key: string; label: string; periodEnd: string }>()

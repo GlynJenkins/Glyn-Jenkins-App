@@ -5,6 +5,7 @@ import {
   buildWagesFortnightTabs,
   defaultWagesPeriodKey,
   loadWagesRegisterResult,
+  toPublicWagesRegisterRows,
 } from '@/lib/claims/load-wages-register'
 import { fetchPayCycleSettings } from '@/lib/fortnight'
 import WagesRegisterTable from './_components/WagesRegisterTable'
@@ -96,7 +97,7 @@ export default async function AdminClaimsPage() {
             )}
 
             <WagesRegisterTable
-              rows={registerRows}
+              rows={toPublicWagesRegisterRows(registerRows)}
               periodTabs={periodTabs}
               defaultPeriodKey={defaultPeriodKey}
               pendingCount={pendingCount ?? 0}
