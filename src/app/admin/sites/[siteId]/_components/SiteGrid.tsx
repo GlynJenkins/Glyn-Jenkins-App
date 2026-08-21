@@ -51,6 +51,13 @@ function fmt(v: number | null): string {
   return '£' + v.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
+/** Remaining contract value after claims — not the imported current_balance field. */
+function remainingAfterClaims(cell: Cell | undefined): number {
+  if (!cell || cell.contract_value == null) return 0
+  const pct = Math.min(100, Math.max(0, cell.total_claimed_pct ?? 0))
+  return Math.round(cell.contract_value * (100 - pct)) / 100
+}
+
 function prefersFineHover(): boolean {
   if (typeof window === 'undefined') return true
   return window.matchMedia('(hover: hover) and (pointer: fine)').matches
@@ -456,7 +463,7 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
                             {cell.total_claimed_pct}% claimed
                           </span>
                           <span className="block text-[10px] opacity-70">
-                            {fmt(Math.round(cell.contract_value * (100 - cell.total_claimed_pct)) / 100)} left
+                            {fmt(remainingAfterClaims(cell))} left
                           </span>
                         </>
                       )}
@@ -483,12 +490,17 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
               <td className="sticky left-0 z-10 bg-slate-800 px-4 py-3 text-xs uppercase
                              tracking-wide border-r border-slate-600 whitespace-nowrap">
                 TOTALS
+                <span className="block normal-case font-medium text-slate-400 tracking-normal mt-0.5">
+                  contract / left
+                </span>
               </td>
               {sortedStages.map((stage) => {
                 const colTotal = plotNumbers.reduce((sum, p) =>
                   sum + (cellMap.get(p)?.get(stage.id)?.contract_value ?? 0), 0)
-                const balTotal = plotNumbers.reduce((sum, p) =>
-                  sum + (cellMap.get(p)?.get(stage.id)?.current_balance ?? 0), 0)
+                const balTotal = plotNumbers.reduce(
+                  (sum, p) => sum + remainingAfterClaims(cellMap.get(p)?.get(stage.id)),
+                  0,
+                )
                 const hasData  = plotNumbers.some(
                   (p) => (cellMap.get(p)?.get(stage.id)?.contract_value ?? null) !== null
                 )
@@ -498,9 +510,9 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
                     {hasData ? (
                       <>
                         <span className="text-xs text-orange-300 font-bold block">{fmt(colTotal)}</span>
-                        {balTotal > 0 && (
-                          <span className="text-xs text-slate-400 block">bal: {fmt(balTotal)}</span>
-                        )}
+                        <span className="text-xs text-slate-300 block font-medium">
+                          left {fmt(balTotal)}
+                        </span>
                       </>
                     ) : (
                       <span className="text-slate-500 text-xs">—</span>
@@ -512,10 +524,16 @@ export default function SiteGrid({ siteId, stages, cells: initialCells }: Props)
                 const grandTotal = sortedStages.reduce((stageSum, stage) =>
                   isTotalStage(stage.stage_name) ? stageSum : stageSum + plotNumbers.reduce((plotSum, p) =>
                     plotSum + (cellMap.get(p)?.get(stage.id)?.contract_value ?? 0), 0), 0)
+                const grandLeft = sortedStages.reduce((stageSum, stage) =>
+                  isTotalStage(stage.stage_name) ? stageSum : stageSum + plotNumbers.reduce((plotSum, p) =>
+                    plotSum + remainingAfterClaims(cellMap.get(p)?.get(stage.id)), 0), 0)
                 return (
                   <td className="px-3 py-3 text-right whitespace-nowrap bg-orange-600 border-l border-orange-400">
                     <span className="text-xs text-white font-bold block">GRAND</span>
                     <span className="text-xs text-white font-bold block">{fmt(grandTotal)}</span>
+                    <span className="text-[10px] text-orange-100 font-medium block mt-0.5">
+                      left {fmt(grandLeft)}
+                    </span>
                   </td>
                 )
               })()}
