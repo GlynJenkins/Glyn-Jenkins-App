@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertCircle,
   Camera,
@@ -129,23 +130,26 @@ function syncSnagsFromChecklist(
   return merged.length > 0 ? merged : [emptyDraftSnag()]
 }
 
-function appendSnagsToFormData(fd: FormData, drafts: DraftSnag[]) {
+async function appendSnagsToFormData(fd: FormData, drafts: DraftSnag[]) {
   const photos: File[] = []
-  const payload = drafts
-    .map((s) => {
-      const description = s.description.trim()
-      if (!description) return null
-      let photoIndex: number | null = null
-      if (s.file) {
-        photoIndex = photos.length
-        photos.push(s.file)
-      }
-      return { description, photoIndex }
-    })
-    .filter(Boolean)
+  const payload: { description: string; photoIndex: number | null }[] = []
+
+  for (const s of drafts) {
+    const description = s.description.trim()
+    if (!description) continue
+    let photoIndex: number | null = null
+    if (s.file && s.file.size > 0) {
+      const prepared = await preparePhotoForUpload(s.file)
+      photoIndex = photos.length
+      photos.push(prepared)
+    }
+    payload.push({ description, photoIndex })
+  }
 
   fd.append('snags', JSON.stringify(payload))
-  for (const file of photos) fd.append('snagPhotos', file)
+  photos.forEach((file, i) => {
+    fd.append('snagPhotos', file, file.name || `snag-${i + 1}.jpg`)
+  })
 }
 
 function cellButtonClass(tone: ReturnType<typeof qaCellTone>) {
@@ -178,39 +182,84 @@ function SnagDraftEditor({
   snags,
   onChange,
   processing,
+  onProcessingChange,
   error,
 }: {
   snags: DraftSnag[]
-  onChange: (next: DraftSnag[]) => void
+  onChange: (next: DraftSnag[] | ((prev: DraftSnag[]) => DraftSnag[])) => void
   processing: boolean
+  onProcessingChange?: (busy: boolean) => void
   error?: string | null
 }) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const update = (id: string, patch: Partial<DraftSnag>) => {
-    onChange(snags.map((s) => (s.id === id ? { ...s, ...patch } : s)))
+    onChange((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
   }
 
   const remove = (id: string) => {
-    const item = snags.find((s) => s.id === id)
-    if (item?.preview) URL.revokeObjectURL(item.preview)
-    onChange(snags.filter((s) => s.id !== id))
+    onChange((prev) => {
+      const item = prev.find((s) => s.id === id)
+      if (item?.preview) URL.revokeObjectURL(item.preview)
+      return prev.filter((s) => s.id !== id)
+    })
   }
 
   const setPhoto = async (id: string, file: File | null) => {
     const current = snags.find((s) => s.id === id)
     if (current?.preview) URL.revokeObjectURL(current.preview)
+    setPhotoError(null)
     if (!file) {
       update(id, { file: null, preview: null })
       return
     }
-    if (!isImageUploadFile(file)) return
-    const prepared = await preparePhotoForUpload(file)
-    update(id, { file: prepared, preview: URL.createObjectURL(prepared) })
+    if (!isImageUploadFile(file)) {
+      setPhotoError('Please choose a photo (JPEG, PNG, or HEIC).')
+      return
+    }
+    onProcessingChange?.(true)
+    try {
+      const prepared = await preparePhotoForUpload(file)
+      update(id, { file: prepared, preview: URL.createObjectURL(prepared) })
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Could not use that photo.')
+      update(id, { file: null, preview: null })
+    } finally {
+      onProcessingChange?.(false)
+    }
   }
+
+  const fileInputs = mounted
+    ? createPortal(
+        <div className="hidden" aria-hidden>
+          {snags.map((snag) => (
+            <input
+              key={snag.id}
+              ref={(el) => { inputRefs.current[snag.id] = el }}
+              type="file"
+              accept="image/*,.heic,.heif"
+              capture="environment"
+              tabIndex={-1}
+              onChange={(e) => {
+                void setPhoto(snag.id, e.target.files?.[0] ?? null)
+                if (e.currentTarget) e.currentTarget.value = ''
+              }}
+            />
+          ))}
+        </div>,
+        document.body,
+      )
+    : null
 
   return (
     <div className="rounded-xl border border-red-200 bg-red-50/60 p-3 space-y-3">
+      {fileInputs}
       <div>
         <p className="text-sm font-semibold text-slate-900">Snag list</p>
         <p className="text-xs text-slate-600 mt-0.5">
@@ -240,17 +289,6 @@ function SnagDraftEditor({
             placeholder="Describe the defect…"
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-400 resize-none"
           />
-          <input
-            ref={(el) => { inputRefs.current[snag.id] = el }}
-            type="file"
-            accept="image/*,.heic,.heif"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              void setPhoto(snag.id, e.target.files?.[0] ?? null)
-              if (e.currentTarget) e.currentTarget.value = ''
-            }}
-          />
           {snag.preview && (
             <div className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -276,7 +314,7 @@ function SnagDraftEditor({
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
           >
             <Camera className="w-3.5 h-3.5" />
-            {snag.file ? 'Change photo' : 'Add photo'}
+            {processing ? 'Preparing…' : snag.file ? 'Change photo' : 'Add photo'}
           </button>
         </div>
       ))}
@@ -290,7 +328,9 @@ function SnagDraftEditor({
         Add snag
       </button>
 
-      {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+      {(error || photoError) && (
+        <p className="text-xs text-red-600 font-medium">{error || photoError}</p>
+      )}
     </div>
   )
 }
@@ -610,7 +650,7 @@ function InspectionFormModal({
       if (preparedFiresock) fd.append('firesockPhoto', preparedFiresock)
       preparedInspection.forEach((file) => fd.append('inspectionPhotos', file))
       fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
-      if (effectiveResult === 'Fail') appendSnagsToFormData(fd, draftSnags)
+      if (effectiveResult === 'Fail') await appendSnagsToFormData(fd, draftSnags)
 
       const res  = await fetch('/api/qa/inspections', { method: 'POST', body: fd })
       const json = await res.json()
@@ -666,7 +706,7 @@ function InspectionFormModal({
     try {
       const fd = new FormData()
       fd.append('action', 'fail')
-      appendSnagsToFormData(fd, draftSnags)
+      await appendSnagsToFormData(fd, draftSnags)
       const res = await fetch(`/api/qa/inspections/${inspectionId}/reinspect`, {
         method: 'POST',
         body: fd,
@@ -902,6 +942,7 @@ function InspectionFormModal({
                         snags={draftSnags}
                         onChange={setDraftSnags}
                         processing={processingPhotos}
+                        onProcessingChange={setProcessingPhotos}
                         error={snagError}
                       />
                       <div className="flex gap-2">
@@ -1130,6 +1171,7 @@ function InspectionFormModal({
                   snags={draftSnags}
                   onChange={setDraftSnags}
                   processing={processingPhotos}
+                  onProcessingChange={setProcessingPhotos}
                   error={snagError}
                 />
               )}

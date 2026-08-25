@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyManagementAreaApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchQaSiteGrid } from '@/lib/qa/queries'
-import { isImageUploadFile, photoExtension } from '@/lib/qa/inspection-photos'
+import { photoExtension } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import {
   fetchSnagsForInspection,
@@ -141,7 +141,12 @@ export async function POST(
       )
     }
 
-    const snagPhotoFiles = (formData.getAll('snagPhotos') as File[]).filter(isImageUploadFile)
+    const snagPhotoFiles = (formData.getAll('snagPhotos') as unknown[])
+      .filter((f): f is File => {
+        if (!f || typeof f !== 'object') return false
+        const file = f as File
+        return typeof file.size === 'number' && file.size > 0 && typeof file.arrayBuffer === 'function'
+      })
     const newRound = currentRound + 1
     const ts = Date.now()
     const storedPaths: (string | null)[] = []

@@ -89,12 +89,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Checklist fails force Fail and seed snags if the client omitted them.
-    let effectiveResult: 'Pass' | 'Fail' = result
-    // checklistAnswers filled below after parse — seed after that block
-    const snagPhotoFiles = (formData.getAll('snagPhotos') as File[]).filter(isImageUploadFile)
+    let effectiveResult: 'Pass' | 'Fail' = result === 'Fail' ? 'Fail' : 'Pass'
+    // Accept any non-empty binary part — phone uploads sometimes omit MIME/extension.
+    const snagPhotoFiles = (formData.getAll('snagPhotos') as unknown[])
+      .filter((f): f is File => {
+        if (!f || typeof f !== 'object') return false
+        const file = f as File
+        return typeof file.size === 'number' && file.size > 0 && typeof file.arrayBuffer === 'function'
+      })
     for (const file of snagPhotoFiles) {
       if (file.size > MAX_PHOTO_BYTES) {
-        return NextResponse.json({ error: `Snag photo "${file.name}" is too large (max 20 MB).` }, { status: 400 })
+        return NextResponse.json({ error: `Snag photo "${file.name || 'photo'}" is too large (max 20 MB).` }, { status: 400 })
       }
     }
     // Plot numbers appear in storage keys — never allow path traversal characters.

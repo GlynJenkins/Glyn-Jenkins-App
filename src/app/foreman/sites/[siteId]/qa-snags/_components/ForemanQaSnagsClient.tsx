@@ -81,7 +81,7 @@ function MarkDoneForm({
     try {
       const fd = new FormData()
       if (note.trim()) fd.append('note', note.trim())
-      if (photo) fd.append('photo', photo)
+      if (photo) fd.append('photo', photo, photo.name || 'fix.jpg')
       const res = await fetch(`/api/foreman/qa-snags/${snagId}/fix`, {
         method: 'POST',
         body: fd,

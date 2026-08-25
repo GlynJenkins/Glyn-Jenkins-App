@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyForemanApiAccess } from '@/lib/auth/portal-access'
 import { createServiceClient } from '@/lib/supabase/server'
-import { isImageUploadFile, photoExtension } from '@/lib/qa/inspection-photos'
+import { photoExtension } from '@/lib/qa/inspection-photos'
 import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import { refreshInspectionStateFromSnags } from '@/lib/qa/snags'
 import { qaStageLabel } from '@/lib/qa/stages'
@@ -66,11 +66,15 @@ export async function POST(
     }
 
     let fixedPhotoPath: string | null = null
-    if (photo && isImageUploadFile(photo)) {
-      if (photo.size > MAX_PHOTO_BYTES) {
+    const photoFile =
+      photo && typeof photo === 'object' && typeof (photo as File).size === 'number' && (photo as File).size > 0
+        ? (photo as File)
+        : null
+    if (photoFile) {
+      if (photoFile.size > MAX_PHOTO_BYTES) {
         return NextResponse.json({ error: 'Photo too large (max 20 MB).' }, { status: 400 })
       }
-      const raw = Buffer.from(await photo.arrayBuffer())
+      const raw = Buffer.from(await photoFile.arrayBuffer())
       const normalized = await normalizePhotoForPdf(raw)
       const ext = photoExtension(normalized.mime)
       const ts = Date.now()
