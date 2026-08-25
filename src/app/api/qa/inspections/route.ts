@@ -14,6 +14,8 @@ import {
   parseChecklistAnswers,
   type QaChecklistAnswers,
 } from '@/lib/qa/checklists'
+import { insertSnags, notifySiteForemenSms } from '@/lib/qa/snags'
+import type { QaInspectionState } from '@/lib/qa/inspection-state'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -40,6 +42,7 @@ export async function POST(request: NextRequest) {
     const inspectionDate = (formData.get('inspectionDate') as string)?.trim()
     const observations   = (formData.get('observations') as string)?.trim() ?? ''
     const result         = (formData.get('result') as string)?.trim() || 'Pass'
+    const snagsJson      = formData.get('snags') as string | null
     const firesockNa     = formData.get('firesockNa') === 'true'
     const firesockPhoto  = formData.get('firesockPhoto') as File | null
     const signature      = formData.get('signature') as File | null
@@ -61,6 +64,40 @@ export async function POST(request: NextRequest) {
     }
     if (result !== 'Pass' && result !== 'Fail') {
       return NextResponse.json({ error: 'Result must be Pass or Fail.' }, { status: 400 })
+    }
+
+    type IncomingSnag = { description: string; photoIndex?: number | null }
+    let incomingSnags: IncomingSnag[] = []
+    if (snagsJson) {
+      try {
+        const parsed = JSON.parse(snagsJson) as IncomingSnag[]
+        if (!Array.isArray(parsed)) throw new Error('not array')
+        incomingSnags = parsed
+          .map((s) => ({
+            description: typeof s.description === 'string' ? s.description.trim() : '',
+            photoIndex:
+              typeof s.photoIndex === 'number' && Number.isFinite(s.photoIndex)
+                ? s.photoIndex
+                : null,
+          }))
+          .filter((s) => s.description.length > 0)
+      } catch {
+        return NextResponse.json({ error: 'Invalid snag list.' }, { status: 400 })
+      }
+    }
+    if (result === 'Fail' && incomingSnags.length === 0) {
+      return NextResponse.json(
+        { error: 'Add at least one snag item when the result is Fail.' },
+        { status: 400 },
+      )
+    }
+    if (result === 'Pass') incomingSnags = []
+
+    const snagPhotoFiles = (formData.getAll('snagPhotos') as File[]).filter(isImageUploadFile)
+    for (const file of snagPhotoFiles) {
+      if (file.size > MAX_PHOTO_BYTES) {
+        return NextResponse.json({ error: `Snag photo "${file.name}" is too large (max 20 MB).` }, { status: 400 })
+      }
     }
     // Plot numbers appear in storage keys — never allow path traversal characters.
     if (plotNumber.includes('/') || plotNumber.includes('..') || plotNumber.length > 60) {
@@ -179,6 +216,13 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    const snagBuffers: { buffer: Buffer; mime: string }[] = []
+    for (const file of snagPhotoFiles) {
+      const raw = Buffer.from(await file.arrayBuffer())
+      const normalized = await normalizePhotoForPdf(raw)
+      snagBuffers.push({ buffer: normalized.buffer, mime: normalized.mime })
+    }
+
     const pdfPhotos: QaPdfPhoto[] = []
     if (firesockBuffer && firesockMime) {
       pdfPhotos.push({ label: 'Firesock photo', buffer: firesockBuffer, mime: firesockMime })
@@ -186,6 +230,16 @@ export async function POST(request: NextRequest) {
     inspectionBuffers.forEach((item, index) => {
       pdfPhotos.push({
         label: `Inspection photo ${index + 1}`,
+        buffer: item.buffer,
+        mime: item.mime,
+      })
+    })
+    incomingSnags.forEach((snag, index) => {
+      const photoIdx = snag.photoIndex
+      if (photoIdx == null || photoIdx < 0 || photoIdx >= snagBuffers.length) return
+      const item = snagBuffers[photoIdx]
+      pdfPhotos.push({
+        label: `Snag ${index + 1}: ${snag.description.slice(0, 60)}`,
         buffer: item.buffer,
         mime: item.mime,
       })
@@ -212,6 +266,13 @@ export async function POST(request: NextRequest) {
       firesockNa:     firesockNa && stageAllowsFiresockNa(stage),
       photos:         pdfPhotos,
       checklist:      pdfChecklist.length ? pdfChecklist : undefined,
+      snags: incomingSnags.map((s, i) => ({
+        round:       1,
+        description: s.description,
+        fixed:       false,
+        photoIndex:  s.photoIndex ?? null,
+        index:       i + 1,
+      })),
     })
 
     const signaturePath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-signature.png`
@@ -257,6 +318,23 @@ export async function POST(request: NextRequest) {
       }
       uploadedPaths.push(path)
       storedInspectionPhotos.push({ path, mime })
+    }
+
+    const storedSnagPhotoPaths: (string | null)[] = snagBuffers.map(() => null)
+    for (let i = 0; i < snagBuffers.length; i++) {
+      const { buffer, mime } = snagBuffers[i]
+      const ext = photoExtension(mime)
+      const path = `qa/${siteId}/${plotNumber}/${stage}/${ts}-snag-${i + 1}.${ext}`
+      const { error: snagPhotoErr } = await supabase.storage
+        .from('worker-documents')
+        .upload(path, buffer, { contentType: mime, upsert: false })
+      if (snagPhotoErr) {
+        console.error('[QA] Snag photo upload failed:', snagPhotoErr)
+        await cleanupUploads()
+        return NextResponse.json({ error: 'Snag photo upload failed.' }, { status: 500 })
+      }
+      uploadedPaths.push(path)
+      storedSnagPhotoPaths[i] = path
     }
 
     const { error: sigUploadErr } = await supabase.storage
@@ -322,11 +400,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const inspectionState: QaInspectionState =
+      result === 'Fail' ? 'failed_open' : 'passed'
+
     const row = {
       site_id:        siteId,
       plot_number:    plotNumber,
       stage,
       status:         'completed',
+      inspection_state: inspectionState,
       form_data: {
         inspectorName,
         // Flag if the form-submitted name differed from the logged-in account.
@@ -339,6 +421,7 @@ export async function POST(request: NextRequest) {
         firesock_photo_path: firesockPhotoPath ?? null,
         inspection_photo_paths: storedInspectionPhotos.map((p) => p.path),
         checklist: checklistAnswers,
+        snag_round: result === 'Fail' ? 1 : 0,
       },
       notes:          observations,
       signature_path: signaturePath,
@@ -358,6 +441,38 @@ export async function POST(request: NextRequest) {
       console.error('[QA] Inspection save failed:', upsertErr)
       await cleanupUploads()
       return NextResponse.json({ error: 'Failed to save inspection.' }, { status: 500 })
+    }
+
+    // Replace snags for a fresh fail (prior snags cascade-deleted only if row deleted;
+    // on upsert same id, clear old snags first).
+    await supabase.from('qa_inspection_snags').delete().eq('inspection_id', inspection.id)
+
+    if (result === 'Fail' && incomingSnags.length > 0) {
+      try {
+        await insertSnags(
+          supabase,
+          inspection.id,
+          incomingSnags.map((s, i) => ({
+            description: s.description,
+            raised_photo_path:
+              s.photoIndex != null && s.photoIndex >= 0 && s.photoIndex < storedSnagPhotoPaths.length
+                ? storedSnagPhotoPaths[s.photoIndex]
+                : null,
+            sort_order: i,
+          })),
+          1,
+        )
+      } catch (snagErr) {
+        console.error('[QA] Snag insert failed:', snagErr)
+        await cleanupUploads()
+        return NextResponse.json({ error: 'Failed to save snag list.' }, { status: 500 })
+      }
+
+      await notifySiteForemenSms(
+        supabase,
+        siteId,
+        `Quality inspection — Plot ${plotNumber} ${qaStageLabel(stage)} has ${incomingSnags.length} item${incomingSnags.length === 1 ? '' : 's'} to action.`,
+      )
     }
 
     const grid = await fetchQaSiteGrid(siteId)

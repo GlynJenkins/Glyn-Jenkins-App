@@ -76,6 +76,14 @@ export type QaInspectionPdfInput = {
   firesockNa?:    boolean
   photos?:        QaPdfPhoto[]
   checklist?:     { label: string; answer: 'yes' | 'no' | 'na' }[]
+  snags?: {
+    round: number
+    description: string
+    fixed: boolean
+    fixedNote?: string | null
+    index: number
+    photoIndex?: number | null
+  }[]
 }
 
 export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Promise<Buffer> {
@@ -281,6 +289,24 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
   const noteLines = wrapText(input.observations || '—', maxWidth, font, BODY_SIZE)
   drawLines(noteLines)
   y -= 16
+
+  if (input.snags?.length) {
+    drawLines(['Snags'], { bold: true, size: 12 })
+    y -= 4
+    for (const snag of input.snags) {
+      const status = snag.fixed ? 'FIXED' : 'OPEN'
+      const head = `Round ${snag.round} · #${snag.index} · ${status}`
+      drawLines([head], { bold: true })
+      const desc = wrapText(snag.description, maxWidth, font, BODY_SIZE)
+      drawLines(desc)
+      if (snag.fixed && snag.fixedNote) {
+        const note = wrapText(`Fix note: ${snag.fixedNote}`, maxWidth, font, BODY_SIZE)
+        drawLines(note)
+      }
+      y -= 6
+    }
+    y -= 8
+  }
 
   drawLines(['SIGNATURE'], { bold: true, size: 12 })
   y -= 4
