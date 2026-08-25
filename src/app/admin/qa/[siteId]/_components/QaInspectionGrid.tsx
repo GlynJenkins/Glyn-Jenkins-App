@@ -29,6 +29,8 @@ import {
   parseChecklistAnswers,
   stageHasChecklist,
   checklistAllAnswered,
+  failingChecklistItems,
+  snagDescriptionFromChecklistItem,
   type QaChecklistAnswers,
   type QaChecklistValue,
 } from '@/lib/qa/checklists'
@@ -38,6 +40,7 @@ import type { QaPlotRow, QaSiteGrid } from '@/lib/qa/queries'
 type Props = {
   initialGrid: QaSiteGrid
   inspectorDefault: string
+  assignedForemen?: { id: string; name: string }[]
 }
 
 type OpenCell = {
@@ -53,10 +56,12 @@ type PendingPhoto = {
 }
 
 type DraftSnag = {
-  id:          string
-  description: string
-  file:       File | null
-  preview:     string | null
+  id:           string
+  description:  string
+  file:         File | null
+  preview:      string | null
+  /** When set, this snag was auto-created from a checklist fail. */
+  checklistKey?: string
 }
 
 type SnagView = {
@@ -80,8 +85,48 @@ function newId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-function emptyDraftSnag(): DraftSnag {
-  return { id: newId(), description: '', file: null, preview: null }
+function emptyDraftSnag(partial?: Partial<DraftSnag>): DraftSnag {
+  return {
+    id: newId(),
+    description: '',
+    file: null,
+    preview: null,
+    ...partial,
+  }
+}
+
+/** Keep checklist-driven snags in sync; preserve photos / manual snags. */
+function syncSnagsFromChecklist(
+  stage: QaStageKey,
+  answers: QaChecklistAnswers,
+  prev: DraftSnag[],
+): DraftSnag[] {
+  const failing = failingChecklistItems(stage, answers)
+  const failingKeys = new Set(failing.map((i) => i.key))
+  const manual = prev.filter((s) => !s.checklistKey)
+  const keptAuto = prev.filter((s) => s.checklistKey && failingKeys.has(s.checklistKey))
+  const keptKeys = new Set(keptAuto.map((s) => s.checklistKey))
+
+  const added = failing
+    .filter((item) => !keptKeys.has(item.key))
+    .map((item) =>
+      emptyDraftSnag({
+        checklistKey: item.key,
+        description: snagDescriptionFromChecklistItem(item),
+      }),
+    )
+
+  const nextAuto = [
+    ...keptAuto,
+    ...added,
+  ].sort((a, b) => {
+    const ia = failing.findIndex((f) => f.key === a.checklistKey)
+    const ib = failing.findIndex((f) => f.key === b.checklistKey)
+    return ia - ib
+  })
+
+  const merged = [...nextAuto, ...manual]
+  return merged.length > 0 ? merged : [emptyDraftSnag()]
 }
 
 function appendSnagsToFormData(fd: FormData, drafts: DraftSnag[]) {
@@ -169,7 +214,7 @@ function SnagDraftEditor({
       <div>
         <p className="text-sm font-semibold text-slate-900">Snag list</p>
         <p className="text-xs text-slate-600 mt-0.5">
-          Add each defect for the foreman. Description is required; photo is optional.
+          Add each defect for the foreman. Checklist Nos create these automatically — you can add more or attach photos.
         </p>
       </div>
 
@@ -339,12 +384,14 @@ function InspectionFormModal({
   siteId,
   cell,
   inspectorDefault,
+  assignedForemen,
   onClose,
   onSaved,
 }: {
   siteId:           string
   cell:             OpenCell
   inspectorDefault: string
+  assignedForemen:  { id: string; name: string }[]
   onClose:          () => void
   onSaved:          (grid: QaSiteGrid) => void
 }) {
@@ -532,8 +579,11 @@ function InspectionFormModal({
       )
       return
     }
-    if (result === 'Fail' && validDraftSnags().length === 0) {
-      setSnagError('Add at least one snag with a description.')
+    const checklistFails = failingChecklistItems(cell.stage, checklist)
+    const effectiveResult: 'Pass' | 'Fail' =
+      result === 'Fail' || checklistFails.length > 0 ? 'Fail' : 'Pass'
+    if (effectiveResult === 'Fail' && validDraftSnags().length === 0) {
+      setSnagError('Add at least one snag with a description (checklist Nos create these automatically).')
       return
     }
     if (!signatureBlob) { setSigError('Please sign the form.'); return }
@@ -554,13 +604,13 @@ function InspectionFormModal({
       fd.append('inspectorName', inspectorName.trim())
       fd.append('inspectionDate', inspectionDate)
       fd.append('observations', observations)
-      fd.append('result', result)
+      fd.append('result', effectiveResult)
       fd.append('checklist', JSON.stringify(checklist))
       fd.append('firesockNa', firesockNa ? 'true' : 'false')
       if (preparedFiresock) fd.append('firesockPhoto', preparedFiresock)
       preparedInspection.forEach((file) => fd.append('inspectionPhotos', file))
       fd.append('signature', new File([signatureBlob], 'signature.png', { type: 'image/png' }))
-      if (result === 'Fail') appendSnagsToFormData(fd, draftSnags)
+      if (effectiveResult === 'Fail') appendSnagsToFormData(fd, draftSnags)
 
       const res  = await fetch('/api/qa/inspections', { method: 'POST', body: fd })
       const json = await res.json()
@@ -979,38 +1029,18 @@ function InspectionFormModal({
                 />
               </div>
 
-              <div>
-                <label className="text-xs text-slate-500 mb-1 block">Result</label>
-                <select
-                  value={result}
-                  onChange={(e) => setResult(e.target.value as 'Pass' | 'Fail')}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-400"
-                >
-                  <option value="Pass">Pass</option>
-                  <option value="Fail">Fail</option>
-                </select>
-              </div>
-
-              {result === 'Fail' && (
-                <SnagDraftEditor
-                  snags={draftSnags}
-                  onChange={setDraftSnags}
-                  processing={processingPhotos}
-                  error={snagError}
-                />
-              )}
-
               {hasChecklist && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">Inspection checklist</p>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      Select Yes, No, or N/A for each item. Use No or N/A to flag issues for trades — included on the PDF.
+                      Select Yes, No, or N/A. A failing answer automatically creates a snag for the site foreman.
                     </p>
                   </div>
                   <ul className="space-y-3">
                     {checklistItems.map((item) => {
                       const selected = checklist[item.key]
+                      const failOn = item.failValue ?? 'no'
                       return (
                         <li key={item.key} className="border-b border-slate-200/80 pb-3 last:border-0 last:pb-0">
                           <p className="text-sm text-slate-800 leading-snug">{item.label}</p>
@@ -1018,20 +1048,31 @@ function InspectionFormModal({
                             {(['yes', 'no', 'na'] as const).map((value) => {
                               const label = value === 'yes' ? 'Yes' : value === 'no' ? 'No' : 'N/A'
                               const active = selected === value
+                              const isFailAnswer = value === failOn
                               return (
                                 <button
                                   key={value}
                                   type="button"
                                   onClick={() => {
-                                    setChecklist((prev) => ({ ...prev, [item.key]: value as QaChecklistValue }))
+                                    setChecklist((prev) => {
+                                      const next = { ...prev, [item.key]: value as QaChecklistValue }
+                                      setDraftSnags((snags) =>
+                                        syncSnagsFromChecklist(cell.stage, next, snags),
+                                      )
+                                      if (failingChecklistItems(cell.stage, next).length > 0) {
+                                        setResult('Fail')
+                                      }
+                                      return next
+                                    })
                                     setChecklistError(null)
+                                    setSnagError(null)
                                   }}
                                   className={`flex-1 py-2 px-2 rounded-lg border text-xs font-semibold transition-colors ${
                                     active
-                                      ? value === 'yes'
-                                        ? 'bg-green-600 border-green-600 text-white'
-                                        : value === 'no'
-                                          ? 'bg-red-600 border-red-600 text-white'
+                                      ? isFailAnswer
+                                        ? 'bg-red-600 border-red-600 text-white'
+                                        : value === 'yes'
+                                          ? 'bg-green-600 border-green-600 text-white'
                                           : 'bg-slate-700 border-slate-700 text-white'
                                       : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
                                   }`}
@@ -1049,6 +1090,48 @@ function InspectionFormModal({
                     <p className="text-xs text-red-600 font-medium">{checklistError}</p>
                   )}
                 </div>
+              )}
+
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Result</label>
+                <select
+                  value={result}
+                  onChange={(e) => {
+                    const next = e.target.value as 'Pass' | 'Fail'
+                    if (
+                      next === 'Pass' &&
+                      failingChecklistItems(cell.stage, checklist).length > 0
+                    ) {
+                      setSnagError('Clear failing checklist answers before marking Pass.')
+                      return
+                    }
+                    setResult(next)
+                    setSnagError(null)
+                    if (next === 'Fail' && validDraftSnags().length === 0) {
+                      setDraftSnags([emptyDraftSnag()])
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-400"
+                >
+                  <option value="Pass">Pass</option>
+                  <option value="Fail">Fail — send snags to foreman</option>
+                </select>
+                {result === 'Fail' && (
+                  <p className="text-xs text-slate-500 mt-1.5">
+                    {assignedForemen.length > 0
+                      ? `Goes to: ${assignedForemen.map((f) => f.name).join(', ')}`
+                      : 'No foreman assigned to this site yet — assign one under Sites so they get the snag list.'}
+                  </p>
+                )}
+              </div>
+
+              {result === 'Fail' && (
+                <SnagDraftEditor
+                  snags={draftSnags}
+                  onChange={setDraftSnags}
+                  processing={processingPhotos}
+                  error={snagError}
+                />
               )}
 
               <div>
@@ -1141,7 +1224,13 @@ function InspectionFormModal({
                 onClick={submit}
                 className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
               >
-                {submitting ? 'Saving…' : completed ? 'Replace inspection & save PDF' : 'Complete inspection & save PDF'}
+                {submitting
+                  ? 'Saving…'
+                  : result === 'Fail' || failingChecklistItems(cell.stage, checklist).length > 0
+                    ? 'Fail & send snags to foreman'
+                    : completed
+                      ? 'Replace inspection & save PDF'
+                      : 'Pass & save PDF'}
               </button>
             </>
           )}
@@ -1155,7 +1244,11 @@ function InspectionFormModal({
   )
 }
 
-export default function QaInspectionGrid({ initialGrid, inspectorDefault }: Props) {
+export default function QaInspectionGrid({
+  initialGrid,
+  inspectorDefault,
+  assignedForemen = [],
+}: Props) {
   const [grid, setGrid] = useState(initialGrid)
   const [openCell, setOpenCell] = useState<OpenCell | null>(null)
   const [, startTransition] = useTransition()
@@ -1277,6 +1370,7 @@ export default function QaInspectionGrid({ initialGrid, inspectorDefault }: Prop
           siteId={grid.site_id}
           cell={openCell}
           inspectorDefault={inspectorDefault}
+          assignedForemen={assignedForemen}
           onClose={() => setOpenCell(null)}
           onSaved={(updated) => startTransition(() => setGrid(updated))}
         />

@@ -11,7 +11,9 @@ import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 import {
   checklistAllAnswered,
   checklistForStage,
+  failingChecklistItems,
   parseChecklistAnswers,
+  snagDescriptionFromChecklistItem,
   type QaChecklistAnswers,
 } from '@/lib/qa/checklists'
 import { insertSnags, notifySiteForemenSms } from '@/lib/qa/snags'
@@ -85,14 +87,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid snag list.' }, { status: 400 })
       }
     }
-    if (result === 'Fail' && incomingSnags.length === 0) {
-      return NextResponse.json(
-        { error: 'Add at least one snag item when the result is Fail.' },
-        { status: 400 },
-      )
-    }
-    if (result === 'Pass') incomingSnags = []
 
+    // Checklist fails force Fail and seed snags if the client omitted them.
+    let effectiveResult: 'Pass' | 'Fail' = result
+    // checklistAnswers filled below after parse — seed after that block
     const snagPhotoFiles = (formData.getAll('snagPhotos') as File[]).filter(isImageUploadFile)
     for (const file of snagPhotoFiles) {
       if (file.size > MAX_PHOTO_BYTES) {
@@ -117,6 +115,26 @@ export async function POST(request: NextRequest) {
     if (stageChecklist.length > 0 && !checklistAllAnswered(stage, checklistAnswers)) {
       return NextResponse.json(
         { error: 'Select Yes, No, or N/A for every checklist item.' },
+        { status: 400 },
+      )
+    }
+
+    const checklistFails = failingChecklistItems(stage, checklistAnswers)
+    if (checklistFails.length > 0) {
+      effectiveResult = 'Fail'
+      const existingDesc = new Set(incomingSnags.map((s) => s.description.toLowerCase()))
+      for (const item of checklistFails) {
+        const desc = snagDescriptionFromChecklistItem(item)
+        if (!existingDesc.has(desc.toLowerCase())) {
+          incomingSnags.push({ description: desc, photoIndex: null })
+          existingDesc.add(desc.toLowerCase())
+        }
+      }
+    }
+    if (effectiveResult === 'Pass') incomingSnags = []
+    if (effectiveResult === 'Fail' && incomingSnags.length === 0) {
+      return NextResponse.json(
+        { error: 'Add at least one snag item when the result is Fail.' },
         { status: 400 },
       )
     }
@@ -259,7 +277,7 @@ export async function POST(request: NextRequest) {
       inspectorName,
       inspectionDate,
       observations,
-      result,
+      result: effectiveResult,
       signedAt,
       signaturePng: signatureBuffer,
       plotDetails,
@@ -401,7 +419,7 @@ export async function POST(request: NextRequest) {
     }
 
     const inspectionState: QaInspectionState =
-      result === 'Fail' ? 'failed_open' : 'passed'
+      effectiveResult === 'Fail' ? 'failed_open' : 'passed'
 
     const row = {
       site_id:        siteId,
@@ -415,13 +433,13 @@ export async function POST(request: NextRequest) {
         submittedInspectorName: submittedName && submittedName !== inspectorName ? submittedName : undefined,
         inspectionDate,
         observations,
-        result,
+        result: effectiveResult,
         stageLabel: qaStageLabel(stage),
         firesock_na: firesockNa && stageAllowsFiresockNa(stage),
         firesock_photo_path: firesockPhotoPath ?? null,
         inspection_photo_paths: storedInspectionPhotos.map((p) => p.path),
         checklist: checklistAnswers,
-        snag_round: result === 'Fail' ? 1 : 0,
+        snag_round: effectiveResult === 'Fail' ? 1 : 0,
       },
       notes:          observations,
       signature_path: signaturePath,
@@ -447,7 +465,7 @@ export async function POST(request: NextRequest) {
     // on upsert same id, clear old snags first).
     await supabase.from('qa_inspection_snags').delete().eq('inspection_id', inspection.id)
 
-    if (result === 'Fail' && incomingSnags.length > 0) {
+    if (effectiveResult === 'Fail' && incomingSnags.length > 0) {
       try {
         await insertSnags(
           supabase,

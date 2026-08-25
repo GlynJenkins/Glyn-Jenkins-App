@@ -3,6 +3,12 @@ import type { QaStageKey } from './stages'
 export type QaChecklistItem = {
   key:     string
   label:   string
+  /**
+   * Which answer means the item failed and should become a snag.
+   * Default `'no'` (Yes = good). Use `'yes'` for inverted questions
+   * e.g. "Does the plot require a re-clean?"
+   */
+  failValue?: 'no' | 'yes'
 }
 
 export type QaChecklistValue = 'yes' | 'no' | 'na'
@@ -53,7 +59,7 @@ export const QA_STAGE_CHECKLISTS: Partial<Record<QaStageKey, QaChecklistItem[]>>
   ],
   cml: [
     { key: 'jetwashed_clean',       label: 'Has the plot been fully jet-washed and is it clean?' },
-    { key: 'requires_reclean',      label: 'Does the plot require a re-clean?' },
+    { key: 'requires_reclean',      label: 'Does the plot require a re-clean?', failValue: 'yes' },
     { key: 'elevations_inspected',  label: 'Has a full inspection of all elevations been carried out?' },
     { key: 'doors_windows_lintels', label: 'Have all doors and windows been checked — lintels and components installed?' },
     { key: 'external_skin',         label: 'Has material used on the external skin been built correctly?' },
@@ -61,7 +67,7 @@ export const QA_STAGE_CHECKLISTS: Partial<Record<QaStageKey, QaChecklistItem[]>>
     { key: 'homeowner_ready',       label: 'Is the plot ready for the homeowner?' },
     { key: 'garages_snagged',       label: 'Have garages been fully snagged and cleaned?' },
     { key: 'screen_walls',          label: 'Are screen walls built correctly and clean?' },
-    { key: 'cleaning_in_notes',     label: 'Are any further cleaning requirements listed in observations?' },
+    { key: 'cleaning_in_notes',     label: 'Are any further cleaning requirements listed in observations?', failValue: 'yes' },
   ],
 }
 
@@ -77,6 +83,26 @@ export function stageHasChecklist(stage: QaStageKey): boolean {
 
 export function emptyChecklistAnswers(stage: QaStageKey): QaChecklistAnswers {
   return Object.fromEntries(checklistForStage(stage).map((item) => [item.key, '']))
+}
+
+/** Checklist answers that should become snags for the foreman. */
+export function failingChecklistItems(
+  stage: QaStageKey,
+  answers: QaChecklistAnswers,
+): QaChecklistItem[] {
+  return checklistForStage(stage).filter((item) => {
+    const answer = answers[item.key]
+    if (!answer) return false
+    const failOn = item.failValue ?? 'no'
+    return answer === failOn
+  })
+}
+
+export function snagDescriptionFromChecklistItem(item: QaChecklistItem): string {
+  const failOn = item.failValue ?? 'no'
+  if (failOn === 'yes') return item.label
+  // Turn "Are wall ties installed correctly?" into a clear defect line.
+  return item.label.replace(/\?$/, '')
 }
 
 export function isChecklistValue(val: unknown): val is QaChecklistValue {
