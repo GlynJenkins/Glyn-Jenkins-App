@@ -5,15 +5,20 @@ import {
   type PlotDetail,
 } from '@/lib/jetwash/plot-descriptions'
 import { QA_STAGES, type QaStageKey } from './stages'
+import type { QaInspectionState } from './inspection-state'
+import { isQaInspectionState } from './inspection-state'
 
 export type QaInspectionRecord = {
-  id:            string
-  stage:         QaStageKey
-  status:        string
-  inspected_at:  string | null
-  pdf_path:      string | null
-  form_data:     Record<string, unknown> | null
-  inspector:     { first_name: string; surname: string } | null
+  id:                string
+  stage:             QaStageKey
+  status:            string
+  inspection_state:  QaInspectionState
+  inspected_at:      string | null
+  pdf_path:          string | null
+  form_data:         Record<string, unknown> | null
+  inspector:         { first_name: string; surname: string } | null
+  open_snag_count:   number
+  total_snag_count:  number
 }
 
 export type QaPlotRow = {
@@ -23,12 +28,15 @@ export type QaPlotRow = {
 }
 
 export type QaSiteSummary = {
-  site_id:          string
-  name:             string
-  address:          string | null
-  total_plots:      number
-  total_slots:      number
-  completed_slots:  number
+  site_id:                   string
+  name:                      string
+  address:                   string | null
+  total_plots:               number
+  total_slots:               number
+  completed_slots:           number
+  passed_slots:              number
+  failed_open_slots:         number
+  awaiting_reinspection:     number
 }
 
 export type QaSiteGrid = {
@@ -36,6 +44,12 @@ export type QaSiteGrid = {
   site_name:          string
   description_labels: string[]
   plots:              QaPlotRow[]
+  summary: {
+    passed:                number
+    failed_open:           number
+    awaiting_reinspection: number
+    not_inspected:         number
+  }
 }
 
 function sortPlotNumbers(plots: string[]): string[] {
@@ -104,7 +118,7 @@ export async function fetchQaSiteGrid(siteId: string): Promise<QaSiteGrid> {
     fetchDescriptionLabels(siteId),
     supabase
       .from('qa_plot_inspections')
-      .select('id, plot_number, stage, status, inspected_at, pdf_path, form_data, inspected_by')
+      .select('id, plot_number, stage, status, inspection_state, inspected_at, pdf_path, form_data, inspected_by')
       .eq('site_id', siteId)
       .eq('status', 'completed'),
   ])
@@ -126,17 +140,40 @@ export async function fetchQaSiteGrid(siteId: string): Promise<QaSiteGrid> {
     }
   }
 
+  const inspectionIds = (inspectionsRes.data ?? []).map((r) => r.id)
+  const snagCounts = new Map<string, { open: number; total: number }>()
+  if (inspectionIds.length > 0) {
+    const { data: snags } = await supabase
+      .from('qa_inspection_snags')
+      .select('inspection_id, fixed')
+      .in('inspection_id', inspectionIds)
+    for (const snag of snags ?? []) {
+      const cur = snagCounts.get(snag.inspection_id) ?? { open: 0, total: 0 }
+      cur.total += 1
+      if (!snag.fixed) cur.open += 1
+      snagCounts.set(snag.inspection_id, cur)
+    }
+  }
+
   const byPlotStage = new Map<string, QaInspectionRecord>()
   for (const row of inspectionsRes.data ?? []) {
     const key = `${row.plot_number}|${row.stage}`
+    const counts = snagCounts.get(row.id) ?? { open: 0, total: 0 }
+    const stateRaw = (row as { inspection_state?: string }).inspection_state
+    const inspection_state: QaInspectionState = isQaInspectionState(stateRaw)
+      ? stateRaw
+      : 'passed'
     byPlotStage.set(key, {
-      id:           row.id,
-      stage:        row.stage as QaStageKey,
-      status:       row.status,
-      inspected_at: row.inspected_at,
-      pdf_path:     row.pdf_path,
-      form_data:    (row.form_data as Record<string, unknown> | null) ?? null,
-      inspector:    row.inspected_by ? inspectorMap.get(row.inspected_by) ?? null : null,
+      id:               row.id,
+      stage:            row.stage as QaStageKey,
+      status:           row.status,
+      inspection_state,
+      inspected_at:     row.inspected_at,
+      pdf_path:         row.pdf_path,
+      form_data:        (row.form_data as Record<string, unknown> | null) ?? null,
+      inspector:        row.inspected_by ? inspectorMap.get(row.inspected_by) ?? null : null,
+      open_snag_count:  counts.open,
+      total_snag_count: counts.total,
     })
   }
 
@@ -155,11 +192,27 @@ export async function fetchQaSiteGrid(siteId: string): Promise<QaSiteGrid> {
     }
   })
 
+  let passed = 0
+  let failed_open = 0
+  let awaiting_reinspection = 0
+  for (const plot of plots) {
+    for (const stage of QA_STAGES) {
+      const rec = plot.stages[stage.key]
+      if (!rec) continue
+      if (rec.inspection_state === 'passed') passed += 1
+      else if (rec.inspection_state === 'failed_open') failed_open += 1
+      else if (rec.inspection_state === 'awaiting_reinspection') awaiting_reinspection += 1
+    }
+  }
+  const totalSlots = plotNumbers.length * QA_STAGES.length
+  const not_inspected = Math.max(0, totalSlots - passed - failed_open - awaiting_reinspection)
+
   return {
     site_id:            siteId,
     site_name:          site.name,
     description_labels: descriptionLabels,
     plots,
+    summary: { passed, failed_open, awaiting_reinspection, not_inspected },
   }
 }
 
@@ -179,21 +232,34 @@ export async function fetchQaSiteSummaries(activeOnly = true): Promise<QaSiteSum
     const totalPlots = plotNumbers.length
     const totalSlots = totalPlots * QA_STAGES.length
 
-    const { count, error: countErr } = await supabase
+    const { data: stateRows, error: stateErr } = await supabase
       .from('qa_plot_inspections')
-      .select('id', { count: 'exact', head: true })
+      .select('inspection_state')
       .eq('site_id', site.id)
       .eq('status', 'completed')
 
-    if (countErr) throw countErr
+    if (stateErr) throw stateErr
+
+    let passed_slots = 0
+    let failed_open_slots = 0
+    let awaiting_reinspection = 0
+    for (const row of stateRows ?? []) {
+      const state = (row as { inspection_state?: string }).inspection_state
+      if (state === 'failed_open') failed_open_slots += 1
+      else if (state === 'awaiting_reinspection') awaiting_reinspection += 1
+      else passed_slots += 1
+    }
 
     summaries.push({
-      site_id:         site.id,
-      name:            site.name,
-      address:         site.address,
-      total_plots:     totalPlots,
-      total_slots:     totalSlots,
-      completed_slots: count ?? 0,
+      site_id:               site.id,
+      name:                  site.name,
+      address:               site.address,
+      total_plots:           totalPlots,
+      total_slots:           totalSlots,
+      completed_slots:       (stateRows ?? []).length,
+      passed_slots,
+      failed_open_slots,
+      awaiting_reinspection,
     })
   }
 

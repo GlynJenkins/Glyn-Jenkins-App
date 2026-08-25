@@ -473,3 +473,6 @@ alter table if exists public.management_holiday_requests force row level securit
 
 -- 28. Claimed money + atomic claim RPCs (B1/B2):
 --     Run separately in SQL Editor: supabase/migrations/price_grid_claimed_value.sql
+
+-- 29. QA snags / re-inspection:
+--     Run separately: supabase/migrations/add_qa_inspection_snags.sql
