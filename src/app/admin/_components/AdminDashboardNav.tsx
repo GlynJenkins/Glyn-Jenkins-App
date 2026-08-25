@@ -24,6 +24,7 @@ export type AdminNavCounts = {
   pendingHolidays:   number
   pendingWorkers:    number
   expiredCscs:       number
+  reinspectionDue?:  number
 }
 
 type NavItem = {
@@ -52,6 +53,8 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
             icon:        ClipboardList,
             label:       'Quality checks',
             description: 'Stage inspections by plot',
+            badge:       counts.reinspectionDue,
+            accent:      (counts.reinspectionDue ?? 0) > 0,
           },
           {
             href:        '/admin/jetwash',
@@ -146,6 +149,8 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
           icon:        ClipboardList,
           label:       'Quality checks',
           description: 'Stage inspections by plot',
+          badge:       counts.reinspectionDue,
+          accent:      (counts.reinspectionDue ?? 0) > 0,
         },
         {
           href:        '/admin/toolbox-talks',

@@ -48,6 +48,20 @@ export default function QaSiteList({ sites }: { sites: QaSiteSummary[] }) {
                   {site.completed_slots} of {site.total_slots} inspections complete
                   {site.total_plots > 0 && ` · ${site.total_plots} plots`}
                 </p>
+                {(site.failed_open_slots > 0 || site.awaiting_reinspection > 0) && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {site.failed_open_slots > 0 && (
+                      <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                        {site.failed_open_slots} with foreman
+                      </span>
+                    )}
+                    {site.awaiting_reinspection > 0 && (
+                      <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                        {site.awaiting_reinspection} re-inspect
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <ChevronRight className="w-5 h-5 text-slate-300 shrink-0 mt-1" />
             </div>

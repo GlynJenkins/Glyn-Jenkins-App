@@ -5,6 +5,7 @@ import LogoutButton from './_components/LogoutButton'
 import AdminDashboardNav from './_components/AdminDashboardNav'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
 import { loadTrainingMatrix } from '@/lib/training/load-training-matrix'
+import { countAwaitingReinspection } from '@/lib/qa/snags'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,13 @@ export default async function AdminPage() {
   let pendingVariationCount = 0
   let pendingHolidayCount = 0
   let expiredCscsCount = 0
+  let reinspectionDue = 0
+
+  try {
+    reinspectionDue = await countAwaitingReinspection(supabase)
+  } catch {
+    // table/column may not exist until migration runs
+  }
 
   // Supervisors must not load admin-only summary data they cannot act on.
   if (isFullAdmin) {
@@ -65,6 +73,7 @@ export default async function AdminPage() {
     pendingHolidays:   pendingHolidayCount,
     pendingWorkers:    pendingWorkerCount,
     expiredCscs:       expiredCscsCount,
+    reinspectionDue,
   }
 
   const displayName = worker
