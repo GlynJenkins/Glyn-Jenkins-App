@@ -9,6 +9,7 @@ import {
   foremanClaimPeriodKey,
   loadForemanClaimHistory,
 } from '@/lib/claims/load-foreman-claim-history'
+import { fetchOpenSnagCountBySite } from '@/lib/qa/snags'
 import PortalHeader             from '@/components/PortalHeader'
 
 export const dynamic = 'force-dynamic'
@@ -75,6 +76,16 @@ export default async function ForemanPage() {
     }
   }
 
+  // ── Open QA snag counts per site ─────────────────────────────
+  let openSnagCountMap: Record<string, number> = {}
+  if (siteIds.length > 0) {
+    try {
+      openSnagCountMap = await fetchOpenSnagCountBySite(supabase, siteIds)
+    } catch {
+      // table may not exist until migration runs
+    }
+  }
+
   // ── Site audit badges + unseen modal data ─────────────────────
   const auditMeta: Record<string, { latestDate: string | null; hasUnseen: boolean }> = {}
   if (siteIds.length > 0) {
@@ -129,6 +140,7 @@ export default async function ForemanPage() {
           pastClaims={pastClaims}
           variationCountMap={variationCountMap}
           auditMeta={auditMeta}
+          openSnagCountMap={openSnagCountMap}
           period={{
             label:         period.label,
             payLabel:       period.payLabel,

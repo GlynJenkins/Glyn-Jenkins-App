@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   Building2, MapPin, Grid3x3, FileUp, ClipboardList,
   Clock, AlertCircle, CheckCircle2, Loader2, Lock, ChevronRight, RotateCcw, Shield,
-  CircleHelp,
+  CircleHelp, AlertTriangle,
 } from 'lucide-react'
 import ForemanClaimHistory from './ForemanClaimHistory'
 import type { ForemanClaimHistoryItem } from '@/lib/claims/load-foreman-claim-history'
@@ -38,6 +38,7 @@ interface Props {
   variationCountMap: Record<string, number>
   period:            Period
   auditMeta?:        Record<string, { latestDate: string | null; hasUnseen: boolean }>
+  openSnagCountMap?: Record<string, number>
 }
 
 // ── Countdown banner ───────────────────────────────────────────────────────────
@@ -120,11 +121,13 @@ function SiteCard({
   variationCount,
   latestAuditDate,
   hasUnseenAudit,
+  openSnagCount,
 }: {
   site: Site
   variationCount: number
   latestAuditDate: string | null
   hasUnseenAudit: boolean
+  openSnagCount: number
 }) {
   const auditLabel = latestAuditDate
     ? new Date(latestAuditDate).toLocaleDateString('en-GB', {
@@ -214,6 +217,30 @@ function SiteCard({
           </div>
           <ChevronRight className="w-4 h-4 text-slate-300" />
         </Link>
+        <Link href={`/foreman/sites/${site.id}/qa-snags`}
+          className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-slate-800">Quality snags</p>
+                {openSnagCount > 0 && (
+                  <span className="min-w-[1.25rem] h-5 px-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                    {openSnagCount}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400">
+                {openSnagCount > 0
+                  ? `${openSnagCount} item${openSnagCount === 1 ? '' : 's'} to fix`
+                  : 'Inspection defects to action'}
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-300" />
+        </Link>
       </div>
     </div>
   )
@@ -224,6 +251,7 @@ function SiteCard({
 export default function ForemanDashboard({
   sites, currentClaim, pastClaims, variationCountMap, period,
   auditMeta = {},
+  openSnagCountMap = {},
 }: Props) {
   const router        = useRouter()
   const [withdrawing, setWithdrawing] = useState(false)
@@ -408,6 +436,7 @@ export default function ForemanDashboard({
               variationCount={variationCountMap[site.id] ?? 0}
               latestAuditDate={auditMeta[site.id]?.latestDate ?? null}
               hasUnseenAudit={auditMeta[site.id]?.hasUnseen ?? false}
+              openSnagCount={openSnagCountMap[site.id] ?? 0}
             />
           ))}
         </section>
