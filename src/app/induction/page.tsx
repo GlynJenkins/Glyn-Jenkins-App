@@ -320,6 +320,8 @@ function SignaturePad({
 export default function InductionPage() {
   const [cscsCard,        setCscsCard]        = useState<File | null>(null)
   const [idDocument,      setIdDocument]      = useState<File | null>(null)
+  const [rightToWorkMethod, setRightToWorkMethod] = useState<'passport' | 'share_code' | 'no_passport_manual'>('passport')
+  const [rightToWorkShareCode, setRightToWorkShareCode] = useState('')
   const [insuranceCert,   setInsuranceCert]   = useState<File | null>(null)
   const [hsQualification, setHsQualification] = useState<File | null>(null)
   const [hsQualificationNa, setHsQualificationNa] = useState(false)
@@ -394,7 +396,13 @@ export default function InductionPage() {
   const validateFiles = (): boolean => {
     const errs: Record<string, string> = {}
     if (!cscsCard)        errs.cscsCard      = 'CSCS card photo is required'
-    if (!idDocument)      errs.idDocument    = 'ID document is required'
+    if (rightToWorkMethod === 'passport' && !idDocument)
+      errs.idDocument = 'Photo of your passport photo page is required'
+    if (rightToWorkMethod === 'share_code') {
+      const code = rightToWorkShareCode.replace(/[\s-]/g, '')
+      if (!/^[A-Za-z0-9]{8,12}$/.test(code))
+        errs.shareCode = 'Enter a valid share code (about 9 characters from gov.uk)'
+    }
     if (hasInsurance === 'yes' && !insuranceCert)
                           errs.insuranceCert = 'Insurance certificate is required'
     if (!hsQualification && !hsQualificationNa)
@@ -424,7 +432,7 @@ export default function InductionPage() {
       // Shrink iPhone photos client-side before POST (Vercel ~4.5 MB body limit).
       const [cscsReady, idReady, insuranceReady, hsReady, firesockReady] = await Promise.all([
         prepareInductionImage(cscsCard!),
-        prepareInductionImage(idDocument!),
+        idDocument ? prepareInductionImage(idDocument) : Promise.resolve(null),
         insuranceCert ? prepareInductionImage(insuranceCert) : Promise.resolve(null),
         hsQualification ? prepareInductionImage(hsQualification) : Promise.resolve(null),
         firesockCert && firesockReq !== 'hidden'
@@ -449,7 +457,14 @@ export default function InductionPage() {
         if (v != null && v !== '') fd.append(k, String(v))
       })
       fd.append('cscsCard',   cscsReady)
-      fd.append('idDocument', idReady)
+      fd.append('rightToWorkMethod', rightToWorkMethod)
+      if (rightToWorkMethod === 'passport' && idReady) {
+        fd.append('rightToWorkDocument', idReady)
+        fd.append('idDocument', idReady)
+      }
+      if (rightToWorkMethod === 'share_code') {
+        fd.append('rightToWorkShareCode', rightToWorkShareCode.replace(/[\s-]/g, '').toUpperCase())
+      }
       if (insuranceReady)  fd.append('insuranceCert', insuranceReady)
       if (hsReady)         fd.append('hsQualification', hsReady)
       if (firesockReady)   fd.append('firesockCert', firesockReady)
@@ -882,13 +897,122 @@ export default function InductionPage() {
             error={fileErrors.cscsCard}
           />
 
-          <FileUploadArea
-            label="Passport or Driving Licence"
-            required
-            file={idDocument}
-            onChange={setIdDocument}
-            error={fileErrors.idDocument}
-          />
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Right to Work</p>
+              <p className="mt-1 text-xs text-slate-500">
+                UK law requires us to check you&apos;re allowed to work here. Choose the option that applies to you.
+              </p>
+            </div>
+
+            <fieldset className="space-y-2">
+              <legend className="sr-only">How will you prove your right to work?</legend>
+              {(
+                [
+                  {
+                    value: 'passport' as const,
+                    title: 'I have a passport',
+                    hint: 'British, Irish, or another passport with a visa/status',
+                  },
+                  {
+                    value: 'share_code' as const,
+                    title: 'I\u2019ll provide a share code',
+                    hint: 'For non-UK/Irish nationals with digital status',
+                  },
+                  {
+                    value: 'no_passport_manual' as const,
+                    title: 'I don\u2019t have a UK or Irish passport',
+                    hint: 'Office will arrange a manual check before you start',
+                  },
+                ] as const
+              ).map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
+                    rightToWorkMethod === opt.value
+                      ? 'border-orange-500 bg-orange-50'
+                      : 'border-gray-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="rightToWorkMethod"
+                    value={opt.value}
+                    checked={rightToWorkMethod === opt.value}
+                    onChange={() => {
+                      setRightToWorkMethod(opt.value)
+                      if (opt.value !== 'passport') setIdDocument(null)
+                      if (opt.value !== 'share_code') setRightToWorkShareCode('')
+                      setFileErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.idDocument
+                        delete next.shareCode
+                        return next
+                      })
+                    }}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-800">{opt.title}</span>
+                    <span className="block text-xs text-slate-500">{opt.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+
+            {rightToWorkMethod === 'passport' && (
+              <FileUploadArea
+                label="Photo of your passport photo page"
+                required
+                file={idDocument}
+                onChange={setIdDocument}
+                error={fileErrors.idDocument}
+              />
+            )}
+
+            {rightToWorkMethod === 'share_code' && (
+              <div className="space-y-1.5">
+                <label htmlFor="rightToWorkShareCode" className="block text-sm font-medium text-slate-700">
+                  Share code <span className="text-orange-600">*</span>
+                </label>
+                <input
+                  id="rightToWorkShareCode"
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={16}
+                  value={rightToWorkShareCode}
+                  onChange={(e) => setRightToWorkShareCode(e.target.value)}
+                  placeholder="e.g. W1234567A"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm tracking-wider uppercase text-slate-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                />
+                <p className="text-xs text-slate-500">
+                  Starts with W, from your gov.uk account — get one at{' '}
+                  <a
+                    href="https://www.gov.uk/prove-right-to-work"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-orange-700 underline-offset-2 hover:underline"
+                  >
+                    gov.uk/prove-right-to-work
+                  </a>
+                  . The office will run the online check using this code and your date of birth.
+                </p>
+                {fileErrors.shareCode && (
+                  <p className="text-xs text-red-600">{fileErrors.shareCode}</p>
+                )}
+              </div>
+            )}
+
+            {rightToWorkMethod === 'no_passport_manual' && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                That&apos;s fine — you can still finish registering. The office will arrange your right-to-work
+                check (e.g. birth certificate + National Insurance document) before you start.
+              </p>
+            )}
+          </div>
 
           {hasInsurance === 'yes' && (
             <FileUploadArea
@@ -1247,7 +1371,7 @@ export default function InductionPage() {
           {showPrivacy && (
             <div className="text-xs text-slate-600 leading-relaxed space-y-2 bg-slate-50 border border-slate-100 rounded-xl p-3">
               <p><strong>Who we are:</strong> Glyn Jenkins Ltd is the data controller for information you submit on this form.</p>
-              <p><strong>What we collect:</strong> name, contact details, National Insurance number, UTR, tax status, bank sort code and account number, CSCS details, ID documents, insurance certificate (if provided), and your signature on the subcontract agreement.</p>
+              <p><strong>What we collect:</strong> name, contact details, National Insurance number, UTR, tax status, bank sort code and account number, CSCS details, right-to-work evidence (passport photo or share code), insurance certificate (if provided), and your signature on the subcontract agreement.</p>
               <p><strong>Why:</strong> to enrol you as a subcontractor/worker, verify right-to-work and CIS status, pay you correctly, and meet legal and site compliance duties.</p>
               <p><strong>Who we share with:</strong> HMRC (CIS / tax), our payroll and banking providers, and site clients only where required for your work.</p>
               <p><strong>How long:</strong> we keep payroll and tax records for the periods required by UK law (typically up to 6 years after the relevant tax year), and ID/compliance copies for as long as needed for site and employment checks.</p>

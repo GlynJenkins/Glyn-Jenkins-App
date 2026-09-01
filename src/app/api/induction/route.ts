@@ -13,6 +13,13 @@ import {
   extensionForMime,
   validateUpload,
 } from '@/lib/induction/upload-validation'
+import {
+  isRightToWorkMethod,
+  isValidShareCode,
+  normalizeShareCode,
+  type RightToWorkMethod,
+  type RightToWorkStatus,
+} from '@/lib/induction/right-to-work'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,9 +63,15 @@ export async function POST(request: NextRequest) {
     const employedContractSigned =
       formData.get('employedContractSigned') === 'true' || formData.get('employedContractSigned') === 'on'
 
+    // ── Right to work ──────────────────────────────────────────
+    const rightToWorkMethodRaw = (formData.get('rightToWorkMethod') as string)?.trim()
+    const rightToWorkShareCodeRaw = (formData.get('rightToWorkShareCode') as string)?.trim() ?? ''
+    const rightToWorkDocument =
+      (formData.get('rightToWorkDocument') as File | null) ||
+      (formData.get('idDocument') as File | null)
+
     // ── Extract files ──────────────────────────────────────────
     const cscsCard        = formData.get('cscsCard')        as File | null
-    const idDocument      = formData.get('idDocument')      as File | null
     const insuranceCert   = formData.get('insuranceCert')   as File | null
     const hsQualification = formData.get('hsQualification') as File | null
     const firesockCert    = formData.get('firesockCert')    as File | null
@@ -113,9 +126,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'UTR number and tax type are required for subcontractors.' }, { status: 400 })
     }
 
-    if (!cscsCard || !idDocument) {
-      return NextResponse.json({ error: 'CSCS card and ID document are both required.' }, { status: 400 })
+    if (!cscsCard) {
+      return NextResponse.json({ error: 'CSCS card photo is required.' }, { status: 400 })
     }
+
+    const rightToWorkMethod: RightToWorkMethod = isRightToWorkMethod(rightToWorkMethodRaw)
+      ? rightToWorkMethodRaw
+      : 'passport'
+
+    let rightToWorkShareCode: string | null = null
+    if (rightToWorkMethod === 'passport') {
+      if (!rightToWorkDocument || rightToWorkDocument.size === 0) {
+        return NextResponse.json(
+          { error: 'Photo of your passport photo page is required.' },
+          { status: 400 },
+        )
+      }
+    } else if (rightToWorkMethod === 'share_code') {
+      if (!isValidShareCode(rightToWorkShareCodeRaw)) {
+        return NextResponse.json(
+          { error: 'Enter a valid share code (about 9 characters from gov.uk).' },
+          { status: 400 },
+        )
+      }
+      rightToWorkShareCode = normalizeShareCode(rightToWorkShareCodeRaw)
+    }
+
+    const rightToWorkStatus: RightToWorkStatus =
+      rightToWorkMethod === 'no_passport_manual' ? 'follow_up' : 'pending'
 
     if (isEmployedContract) {
       if (!employedContractSigned) {
@@ -176,8 +214,11 @@ export async function POST(request: NextRequest) {
     const cscsCheck = await validateUpload(cscsCard, 'document', 'CSCS card')
     if (!cscsCheck.ok) return NextResponse.json({ error: cscsCheck.error }, { status: 400 })
 
-    const idCheck = await validateUpload(idDocument, 'document', 'ID document')
-    if (!idCheck.ok) return NextResponse.json({ error: idCheck.error }, { status: 400 })
+    let passportCheck: Awaited<ReturnType<typeof validateUpload>> | null = null
+    if (rightToWorkMethod === 'passport' && rightToWorkDocument) {
+      passportCheck = await validateUpload(rightToWorkDocument, 'document', 'Passport photo')
+      if (!passportCheck.ok) return NextResponse.json({ error: passportCheck.error }, { status: 400 })
+    }
 
     let sigCheck: Awaited<ReturnType<typeof validateUpload>> | null = null
     if (!isEmployedContract && signature) {
@@ -248,10 +289,19 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Upload required documents ──────────────────────────────
-    const [cscsUrl, idUrl] = await Promise.all([
-      uploadBuffer(cscsCheck.buffer, cscsCheck.mime, 'cscs'),
-      uploadBuffer(idCheck.buffer,   idCheck.mime,   'id-documents'),
-    ])
+    const cscsUrl = await uploadBuffer(cscsCheck.buffer, cscsCheck.mime, 'cscs')
+
+    let idUrl: string | null = null
+    let rightToWorkDocumentUrl: string | null = null
+    if (passportCheck && passportCheck.ok) {
+      // One passport photo serves as both RTW evidence and ID on file.
+      rightToWorkDocumentUrl = await uploadBuffer(
+        passportCheck.buffer,
+        passportCheck.mime,
+        'right-to-work',
+      )
+      idUrl = rightToWorkDocumentUrl
+    }
 
     let signatureUrl: string | null = null
     let pdfPath: string | null = null
@@ -352,6 +402,10 @@ export async function POST(request: NextRequest) {
       cscs_number:               cscsNumber     || null,
       cscs_expiry_date:          cscsExpiryDate || null,
       id_document_url:           idUrl,
+      right_to_work_method:      rightToWorkMethod,
+      right_to_work_document_url: rightToWorkDocumentUrl,
+      right_to_work_share_code:  rightToWorkShareCode,
+      right_to_work_status:      rightToWorkStatus,
       insurance_certificate_url: insuranceUrl,
       subcontract_signature_url: signatureUrl,
       subcontract_agreement_pdf_url: pdfPath,
@@ -369,7 +423,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       // Older DBs may be missing newer columns — retry without them so registration isn't blocked.
       const missingOptionalCol =
-        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed|firesock_certificate|date_of_birth|home_address/i.test(insertError.message) ||
+        /consent_given_at|bricklayer_qualification|hs_qualification|employed_contract_signed|firesock_certificate|date_of_birth|home_address|right_to_work/i.test(insertError.message) ||
         insertError.code === 'PGRST204'
 
       if (missingOptionalCol) {
@@ -383,6 +437,10 @@ export async function POST(request: NextRequest) {
           firesock_certificate_url: _f,
           date_of_birth: _d,
           home_address: _a,
+          right_to_work_method: _rtm,
+          right_to_work_document_url: _rtd,
+          right_to_work_share_code: _rts,
+          right_to_work_status: _rtst,
           ...legacyRow
         } = workerRow
         const { error: retryError } = await supabase
