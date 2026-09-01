@@ -36,7 +36,8 @@ export default async function WorkerProfilePage({
       payment_details_updated_at, payment_details_updated_by,
       right_to_work_method, right_to_work_document_url, right_to_work_share_code,
       right_to_work_status, right_to_work_verified_at, right_to_work_verified_by,
-      right_to_work_note, right_to_work_override_at, right_to_work_override_by,
+      right_to_work_note, right_to_work_type, right_to_work_expiry,
+      right_to_work_override_at, right_to_work_override_by,
       right_to_work_override_note
     `)
     .eq('id', workerId)
@@ -145,6 +146,8 @@ export default async function WorkerProfilePage({
     right_to_work_verified_at:     ('right_to_work_verified_at' in worker ? worker.right_to_work_verified_at : null) as string | null,
     right_to_work_verified_by:     ('right_to_work_verified_by' in worker ? worker.right_to_work_verified_by : null) as string | null,
     right_to_work_note:            ('right_to_work_note' in worker ? worker.right_to_work_note : null) as string | null,
+    right_to_work_type:            ('right_to_work_type' in worker ? worker.right_to_work_type : null) as string | null,
+    right_to_work_expiry:          ('right_to_work_expiry' in worker ? worker.right_to_work_expiry : null) as string | null,
     right_to_work_override_at:     ('right_to_work_override_at' in worker ? worker.right_to_work_override_at : null) as string | null,
     right_to_work_override_by:     ('right_to_work_override_by' in worker ? worker.right_to_work_override_by : null) as string | null,
     right_to_work_override_note:   ('right_to_work_override_note' in worker ? worker.right_to_work_override_note : null) as string | null,

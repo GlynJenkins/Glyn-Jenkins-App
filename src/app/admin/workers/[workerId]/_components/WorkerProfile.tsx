@@ -90,6 +90,8 @@ type Worker = {
   right_to_work_verified_at:       string | null
   right_to_work_verified_by:       string | null
   right_to_work_note:              string | null
+  right_to_work_type:              string | null
+  right_to_work_expiry:            string | null
   right_to_work_override_at:       string | null
   right_to_work_override_by:       string | null
   right_to_work_override_note:     string | null
@@ -1304,6 +1306,8 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
           right_to_work_verified_at:    worker.right_to_work_verified_at,
           right_to_work_verified_by:    worker.right_to_work_verified_by,
           right_to_work_note:           worker.right_to_work_note,
+          right_to_work_type:           worker.right_to_work_type,
+          right_to_work_expiry:         worker.right_to_work_expiry,
           right_to_work_override_at:    worker.right_to_work_override_at,
           right_to_work_override_by:    worker.right_to_work_override_by,
           right_to_work_override_note:  worker.right_to_work_override_note,
