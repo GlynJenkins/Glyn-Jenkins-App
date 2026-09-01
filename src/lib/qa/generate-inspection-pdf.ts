@@ -81,8 +81,14 @@ export type QaInspectionPdfInput = {
     description: string
     fixed: boolean
     fixedNote?: string | null
+    fixedAt?: string | null
     index: number
+    /** @deprecated Used only on first-save when photos are in the general gallery. */
     photoIndex?: number | null
+    raisedPhoto?: Buffer | null
+    raisedPhotoMime?: string | null
+    fixedPhoto?: Buffer | null
+    fixedPhotoMime?: string | null
   }[]
 }
 
@@ -293,6 +299,69 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
   if (input.snags?.length) {
     drawLines(['Snags'], { bold: true, size: 12 })
     y -= 4
+
+    const SNAG_PHOTO_GAP = 12
+    const SNAG_PHOTO_W = Math.min(240, (maxWidth - SNAG_PHOTO_GAP) / 2)
+    const SNAG_PHOTO_MAX_H = 180
+    const SNAG_LABEL_H = PHOTO_LABEL_SIZE + 4
+
+    const drawSnagPair = async (snag: NonNullable<QaInspectionPdfInput['snags']>[number]) => {
+      const slots: { label: string; buffer: Buffer; mime: string }[] = []
+      if (snag.raisedPhoto && snag.raisedPhoto.length > 0) {
+        slots.push({
+          label:  'Raised (defect):',
+          buffer: snag.raisedPhoto,
+          mime:   snag.raisedPhotoMime || 'image/jpeg',
+        })
+      }
+      if (snag.fixedPhoto && snag.fixedPhoto.length > 0) {
+        slots.push({
+          label:  'Fixed by foreman:',
+          buffer: snag.fixedPhoto,
+          mime:   snag.fixedPhotoMime || 'image/jpeg',
+        })
+      }
+      if (slots.length === 0) return
+
+      const embedded = await Promise.all(
+        slots.map(async (slot) => {
+          const image = await embedPhotoImage(pdf, slot.buffer, slot.mime)
+          const scale = Math.min(SNAG_PHOTO_W / image.width, SNAG_PHOTO_MAX_H / image.height, 1)
+          return {
+            label:  slot.label,
+            image,
+            width:  image.width * scale,
+            height: image.height * scale,
+          }
+        }),
+      )
+
+      const rowH = SNAG_LABEL_H + Math.max(...embedded.map((e) => e.height)) + 8
+      if (y - rowH < MARGIN) {
+        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+        y = PAGE_HEIGHT - MARGIN
+      }
+
+      for (let i = 0; i < embedded.length; i++) {
+        const item = embedded[i]!
+        const x = MARGIN + i * (SNAG_PHOTO_W + SNAG_PHOTO_GAP)
+        page.drawText(item.label, {
+          x,
+          y: y - PHOTO_LABEL_SIZE,
+          size: PHOTO_LABEL_SIZE,
+          font: fontBold,
+          color: COLOR_MUTED,
+        })
+        page.drawImage(item.image, {
+          x,
+          y: y - SNAG_LABEL_H - item.height,
+          width: item.width,
+          height: item.height,
+        })
+      }
+      y -= rowH
+    }
+
     for (const snag of input.snags) {
       const status = snag.fixed ? 'FIXED' : 'OPEN'
       const head = `Round ${snag.round} · #${snag.index} · ${status}`
@@ -303,9 +372,21 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
         const note = wrapText(`Fix note: ${snag.fixedNote}`, maxWidth, font, BODY_SIZE)
         drawLines(note)
       }
-      y -= 6
+      if (snag.fixed && snag.fixedAt) {
+        const when = new Date(snag.fixedAt)
+        if (!Number.isNaN(when.getTime())) {
+          drawLines([
+            `Fixed at: ${when.toLocaleString('en-GB', {
+              day: 'numeric', month: 'short', year: 'numeric',
+              hour: '2-digit', minute: '2-digit',
+            })}`,
+          ])
+        }
+      }
+      await drawSnagPair(snag)
+      y -= 8
     }
-    y -= 8
+    y -= 4
   }
 
   drawLines(['SIGNATURE'], { bold: true, size: 12 })

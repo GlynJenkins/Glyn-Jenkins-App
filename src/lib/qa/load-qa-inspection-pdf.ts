@@ -11,14 +11,17 @@ import {
 } from '@/lib/qa/checklists'
 import type { QaInspectionPdfInput, QaPdfPhoto } from '@/lib/qa/generate-inspection-pdf'
 import { isQaStageKey } from '@/lib/qa/stages'
+import { fetchSnagsForInspection } from '@/lib/qa/snags'
 
-function mimeFromPath(path: string): string {
+function mimeFromPath(path: string | null | undefined): string {
+  if (!path) return 'image/jpeg'
   const lower = path.toLowerCase()
   if (lower.endsWith('.png')) return 'image/png'
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
   return 'image/jpeg'
 }
 
+/** Snag + inspection photos live in the same private bucket used by QA upload routes. */
 async function downloadStorageFile(path: string): Promise<Buffer | null> {
   const supabase = createServiceClient()
   const { data, error } = await supabase.storage.from('worker-documents').download(path)
@@ -103,6 +106,32 @@ export async function loadQaInspectionPdfData(
     ? new Date(inspection.inspected_at)
     : new Date()
 
+  const snagRows = await fetchSnagsForInspection(supabase, inspectionId)
+  const snags = snagRows.length
+    ? await Promise.all(
+        snagRows.map(async (s, i) => {
+          const raisedPhoto = s.raised_photo_path
+            ? await downloadStorageFile(s.raised_photo_path)
+            : null
+          const fixedPhoto = s.fixed_photo_path
+            ? await downloadStorageFile(s.fixed_photo_path)
+            : null
+          return {
+            round:           s.round,
+            index:           i + 1,
+            description:     s.description,
+            fixed:           s.fixed,
+            fixedNote:       s.fixed_note ?? null,
+            fixedAt:         s.fixed_at ?? null,
+            raisedPhoto,
+            raisedPhotoMime: raisedPhoto ? mimeFromPath(s.raised_photo_path) : null,
+            fixedPhoto,
+            fixedPhotoMime:  fixedPhoto ? mimeFromPath(s.fixed_photo_path) : null,
+          }
+        }),
+      )
+    : undefined
+
   return {
     siteName:       site?.name ?? 'Unknown site',
     siteDocuments:  parseSiteDocumentDetails(site),
@@ -119,5 +148,6 @@ export async function loadQaInspectionPdfData(
     firesockNa:     form.firesock_na ?? false,
     photos:         pdfPhotos.length ? pdfPhotos : undefined,
     checklist:      pdfChecklist.length ? pdfChecklist : undefined,
+    snags,
   }
 }

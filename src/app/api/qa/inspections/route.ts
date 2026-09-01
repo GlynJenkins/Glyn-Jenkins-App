@@ -257,16 +257,6 @@ export async function POST(request: NextRequest) {
         mime: item.mime,
       })
     })
-    incomingSnags.forEach((snag, index) => {
-      const photoIdx = snag.photoIndex
-      if (photoIdx == null || photoIdx < 0 || photoIdx >= snagBuffers.length) return
-      const item = snagBuffers[photoIdx]
-      pdfPhotos.push({
-        label: `Snag ${index + 1}: ${snag.description.slice(0, 60)}`,
-        buffer: item.buffer,
-        mime: item.mime,
-      })
-    })
 
     const pdfChecklist = stageChecklist.map((item) => ({
       label:  item.label,
@@ -289,13 +279,23 @@ export async function POST(request: NextRequest) {
       firesockNa:     firesockNa && stageAllowsFiresockNa(stage),
       photos:         pdfPhotos,
       checklist:      pdfChecklist.length ? pdfChecklist : undefined,
-      snags: incomingSnags.map((s, i) => ({
-        round:       1,
-        description: s.description,
-        fixed:       false,
-        photoIndex:  s.photoIndex ?? null,
-        index:       i + 1,
-      })),
+      snags: incomingSnags.map((s, i) => {
+        const photoIdx = s.photoIndex
+        const raised =
+          photoIdx != null && photoIdx >= 0 && photoIdx < snagBuffers.length
+            ? snagBuffers[photoIdx]
+            : null
+        return {
+          round:           1,
+          description:     s.description,
+          fixed:           false,
+          index:           i + 1,
+          raisedPhoto:     raised?.buffer ?? null,
+          raisedPhotoMime: raised?.mime ?? null,
+          fixedPhoto:      null,
+          fixedPhotoMime:  null,
+        }
+      }),
     })
 
     const signaturePath = `qa/${siteId}/${plotNumber}/${stage}/${ts}-signature.png`
