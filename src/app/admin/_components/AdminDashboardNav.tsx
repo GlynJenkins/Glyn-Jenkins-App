@@ -13,6 +13,7 @@ import {
   Megaphone,
   Settings,
   Shield,
+  ShieldCheck,
   Sun,
   TrendingUp,
   Users,
@@ -25,6 +26,7 @@ export type AdminNavCounts = {
   pendingWorkers:    number
   expiredCscs:       number
   reinspectionDue?:  number
+  rtwRecheckDue?:    number
 }
 
 type NavItem = {
@@ -163,6 +165,21 @@ function buildSections(counts: AdminNavCounts, restricted: boolean): NavSection[
           icon:        FileSearch,
           label:       'Site Audits',
           description: 'Walk sites, actions & PDFs',
+        },
+      ],
+    },
+    {
+      title: 'Compliance',
+      items: [
+        {
+          href:        (counts.rtwRecheckDue ?? 0) > 0
+            ? '/admin/right-to-work?filter=expiring'
+            : '/admin/right-to-work',
+          icon:        ShieldCheck,
+          label:       'Right to Work',
+          description: 'Register, checks & re-check dates',
+          badge:       counts.rtwRecheckDue,
+          accent:      (counts.rtwRecheckDue ?? 0) > 0,
         },
       ],
     },
