@@ -5,7 +5,7 @@ import { Eye, Loader2 } from 'lucide-react'
 
 const DOC_BUTTONS = [
   { type: 'cscs',      label: 'CSCS',      field: 'cscs_card_url' as const },
-  { type: 'id',        label: 'ID / passport', field: 'id_document_url' as const },
+  { type: 'id',        label: 'Passport / ID', field: 'id_document_url' as const },
   { type: 'insurance', label: 'Insurance', field: 'insurance_certificate_url' as const },
   { type: 'hs',        label: 'SSSTS/SMSTS', field: 'hs_qualification_url' as const },
   { type: 'firesock',  label: 'Firesock',  field: 'firesock_certificate_url' as const },

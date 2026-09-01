@@ -13,8 +13,13 @@ const DOC_TYPES = {
   },
   id: {
     column:   'id_document_url',
-    label:    'ID document',
+    label:    'ID / passport',
     fileStem: 'id-document',
+  },
+  rtw: {
+    column:   'right_to_work_document_url',
+    label:    'Right to work passport',
+    fileStem: 'right-to-work',
   },
   insurance: {
     column:   'insurance_certificate_url',
@@ -39,7 +44,7 @@ function isDocType(value: string): value is DocType {
   return value in DOC_TYPES
 }
 
-/** Short-lived signed URL for an induction document (CSCS, ID, insurance, H&S, firesock). */
+/** Short-lived signed URL for an induction document (CSCS, ID, RTW, insurance, H&S, firesock). */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ workerId: string }> },
@@ -52,7 +57,7 @@ export async function GET(
     const type = request.nextUrl.searchParams.get('type')?.trim() ?? ''
     if (!isDocType(type)) {
       return NextResponse.json(
-        { error: 'Document type must be cscs, id, insurance, hs, or firesock.' },
+        { error: 'Document type must be cscs, id, rtw, insurance, hs, or firesock.' },
         { status: 400 },
       )
     }
@@ -60,21 +65,54 @@ export async function GET(
     const meta = DOC_TYPES[type]
     const supabase = createServiceClient()
 
-    const { data: worker } = await supabase
+    let worker: {
+      first_name: string
+      surname: string
+      cscs_card_url: string | null
+      id_document_url: string | null
+      right_to_work_document_url?: string | null
+      insurance_certificate_url: string | null
+      hs_qualification_url: string | null
+      firesock_certificate_url: string | null
+    } | null = null
+
+    const fullSelect = await supabase
       .from('workers')
       .select(`
         first_name, surname,
-        cscs_card_url, id_document_url, insurance_certificate_url,
-        hs_qualification_url, firesock_certificate_url
+        cscs_card_url, id_document_url, right_to_work_document_url,
+        insurance_certificate_url, hs_qualification_url, firesock_certificate_url
       `)
       .eq('id', workerId)
       .maybeSingle()
+
+    if (fullSelect.error && (/right_to_work/i.test(fullSelect.error.message) || fullSelect.error.code === 'PGRST204')) {
+      const legacy = await supabase
+        .from('workers')
+        .select(`
+          first_name, surname,
+          cscs_card_url, id_document_url,
+          insurance_certificate_url, hs_qualification_url, firesock_certificate_url
+        `)
+        .eq('id', workerId)
+        .maybeSingle()
+      worker = legacy.data
+    } else {
+      worker = fullSelect.data
+    }
 
     if (!worker) {
       return NextResponse.json({ error: 'Worker not found.' }, { status: 404 })
     }
 
-    const path = worker[meta.column as keyof typeof worker] as string | null
+    // Prefer dedicated RTW path; fall back to id_document_url for older passport uploads.
+    let path = (worker[meta.column as keyof typeof worker] as string | null | undefined) ?? null
+    if (type === 'rtw' && !path) {
+      path = worker.id_document_url
+    }
+    if (type === 'id' && !path) {
+      path = worker.right_to_work_document_url ?? null
+    }
     if (!path) {
       return NextResponse.json({ error: `No ${meta.label} on file.` }, { status: 404 })
     }

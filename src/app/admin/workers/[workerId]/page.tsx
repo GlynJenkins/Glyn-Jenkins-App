@@ -22,7 +22,7 @@ export default async function WorkerProfilePage({
 
   const supabase = createServiceClient()
 
-  const { data: worker } = await supabase
+  const fullSelect = await supabase
     .from('workers')
     .select(`
       id, first_name, surname, phone, email, utr_number, ni_number,
@@ -33,10 +33,35 @@ export default async function WorkerProfilePage({
       bricklayer_qualification, hs_qualification_url, hs_qualification_na,
       firesock_certificate_url, date_of_birth, home_address,
       cscs_card_url, id_document_url, insurance_certificate_url,
-      payment_details_updated_at, payment_details_updated_by
+      payment_details_updated_at, payment_details_updated_by,
+      right_to_work_method, right_to_work_document_url, right_to_work_share_code,
+      right_to_work_status, right_to_work_verified_at, right_to_work_verified_by,
+      right_to_work_note, right_to_work_override_at, right_to_work_override_by,
+      right_to_work_override_note
     `)
     .eq('id', workerId)
     .maybeSingle()
+
+  let worker = fullSelect.data
+  if (fullSelect.error && (/right_to_work/i.test(fullSelect.error.message) || fullSelect.error.code === 'PGRST204')) {
+    console.warn('[WorkerProfile] RTW columns missing — run add_right_to_work.sql')
+    const legacy = await supabase
+      .from('workers')
+      .select(`
+        id, first_name, surname, phone, email, utr_number, ni_number,
+        tax_type, role, status, has_personal_insurance, created_at,
+        auth_user_id, bank_sort_code, bank_account_number,
+        subcontract_agreement_pdf_url, subcontract_signature_url,
+        employed_contract_signed,
+        bricklayer_qualification, hs_qualification_url, hs_qualification_na,
+        firesock_certificate_url, date_of_birth, home_address,
+        cscs_card_url, id_document_url, insurance_certificate_url,
+        payment_details_updated_at, payment_details_updated_by
+      `)
+      .eq('id', workerId)
+      .maybeSingle()
+    worker = legacy.data as typeof worker
+  }
 
   if (!worker) notFound()
 
@@ -113,6 +138,16 @@ export default async function WorkerProfilePage({
     home_address:                  worker.home_address,
     payment_details_updated_at:    worker.payment_details_updated_at,
     payment_details_updated_by:    worker.payment_details_updated_by,
+    right_to_work_method:          ('right_to_work_method' in worker ? worker.right_to_work_method : null) as string | null,
+    right_to_work_document_url:    ('right_to_work_document_url' in worker ? worker.right_to_work_document_url : null) as string | null,
+    right_to_work_share_code:      ('right_to_work_share_code' in worker ? worker.right_to_work_share_code : null) as string | null,
+    right_to_work_status:          ('right_to_work_status' in worker ? worker.right_to_work_status : null) as string | null,
+    right_to_work_verified_at:     ('right_to_work_verified_at' in worker ? worker.right_to_work_verified_at : null) as string | null,
+    right_to_work_verified_by:     ('right_to_work_verified_by' in worker ? worker.right_to_work_verified_by : null) as string | null,
+    right_to_work_note:            ('right_to_work_note' in worker ? worker.right_to_work_note : null) as string | null,
+    right_to_work_override_at:     ('right_to_work_override_at' in worker ? worker.right_to_work_override_at : null) as string | null,
+    right_to_work_override_by:     ('right_to_work_override_by' in worker ? worker.right_to_work_override_by : null) as string | null,
+    right_to_work_override_note:   ('right_to_work_override_note' in worker ? worker.right_to_work_override_note : null) as string | null,
     bank_sort_masked:              maskLast4(sortForMask) || null,
     bank_account_masked:           maskLast4(worker.bank_account_number) || null,
     utr_masked:                    maskLast4(worker.utr_number) || null,

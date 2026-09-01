@@ -21,6 +21,7 @@ import {
   parsePaymentDetailsUpdate,
 } from '@/lib/induction/payment-details'
 import WorkerDocumentButtons from '@/app/admin/_components/WorkerDocumentButtons'
+import RightToWorkCard from './RightToWorkCard'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,16 @@ type Worker = {
   payment_details_updated_by:      string | null
   last_sensitive_reveal_at:        string | null
   last_sensitive_reveal_by:        string | null
+  right_to_work_method:            string | null
+  right_to_work_document_url:      string | null
+  right_to_work_share_code:        string | null
+  right_to_work_status:            string | null
+  right_to_work_verified_at:       string | null
+  right_to_work_verified_by:       string | null
+  right_to_work_note:              string | null
+  right_to_work_override_at:       string | null
+  right_to_work_override_by:       string | null
+  right_to_work_override_note:     string | null
 }
 
 interface Props {
@@ -1282,6 +1293,24 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
           </button>
         ) : null}
       </div>
+
+      <RightToWorkCard
+        workerId={worker.id}
+        rtw={{
+          right_to_work_method:         worker.right_to_work_method,
+          right_to_work_document_url:   worker.right_to_work_document_url,
+          right_to_work_share_code:     worker.right_to_work_share_code,
+          right_to_work_status:         worker.right_to_work_status,
+          right_to_work_verified_at:    worker.right_to_work_verified_at,
+          right_to_work_verified_by:    worker.right_to_work_verified_by,
+          right_to_work_note:           worker.right_to_work_note,
+          right_to_work_override_at:    worker.right_to_work_override_at,
+          right_to_work_override_by:    worker.right_to_work_override_by,
+          right_to_work_override_note:  worker.right_to_work_override_note,
+          id_document_url:             worker.id_document_url,
+          date_of_birth:               worker.date_of_birth,
+        }}
+      />
 
       <PaymentDetailsCard worker={worker} />
 
