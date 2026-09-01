@@ -66,6 +66,9 @@ export async function POST(request: NextRequest) {
     // ── Right to work ──────────────────────────────────────────
     const rightToWorkMethodRaw = (formData.get('rightToWorkMethod') as string)?.trim()
     const rightToWorkShareCodeRaw = (formData.get('rightToWorkShareCode') as string)?.trim() ?? ''
+    const rightToWorkCitizenDeclared =
+      formData.get('rightToWorkCitizenDeclared') === 'true'
+      || formData.get('rightToWorkCitizenDeclared') === 'on'
     const rightToWorkDocument =
       (formData.get('rightToWorkDocument') as File | null) ||
       (formData.get('idDocument') as File | null)
@@ -150,6 +153,16 @@ export async function POST(request: NextRequest) {
         )
       }
       rightToWorkShareCode = normalizeShareCode(rightToWorkShareCodeRaw)
+    } else if (rightToWorkMethod === 'no_passport_manual') {
+      if (!rightToWorkCitizenDeclared) {
+        return NextResponse.json(
+          {
+            error:
+              'Confirm you are a UK or Irish citizen and will provide alternative proof before you can start.',
+          },
+          { status: 400 },
+        )
+      }
     }
 
     const rightToWorkStatus: RightToWorkStatus =
@@ -406,6 +419,8 @@ export async function POST(request: NextRequest) {
       right_to_work_document_url: rightToWorkDocumentUrl,
       right_to_work_share_code:  rightToWorkShareCode,
       right_to_work_status:      rightToWorkStatus,
+      right_to_work_citizen_declared:
+        rightToWorkMethod === 'no_passport_manual' && rightToWorkCitizenDeclared,
       insurance_certificate_url: insuranceUrl,
       subcontract_signature_url: signatureUrl,
       subcontract_agreement_pdf_url: pdfPath,
@@ -441,6 +456,7 @@ export async function POST(request: NextRequest) {
           right_to_work_document_url: _rtd,
           right_to_work_share_code: _rts,
           right_to_work_status: _rtst,
+          right_to_work_citizen_declared: _rtcd,
           ...legacyRow
         } = workerRow
         const { error: retryError } = await supabase

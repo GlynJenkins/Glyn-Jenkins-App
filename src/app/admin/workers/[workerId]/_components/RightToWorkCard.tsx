@@ -27,6 +27,7 @@ export type RightToWorkFields = {
   right_to_work_note: string | null
   right_to_work_type?: string | null
   right_to_work_expiry?: string | null
+  right_to_work_citizen_declared?: boolean | null
   right_to_work_override_at?: string | null
   right_to_work_override_by?: string | null
   right_to_work_override_note?: string | null
@@ -212,10 +213,17 @@ export default function RightToWorkCard({
       )}
 
       {method === 'no_passport_manual' && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-          Follow-up needed — arrange manual check (e.g. birth certificate + National Insurance document)
-          before activating.
-        </p>
+        <div className="space-y-2">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            Follow-up needed — arrange manual check (e.g. birth certificate + National Insurance document)
+            before activating.
+          </p>
+          {rtw.right_to_work_citizen_declared && (
+            <p className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 text-xs font-medium text-orange-900">
+              Declared UK/Irish citizen — alternative proof required
+            </p>
+          )}
+        </div>
       )}
 
       {!method && (

@@ -281,7 +281,16 @@ export default function RightToWorkRegisterTable({
                     <td className="px-3 py-3 text-slate-600 whitespace-pre-line max-w-[12rem] text-xs">
                       {row.homeAddress || <span className="text-amber-700 font-semibold">Not on file</span>}
                     </td>
-                    <td className="px-3 py-3 text-slate-600">{row.methodLabel}</td>
+                    <td className="px-3 py-3 text-slate-600">
+                      <div className="space-y-1">
+                        <span>{row.methodLabel}</span>
+                        {row.method === 'no_passport_manual' && row.citizenDeclared && (
+                          <p className="text-[11px] font-medium text-orange-800">
+                            Declared UK/Irish citizen — alternative proof required
+                          </p>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-3"><DocumentCell row={row} /></td>
                     <td className="px-3 py-3"><StatusChip row={row} /></td>
                     <td className="px-3 py-3 text-slate-600 text-xs">{row.verifiedBy || '—'}</td>
@@ -340,6 +349,11 @@ export default function RightToWorkRegisterTable({
                   <span>{row.methodLabel}</span>
                   <DocumentCell row={row} />
                 </div>
+                {row.method === 'no_passport_manual' && row.citizenDeclared && (
+                  <p className="text-[11px] font-medium text-orange-800">
+                    Declared UK/Irish citizen — alternative proof required
+                  </p>
+                )}
                 <p className="text-xs text-slate-500">
                   Verified: {row.verifiedBy || '—'} · {row.verifiedAtLabel}
                 </p>

@@ -50,6 +50,7 @@ export type RtwRegisterRow = {
   expiry: string | null
   expiryLabel: string
   expiryFlag: RtwExpiryFlag
+  citizenDeclared: boolean
   checks: RtwCheckHistoryItem[]
 }
 
@@ -95,19 +96,57 @@ export async function loadRightToWorkRegister(
       right_to_work_method, right_to_work_document_url, id_document_url,
       right_to_work_share_code, right_to_work_status,
       right_to_work_verified_at, right_to_work_verified_by,
-      right_to_work_type, right_to_work_expiry
+      right_to_work_type, right_to_work_expiry, right_to_work_citizen_declared
     `)
     .in('status', ['active', 'pending_verification'])
     .order('surname', { ascending: true })
 
-  if (error) {
+  let workerRows: Array<{
+    id: string
+    first_name: string
+    surname: string
+    role: string
+    status: string
+    home_address: string | null
+    right_to_work_method: string | null
+    right_to_work_document_url: string | null
+    id_document_url: string | null
+    right_to_work_share_code: string | null
+    right_to_work_status: string | null
+    right_to_work_verified_at: string | null
+    right_to_work_verified_by: string | null
+    right_to_work_type: string | null
+    right_to_work_expiry: string | null
+    right_to_work_citizen_declared?: boolean | null
+  }> | null = data
+
+  if (error && /right_to_work_citizen_declared/i.test(error.message)) {
+    const legacy = await supabase
+      .from('workers')
+      .select(`
+        id, first_name, surname, role, status, home_address,
+        right_to_work_method, right_to_work_document_url, id_document_url,
+        right_to_work_share_code, right_to_work_status,
+        right_to_work_verified_at, right_to_work_verified_by,
+        right_to_work_type, right_to_work_expiry
+      `)
+      .in('status', ['active', 'pending_verification'])
+      .order('surname', { ascending: true })
+    if (legacy.error) {
+      if (/right_to_work/i.test(legacy.error.message) || legacy.error.code === 'PGRST204') {
+        throw new Error('Right to work columns are missing. Run add_right_to_work.sql first.')
+      }
+      throw new Error(`Failed to load right-to-work register: ${legacy.error.message}`)
+    }
+    workerRows = legacy.data
+  } else if (error) {
     if (/right_to_work/i.test(error.message) || error.code === 'PGRST204') {
       throw new Error('Right to work columns are missing. Run add_right_to_work.sql first.')
     }
     throw new Error(`Failed to load right-to-work register: ${error.message}`)
   }
 
-  const workerIds = (data ?? []).map((w) => w.id)
+  const workerIds = (workerRows ?? []).map((w) => w.id)
   const checksByWorker = new Map<string, RtwCheckHistoryItem[]>()
 
   if (workerIds.length > 0) {
@@ -132,13 +171,15 @@ export async function loadRightToWorkRegister(
     }
   }
 
-  const rows: RtwRegisterRow[] = (data ?? []).map((w) => {
+  const rows: RtwRegisterRow[] = (workerRows ?? []).map((w) => {
     const rtwStatus = w.right_to_work_status ?? 'pending'
     const rtwType = w.right_to_work_type ?? null
     const expiry = w.right_to_work_expiry
       ? String(w.right_to_work_expiry).slice(0, 10)
       : null
     const expiryFlag = classifyRtwExpiry(rtwType, expiry)
+    const citizenDeclared =
+      'right_to_work_citizen_declared' in w ? !!w.right_to_work_citizen_declared : false
 
     return {
       id: w.id,
@@ -163,6 +204,7 @@ export async function loadRightToWorkRegister(
       expiry,
       expiryLabel: formatRtwDate(expiry),
       expiryFlag,
+      citizenDeclared,
       checks: checksByWorker.get(w.id) ?? [],
     }
   })

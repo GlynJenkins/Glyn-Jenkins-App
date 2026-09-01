@@ -322,6 +322,7 @@ export default function InductionPage() {
   const [idDocument,      setIdDocument]      = useState<File | null>(null)
   const [rightToWorkMethod, setRightToWorkMethod] = useState<'passport' | 'share_code' | 'no_passport_manual'>('passport')
   const [rightToWorkShareCode, setRightToWorkShareCode] = useState('')
+  const [rightToWorkCitizenDeclared, setRightToWorkCitizenDeclared] = useState(false)
   const [insuranceCert,   setInsuranceCert]   = useState<File | null>(null)
   const [hsQualification, setHsQualification] = useState<File | null>(null)
   const [hsQualificationNa, setHsQualificationNa] = useState(false)
@@ -403,6 +404,9 @@ export default function InductionPage() {
       if (!/^[A-Za-z0-9]{8,12}$/.test(code))
         errs.shareCode = 'Enter a valid share code (about 9 characters from gov.uk)'
     }
+    if (rightToWorkMethod === 'no_passport_manual' && !rightToWorkCitizenDeclared)
+      errs.citizenDeclared =
+        'Confirm you are a UK or Irish citizen and will provide alternative proof before you can start'
     if (hasInsurance === 'yes' && !insuranceCert)
                           errs.insuranceCert = 'Insurance certificate is required'
     if (!hsQualification && !hsQualificationNa)
@@ -464,6 +468,9 @@ export default function InductionPage() {
       }
       if (rightToWorkMethod === 'share_code') {
         fd.append('rightToWorkShareCode', rightToWorkShareCode.replace(/[\s-]/g, '').toUpperCase())
+      }
+      if (rightToWorkMethod === 'no_passport_manual') {
+        fd.append('rightToWorkCitizenDeclared', rightToWorkCitizenDeclared ? 'true' : 'false')
       }
       if (insuranceReady)  fd.append('insuranceCert', insuranceReady)
       if (hsReady)         fd.append('hsQualification', hsReady)
@@ -889,13 +896,42 @@ export default function InductionPage() {
             Tap each box to take a photo or choose a file from your phone.
           </p>
 
-          <FileUploadArea
-            label="CSCS Card"
-            required
-            file={cscsCard}
-            onChange={setCscsCard}
-            error={fileErrors.cscsCard}
-          />
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-sm font-semibold text-slate-800">CSCS Card</p>
+
+            <FileUploadArea
+              label="CSCS Card photo"
+              required
+              file={cscsCard}
+              onChange={setCscsCard}
+              error={fileErrors.cscsCard}
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                CSCS Registration Number <span className="text-red-500">*</span>
+              </label>
+              <input
+                {...register('cscsNumber')}
+                placeholder="e.g. 1234567890"
+                inputMode="text"
+                className={inputCls(!!errors.cscsNumber)}
+              />
+              <FieldError message={errors.cscsNumber?.message} />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                CSCS Card Expiry Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                {...register('cscsExpiryDate')}
+                type="date"
+                className={inputCls(!!errors.cscsExpiryDate)}
+              />
+              <FieldError message={errors.cscsExpiryDate?.message} />
+            </div>
+          </div>
 
           <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
             <div>
@@ -921,8 +957,8 @@ export default function InductionPage() {
                   },
                   {
                     value: 'no_passport_manual' as const,
-                    title: 'I don\u2019t have a UK or Irish passport',
-                    hint: 'Office will arrange a manual check before you start',
+                    title: 'I\u2019m a UK or Irish citizen without a current passport',
+                    hint: 'e.g. expired or lost. You\u2019ll prove your right to work another way \u2014 the office will check your birth certificate + National Insurance document before you can start.',
                   },
                 ] as const
               ).map((opt) => (
@@ -943,10 +979,12 @@ export default function InductionPage() {
                       setRightToWorkMethod(opt.value)
                       if (opt.value !== 'passport') setIdDocument(null)
                       if (opt.value !== 'share_code') setRightToWorkShareCode('')
+                      if (opt.value !== 'no_passport_manual') setRightToWorkCitizenDeclared(false)
                       setFileErrors((prev) => {
                         const next = { ...prev }
                         delete next.idDocument
                         delete next.shareCode
+                        delete next.citizenDeclared
                         return next
                       })
                     }}
@@ -1007,10 +1045,46 @@ export default function InductionPage() {
             )}
 
             {rightToWorkMethod === 'no_passport_manual' && (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-                That&apos;s fine — you can still finish registering. The office will arrange your right-to-work
-                check (e.g. birth certificate + National Insurance document) before you start.
-              </p>
+              <div className="space-y-3">
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                  You can register now, but you can&apos;t start work until the office has verified your
+                  right to work. Please bring your birth certificate and a document showing your
+                  National Insurance number (e.g. a payslip, P45/P60, or HMRC letter).
+                </p>
+                <label
+                  className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    rightToWorkCitizenDeclared
+                      ? 'border-orange-500 bg-orange-50'
+                      : fileErrors.citizenDeclared
+                        ? 'border-red-300 bg-red-50'
+                        : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={rightToWorkCitizenDeclared}
+                    onChange={(e) => {
+                      setRightToWorkCitizenDeclared(e.target.checked)
+                      if (e.target.checked) {
+                        setFileErrors((prev) => {
+                          const next = { ...prev }
+                          delete next.citizenDeclared
+                          return next
+                        })
+                      }
+                    }}
+                    className="accent-orange-500 mt-0.5 w-4 h-4 shrink-0"
+                  />
+                  <span className="text-xs font-medium text-slate-700 leading-relaxed">
+                    I confirm I am a UK or Irish citizen and will provide alternative proof of my right
+                    to work (such as a birth certificate and National Insurance document) before I
+                    start. I understand I cannot be activated until this is checked.
+                  </span>
+                </label>
+                {fileErrors.citizenDeclared && (
+                  <p className="text-xs text-red-600">{fileErrors.citizenDeclared}</p>
+                )}
+              </div>
             )}
           </div>
 
@@ -1108,31 +1182,6 @@ export default function InductionPage() {
               />
             </div>
           )}
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              CSCS Registration Number <span className="text-red-500">*</span>
-            </label>
-            <input
-              {...register('cscsNumber')}
-              placeholder="e.g. 1234567890"
-              inputMode="text"
-              className={inputCls(!!errors.cscsNumber)}
-            />
-            <FieldError message={errors.cscsNumber?.message} />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              CSCS Card Expiry Date <span className="text-red-500">*</span>
-            </label>
-            <input
-              {...register('cscsExpiryDate')}
-              type="date"
-              className={inputCls(!!errors.cscsExpiryDate)}
-            />
-            <FieldError message={errors.cscsExpiryDate?.message} />
-          </div>
         </SectionCard>
 
         {/* Section 5 — Employed tick / Apprenticeship agreement / Subcontract */}
