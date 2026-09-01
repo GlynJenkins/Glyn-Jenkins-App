@@ -6,6 +6,7 @@ import AdminDashboardNav from './_components/AdminDashboardNav'
 import { countPendingHolidayRequests } from '@/lib/holidays/queries'
 import { loadTrainingMatrix } from '@/lib/training/load-training-matrix'
 import { countAwaitingReinspection } from '@/lib/qa/snags'
+import { countRtwExpiringSoon } from '@/lib/workers/load-right-to-work-register'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,7 @@ export default async function AdminPage() {
   let pendingHolidayCount = 0
   let expiredCscsCount = 0
   let reinspectionDue = 0
+  let rtwRecheckDue = 0
 
   try {
     reinspectionDue = await countAwaitingReinspection(supabase)
@@ -65,6 +67,12 @@ export default async function AdminPage() {
     } catch {
       // columns may not exist until migration runs
     }
+
+    try {
+      rtwRecheckDue = await countRtwExpiringSoon(supabase)
+    } catch {
+      // RTW register columns may not exist until migration runs
+    }
   }
 
   const navCounts = {
@@ -74,6 +82,7 @@ export default async function AdminPage() {
     pendingWorkers:    pendingWorkerCount,
     expiredCscs:       expiredCscsCount,
     reinspectionDue,
+    rtwRecheckDue,
   }
 
   const displayName = worker
