@@ -57,7 +57,20 @@ function isJpegMime(mime: string): boolean {
 }
 
 async function embedPhotoImage(pdf: PDFDocument, buffer: Buffer, mime: string) {
-  return isJpegMime(mime) ? pdf.embedJpg(buffer) : pdf.embedPng(buffer)
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
+  if (isJpegMime(mime)) {
+    try {
+      return await pdf.embedJpg(bytes)
+    } catch {
+      // Some phones save JPEG-looking files that are actually PNG.
+      return pdf.embedPng(bytes)
+    }
+  }
+  try {
+    return await pdf.embedPng(bytes)
+  } catch {
+    return pdf.embedJpg(bytes)
+  }
 }
 
 export type QaInspectionPdfInput = {
@@ -323,18 +336,31 @@ export async function generateQaInspectionPdf(input: QaInspectionPdfInput): Prom
       }
       if (slots.length === 0) return
 
-      const embedded = await Promise.all(
-        slots.map(async (slot) => {
-          const image = await embedPhotoImage(pdf, slot.buffer, slot.mime)
-          const scale = Math.min(SNAG_PHOTO_W / image.width, SNAG_PHOTO_MAX_H / image.height, 1)
-          return {
-            label:  slot.label,
-            image,
-            width:  image.width * scale,
-            height: image.height * scale,
-          }
-        }),
-      )
+      const embedded = (
+        await Promise.all(
+          slots.map(async (slot) => {
+            try {
+              const image = await embedPhotoImage(pdf, slot.buffer, slot.mime)
+              const scale = Math.min(SNAG_PHOTO_W / image.width, SNAG_PHOTO_MAX_H / image.height, 1)
+              return {
+                label:  slot.label,
+                image,
+                width:  image.width * scale,
+                height: image.height * scale,
+              }
+            } catch (err) {
+              console.warn(
+                '[QA PDF] Could not embed snag photo:',
+                slot.label,
+                err instanceof Error ? err.message : err,
+              )
+              return null
+            }
+          }),
+        )
+      ).filter((item): item is NonNullable<typeof item> => item != null)
+
+      if (embedded.length === 0) return
 
       const rowH = SNAG_LABEL_H + Math.max(...embedded.map((e) => e.height)) + 8
       if (y - rowH < MARGIN) {

@@ -12,6 +12,7 @@ import {
 import type { QaInspectionPdfInput, QaPdfPhoto } from '@/lib/qa/generate-inspection-pdf'
 import { isQaStageKey } from '@/lib/qa/stages'
 import { fetchSnagsForInspection } from '@/lib/qa/snags'
+import { normalizePhotoForPdf } from '@/lib/qa/normalize-photo'
 
 function mimeFromPath(path: string | null | undefined): string {
   if (!path) return 'image/jpeg'
@@ -21,12 +22,35 @@ function mimeFromPath(path: string | null | undefined): string {
   return 'image/jpeg'
 }
 
-/** Snag + inspection photos live in the same private bucket used by QA upload routes. */
+/** Snag + inspection photos live in worker-documents (same bucket as QA upload routes). */
 async function downloadStorageFile(path: string): Promise<Buffer | null> {
   const supabase = createServiceClient()
   const { data, error } = await supabase.storage.from('worker-documents').download(path)
-  if (error || !data) return null
+  if (error || !data) {
+    console.warn('[QA PDF] Storage download failed:', path, error?.message)
+    return null
+  }
   return Buffer.from(await data.arrayBuffer())
+}
+
+/** Download then normalise to JPEG so pdf-lib can always embed. */
+async function downloadSnagPhoto(
+  path: string | null,
+): Promise<{ buffer: Buffer; mime: string } | null> {
+  if (!path) return null
+  const raw = await downloadStorageFile(path)
+  if (!raw?.length) return null
+  try {
+    return await normalizePhotoForPdf(raw)
+  } catch (err) {
+    console.warn(
+      '[QA PDF] Could not normalise snag photo:',
+      path,
+      err instanceof Error ? err.message : err,
+    )
+    // Fall back to raw bytes — may still embed if already JPEG/PNG.
+    return { buffer: raw, mime: mimeFromPath(path) }
+  }
 }
 
 export async function loadQaInspectionPdfData(
@@ -110,12 +134,10 @@ export async function loadQaInspectionPdfData(
   const snags = snagRows.length
     ? await Promise.all(
         snagRows.map(async (s, i) => {
-          const raisedPhoto = s.raised_photo_path
-            ? await downloadStorageFile(s.raised_photo_path)
-            : null
-          const fixedPhoto = s.fixed_photo_path
-            ? await downloadStorageFile(s.fixed_photo_path)
-            : null
+          const [raised, fixed] = await Promise.all([
+            downloadSnagPhoto(s.raised_photo_path),
+            downloadSnagPhoto(s.fixed_photo_path),
+          ])
           return {
             round:           s.round,
             index:           i + 1,
@@ -123,10 +145,10 @@ export async function loadQaInspectionPdfData(
             fixed:           s.fixed,
             fixedNote:       s.fixed_note ?? null,
             fixedAt:         s.fixed_at ?? null,
-            raisedPhoto,
-            raisedPhotoMime: raisedPhoto ? mimeFromPath(s.raised_photo_path) : null,
-            fixedPhoto,
-            fixedPhotoMime:  fixedPhoto ? mimeFromPath(s.fixed_photo_path) : null,
+            raisedPhoto:     raised?.buffer ?? null,
+            raisedPhotoMime: raised?.mime ?? null,
+            fixedPhoto:      fixed?.buffer ?? null,
+            fixedPhotoMime:  fixed?.mime ?? null,
           }
         }),
       )
