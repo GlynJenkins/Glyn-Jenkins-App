@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { FileSpreadsheet, Phone, Search } from 'lucide-react'
 import type { WorkerMatrixRow } from '@/lib/workers/load-worker-matrix'
 import { WAGES_ROLE_LABELS } from '@/lib/claims/load-wages-register'
+import { rtwStatusLabel } from '@/lib/induction/right-to-work'
 
 type Tab = 'active' | 'inactive'
 type SortKey = 'surname' | 'role' | 'age'
@@ -18,6 +19,21 @@ type Props = {
 
 function NotOnFile() {
   return <span className="text-amber-700 text-xs font-semibold">Not on file</span>
+}
+
+function RtwCell({ status }: { status: string | null }) {
+  if (!status) return <span className="text-slate-400">—</span>
+  const cls =
+    status === 'verified'
+      ? 'bg-green-100 text-green-800'
+      : status === 'follow_up'
+        ? 'bg-orange-100 text-orange-800'
+        : 'bg-amber-100 text-amber-800'
+  return (
+    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>
+      {rtwStatusLabel(status)}
+    </span>
+  )
 }
 
 function AgeCell({ row }: { row: WorkerMatrixRow }) {
@@ -221,13 +237,14 @@ export default function WorkerMatrixTable({
                 </button>
               </th>
               <th className="px-4 py-3 font-semibold">Phone</th>
+              <th className="px-4 py-3 font-semibold">Right to work</th>
               <th className="px-4 py-3 font-semibold">Home address</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+                <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                   No {tab} workers match
                 </td>
               </tr>
@@ -250,6 +267,9 @@ export default function WorkerMatrixTable({
                     <a href={`tel:${row.phone}`} className="text-slate-700 hover:text-orange-700">
                       {row.phone}
                     </a>
+                  </td>
+                  <td className="px-4 py-3">
+                    <RtwCell status={row.rightToWorkStatus} />
                   </td>
                   <td className="px-4 py-3 text-slate-600 max-w-xs">
                     <AddressCell address={row.homeAddress} />
@@ -290,6 +310,10 @@ export default function WorkerMatrixTable({
                   <a href={`tel:${row.phone}`} className="hover:text-orange-700">
                     {row.phone}
                   </a>
+                </p>
+                <p className="flex items-center gap-2">
+                  <span className="text-slate-400 text-xs">RTW</span>
+                  <RtwCell status={row.rightToWorkStatus} />
                 </p>
                 <p>
                   <span className="text-slate-400 text-xs block mb-0.5">Home address</span>

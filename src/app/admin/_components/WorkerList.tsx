@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { firesockRequirement } from '@/lib/induction/firesock-requirement'
 import { isUnder18 } from '@/lib/induction/date-of-birth'
+import { rtwStatusLabel } from '@/lib/induction/right-to-work'
 import WorkerDocumentButtons from './WorkerDocumentButtons'
 
 type Worker = {
@@ -28,6 +29,7 @@ type Worker = {
   firesock_certificate_url: string | null
   date_of_birth: string | null
   created_at: string
+  right_to_work_status?: string | null
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -46,6 +48,25 @@ function missingRequiredFiresock(worker: Worker): boolean {
   return firesockRequirement(worker.role) === 'required' && !worker.firesock_certificate_url
 }
 
+function rtwVerified(worker: Worker): boolean {
+  return worker.right_to_work_status === 'verified'
+}
+
+function RtwChip({ status }: { status: string | null | undefined }) {
+  if (!status) return null
+  const cls =
+    status === 'verified'
+      ? 'bg-green-100 text-green-800'
+      : status === 'follow_up'
+        ? 'bg-orange-100 text-orange-800'
+        : 'bg-amber-100 text-amber-800'
+  return (
+    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>
+      RTW: {rtwStatusLabel(status)}
+    </span>
+  )
+}
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     pending_verification: { label: 'Pending',  cls: 'bg-amber-100 text-amber-700' },
@@ -62,14 +83,40 @@ function StatusBadge({ status }: { status: string }) {
 
 function WorkerCard({ worker, onStatusChange, onDelete }: {
   worker: Worker
-  onStatusChange: (id: string, status: string) => void
+  onStatusChange: (
+    id: string,
+    status: string,
+    opts?: { rightToWorkOverride?: boolean; overrideNote?: string },
+  ) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
   const [busy, startTransition] = useTransition()
   const [deleting, setDeleting] = useState(false)
 
+  const requestActivate = () => {
+    if (rtwVerified(worker) || !worker.right_to_work_status) {
+      startTransition(() => { void onStatusChange(worker.id, 'active') })
+      return
+    }
+    const ok = window.confirm(
+      'Right to work is not verified yet.\n\nVerify on the worker profile first, or OK to activate with a logged override (edge cases only).',
+    )
+    if (!ok) return
+    const note = window.prompt('Optional note for the override (who/why):', '') ?? ''
+    startTransition(() => {
+      void onStatusChange(worker.id, 'active', {
+        rightToWorkOverride: true,
+        overrideNote: note,
+      })
+    })
+  }
+
   const toggle = (newStatus: string) => {
-    startTransition(() => onStatusChange(worker.id, newStatus))
+    if (newStatus === 'active' && worker.status === 'pending_verification') {
+      requestActivate()
+      return
+    }
+    startTransition(() => { void onStatusChange(worker.id, newStatus) })
   }
 
   const fullName   = `${worker.first_name} ${worker.surname}`
@@ -109,6 +156,7 @@ function WorkerCard({ worker, onStatusChange, onDelete }: {
         </div>
         <div className="flex flex-col items-end gap-1">
           <StatusBadge status={worker.status} />
+          <RtwChip status={worker.right_to_work_status} />
           {under18 && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
               Under 18
@@ -165,10 +213,20 @@ function WorkerCard({ worker, onStatusChange, onDelete }: {
               onClick={() => toggle('active')}
               className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700
                          text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
+              title={
+                worker.right_to_work_status && !rtwVerified(worker)
+                  ? 'Verify right to work before activating (or confirm override)'
+                  : undefined
+              }
             >
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
               Activate
             </button>
+            {worker.right_to_work_status && !rtwVerified(worker) && (
+              <p className="w-full text-xs text-amber-700">
+                Verify right to work on the profile before activating (override available if needed).
+              </p>
+            )}
             <button
               disabled={busy}
               onClick={() => toggle('inactive')}
@@ -242,22 +300,36 @@ export default function WorkerList({ initialWorkers }: { initialWorkers: Worker[
     ? listedBase.filter(missingRequiredFiresock)
     : listedBase
 
-  const handleStatusChange = async (id: string, status: string) => {
+  const handleStatusChange = async (
+    id: string,
+    status: string,
+    opts?: { rightToWorkOverride?: boolean; overrideNote?: string },
+  ) => {
     setError(null)
     try {
       const res = await fetch(`/api/workers/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          rightToWorkOverride: opts?.rightToWorkOverride,
+          overrideNote: opts?.overrideNote,
+        }),
       })
-      if (!res.ok) throw new Error('Failed to update status')
+      const json = await res.json().catch(() => ({})) as { error?: string; code?: string }
+      if (!res.ok) {
+        if (json.code === 'RIGHT_TO_WORK_REQUIRED') {
+          throw new Error(json.error ?? 'Verify right to work before activating.')
+        }
+        throw new Error(json.error ?? 'Failed to update status')
+      }
 
       setWorkers((prev) =>
         prev.map((w) => (w.id === id ? { ...w, status } : w))
       )
       router.refresh()
-    } catch {
-      setError('Could not update worker status. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update worker status. Please try again.')
     }
   }
 

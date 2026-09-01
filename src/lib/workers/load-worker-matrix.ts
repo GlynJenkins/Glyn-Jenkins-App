@@ -19,6 +19,7 @@ export type WorkerMatrixRow = {
   under18: boolean
   createdAt: string
   status: WorkerMatrixStatus
+  rightToWorkStatus: string | null
 }
 
 export type WorkerMatrixBundle = {
@@ -44,6 +45,7 @@ function mapRow(raw: {
   date_of_birth: string | null
   created_at: string
   status: string
+  right_to_work_status?: string | null
 }): WorkerMatrixRow {
   const dob = raw.date_of_birth ? raw.date_of_birth.slice(0, 10) : null
   const age = dob ? ageFromDateOfBirth(dob) : null
@@ -62,6 +64,7 @@ function mapRow(raw: {
     under18:     isUnder18(dob),
     createdAt:   raw.created_at,
     status:      raw.status as WorkerMatrixStatus,
+    rightToWorkStatus: raw.right_to_work_status ?? null,
   }
 }
 
@@ -72,7 +75,7 @@ export async function loadWorkerMatrix(
     supabase
       .from('workers')
       .select(
-        'id, first_name, surname, role, phone, email, home_address, date_of_birth, created_at, status',
+        'id, first_name, surname, role, phone, email, home_address, date_of_birth, created_at, status, right_to_work_status',
       )
       .in('status', ['active', 'inactive']),
     supabase
@@ -81,11 +84,35 @@ export async function loadWorkerMatrix(
       .eq('status', 'pending_verification'),
   ])
 
-  if (error) {
+  let dataRows: Array<{
+    id: string
+    first_name: string
+    surname: string
+    role: string
+    phone: string
+    email: string | null
+    home_address: string | null
+    date_of_birth: string | null
+    created_at: string
+    status: string
+    right_to_work_status?: string | null
+  }> | null = data
+  if (error && (/right_to_work/i.test(error.message) || error.code === 'PGRST204')) {
+    const legacy = await supabase
+      .from('workers')
+      .select(
+        'id, first_name, surname, role, phone, email, home_address, date_of_birth, created_at, status',
+      )
+      .in('status', ['active', 'inactive'])
+    if (legacy.error) {
+      throw new Error(`Failed to load worker matrix: ${legacy.error.message}`)
+    }
+    dataRows = legacy.data
+  } else if (error) {
     throw new Error(`Failed to load worker matrix: ${error.message}`)
   }
 
-  const rows = (data ?? []).map(mapRow)
+  const rows = (dataRows ?? []).map(mapRow)
   const active = rows
     .filter((r) => r.status === 'active')
     .sort(compareSurname)
@@ -124,6 +151,13 @@ export function workerMatrixToSheetRows(rows: WorkerMatrixRow[]) {
       month: 'short',
       year: 'numeric',
     }),
+    'Right to work': r.rightToWorkStatus === 'verified'
+      ? 'Verified'
+      : r.rightToWorkStatus === 'follow_up'
+        ? 'Follow-up'
+        : r.rightToWorkStatus === 'pending'
+          ? 'Pending'
+          : '',
     Status:         r.status === 'active' ? 'Active' : 'Inactive',
   }))
 }
