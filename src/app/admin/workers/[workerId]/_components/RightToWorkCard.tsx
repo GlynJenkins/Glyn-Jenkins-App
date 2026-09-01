@@ -15,6 +15,7 @@ import {
   type RightToWorkStatus,
   type RightToWorkType,
 } from '@/lib/induction/right-to-work'
+import { openSignedDocument } from '@/lib/admin/open-signed-document'
 
 export type RightToWorkFields = {
   right_to_work_method: RightToWorkMethod | string | null
@@ -82,12 +83,13 @@ export default function RightToWorkCard({
     setError(null)
     try {
       const type = rtw.right_to_work_document_url ? 'rtw' : 'id'
-      const res = await fetch(`/api/admin/workers/${workerId}/documents?type=${type}`)
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.url) throw new Error(json?.error ?? 'Could not open passport.')
-      window.open(json.url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open passport.')
+      const ok = await openSignedDocument(
+        `/api/admin/workers/${workerId}/documents?type=${type}`,
+        {
+          onError: (message) => setError(message),
+        },
+      )
+      if (!ok) return
     } finally {
       setViewBusy(false)
     }

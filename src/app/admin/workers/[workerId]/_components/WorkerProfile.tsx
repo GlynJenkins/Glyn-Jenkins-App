@@ -22,6 +22,7 @@ import {
 } from '@/lib/induction/payment-details'
 import WorkerDocumentButtons from '@/app/admin/_components/WorkerDocumentButtons'
 import RightToWorkCard from './RightToWorkCard'
+import { openSignedDocument } from '@/lib/admin/open-signed-document'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -878,12 +879,12 @@ export default function WorkerProfile({ worker, ledger, payDiagnostics }: Props)
     setFiresockBusy(true)
     setFiresockError(null)
     try {
-      const res = await fetch(`/api/admin/workers/${worker.id}/firesock-certificate`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Could not open certificate.')
-      window.open(json.url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      setFiresockError(err instanceof Error ? err.message : 'Could not open certificate.')
+      await openSignedDocument(
+        `/api/admin/workers/${worker.id}/firesock-certificate`,
+        {
+          onError: (message) => setFiresockError(message),
+        },
+      )
     } finally {
       setFiresockBusy(false)
     }

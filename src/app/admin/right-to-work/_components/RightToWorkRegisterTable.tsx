@@ -15,6 +15,7 @@ import {
   rtwMethodLabel,
   rtwStatusLabel,
 } from '@/lib/induction/right-to-work'
+import { openSignedDocument } from '@/lib/admin/open-signed-document'
 
 type Props = {
   rows: RtwRegisterRow[]
@@ -89,12 +90,13 @@ function DocumentCell({ row }: { row: RtwRegisterRow }) {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/workers/${row.id}/documents?type=rtw`)
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.url) throw new Error(json?.error ?? 'Could not open document.')
-      window.open(json.url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open document.')
+      const ok = await openSignedDocument(
+        `/api/admin/workers/${row.id}/documents?type=rtw`,
+        {
+          onError: (message) => setError(message),
+        },
+      )
+      if (!ok) return
     } finally {
       setBusy(false)
     }

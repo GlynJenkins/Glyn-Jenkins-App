@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Download, FileSpreadsheet, FileText } from 'lucide-react'
 import type { TrainingMatrixRow, TrainingMatrixSummary } from '@/lib/training/load-training-matrix'
 import { formatCscsExpiry, hsStatusLabel } from '@/lib/training/load-training-matrix'
+import { openSignedDocument } from '@/lib/admin/open-signed-document'
 
 type SortMode = 'newest' | 'cscs_soonest'
 
@@ -60,12 +61,13 @@ export default function TrainingMatrixTable({ rows, summary }: Props) {
   const viewHs = async (workerId: string) => {
     setViewingId(workerId)
     try {
-      const res = await fetch(`/api/admin/workers/${workerId}/hs-qualification`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Could not open certificate')
-      window.open(json.url, '_blank', 'noopener,noreferrer')
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not open certificate.')
+      const ok = await openSignedDocument(
+        `/api/admin/workers/${workerId}/hs-qualification`,
+        {
+          onError: (message) => alert(message),
+        },
+      )
+      if (!ok) return
     } finally {
       setViewingId(null)
     }
